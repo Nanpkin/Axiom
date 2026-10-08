@@ -99,3 +99,5 @@ USB类别通知：`WindowsSessionEvents` 注册USB接口GUID、处理接入/移�
 完整插件注册入口为 `Infrastructure/BuiltInAutomationPlugins`，Host组合根与模板/导出检查共用；HDR仍走独立生命周期。完整摘要回归另并入HDR和合成设备选择，验证64 KiB、匿名字典上限与完整参数/组合保留。扩展任务包同时指向此入口和Agent注册。
 
 桌面提醒：`NotificationCapabilities` / `NotificationPlugin` / `NotificationCapabilityProvider` 使用通用动作链；`WindowsDesktopNotification` 以消息窗口、原生清理计时器和临时通知区图标完成一次请求，`BoundedNativeCommand` 拒绝并发且调用者超时不释放原生准入。`WindowsNotificationTests` 使用真实HWND和合成Shell验证生命周期，不声称真实通知显示。
+
+工作时段间隔：`WindowedIntervalCapabilities` / `WindowedIntervalSpec` 定义星期、跨午夜、固定钟点与DST；`WindowedIntervalPlugin` 编译事件计数，`WindowedIntervalCapabilityProvider` 复用共享clockOnly租约；`WindowedIntervalEventSource` 仅一个最近deadline及有界时钟消息等待，取消全部释放。`WindowedIntervalTests` 覆盖时段边界、错过/回拨/DST/导入；它不是通用规则时间守卫。
