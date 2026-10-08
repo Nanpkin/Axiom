@@ -9,7 +9,7 @@ public static class BuiltInAutomationPlugins
     public static IAutomationPlugin[] Create() =>
     [
         new ProgramPlugin(), new AxiomStartupPlugin(), new WindowPlugin(), new TrayPlugin(), new KeyboardPlugin(),
-        new SystemEventPlugin(), new IntervalPlugin(), new DailyTimePlugin(), new FileArrivalPlugin(), new AudioPlaybackPlugin(),
+        new SystemEventPlugin(), new IntervalPlugin(), new DailyTimePlugin(), new WindowedIntervalPlugin(), new FileArrivalPlugin(), new AudioPlaybackPlugin(),
         new MicrophonePlugin(), new NotificationPlugin(), new OnceTimePlugin(), new AudioPlugin(), new OpenTargetPlugin(), new ForegroundPlugin(), new WindowPresencePlugin()
     ];
 }

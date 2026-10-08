@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <Compile Include="../../src/Axiom.SessionAgent/WindowedIntervalEventSource.cs" Link="WindowedIntervalEventSource.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsDesktopNotification.cs" Link="WindowsDesktopNotification.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/BoundedNativeCommand.cs" Link="BoundedNativeCommand.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/FileArrivalCapabilityProvider.cs" Link="FileArrivalCapabilityProvider.cs" />

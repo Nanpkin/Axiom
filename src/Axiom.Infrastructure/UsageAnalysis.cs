@@ -326,6 +326,7 @@ public static class UsageAnalysis
             if (resolved.CapabilityId == AudioPlaybackCapabilities.Set) AudioPlaybackCapabilities.Validate(resolved);
             if (resolved.CapabilityId == AudioCapabilities.Changed) AudioCapabilities.Validate(resolved);
             if (resolved.CapabilityId == OnceTimeCapabilities.Due) OnceTimeCapabilities.Validate(resolved);
+            if (resolved.CapabilityId == WindowedIntervalCapabilities.Due) WindowedIntervalCapabilities.Validate(resolved);
             if (resolved.CapabilityId == DailyTimeCapabilities.Due) DailyTimeCapabilities.Validate(resolved);
             if (resolved.CapabilityId == IntervalCapabilities.Elapsed) IntervalCapabilities.Validate(resolved);
             if (resolved.CapabilityId == SystemEventCapabilities.Event) SystemEventCapabilities.Validate(resolved);
