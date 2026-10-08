@@ -7,6 +7,8 @@ namespace Axiom.WinUI;
 
 public sealed partial class WorkbenchWindow
 {
+    private string ruleSearch = "";
+    private int ruleStateFilter;
     private TaskCapability? FindCapability(TaskInvocation? invocation, TaskCapabilityKind kind) => invocation is null ? null :
         status?.Capabilities.FirstOrDefault(x => x.Id == invocation.CapabilityId && x.Kind == kind);
     private string ActionWarning(TaskInvocation invocation) => FindCapability(invocation, TaskCapabilityKind.Action)?.EditWarning ?? "";
@@ -58,16 +60,40 @@ public sealed partial class WorkbenchWindow
             empty.Children.Add(Text("检测条件  →  执行动作  →  查看结果", 16, Accent, true));
             content.Children.Add(Card(empty, Surface, 32));
         }
-        foreach (var task in status?.Tasks ?? [])
+        if (status?.Tasks.Length is > 0)
         {
-            var body = Column(14);
-            var heading = Row(12); heading.Children.Add(Text(task.Title, 20, Ink, true)); heading.Children.Add(Badge(task.Paused ? "已暂停" : "已启用", task.Paused)); body.Children.Add(heading);
-            body.Children.Add(Text("检测  " + Summary(task.Detection, TaskCapabilityKind.Detection), 14, Muted));
-            body.Children.Add(Text("执行  " + Summary(task.Action, TaskCapabilityKind.Action), 15, Ink, true));
-            var actions = Row(8);
-            var edit = Action("编辑"); edit.Click += (_, _) => SelectRule(task);
-            var toggle = Action(task.Paused ? "启用" : "暂停"); toggle.Click += async (_, _) => await ToggleRuleAsync(task);
-            actions.Children.Add(edit); actions.Children.Add(toggle); body.Children.Add(actions); content.Children.Add(Card(body));
+            var filter = new Grid { ColumnSpacing = 12 };
+            filter.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            filter.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var search = new TextBox { Header = "查找任务", PlaceholderText = "任务名称、检测或动作名称", Text = ruleSearch, MaxLength = 200 };
+            var state = new ComboBox { Header = "显示", ItemsSource = new[] { "全部任务", "仅已启用", "仅已暂停" }, SelectedIndex = ruleStateFilter, MinWidth = 150 };
+            filter.Children.Add(search); Grid.SetColumn(state, 1); filter.Children.Add(state); content.Children.Add(filter);
+            var shown = Text("", 12, Muted); var cards = Column(24); content.Children.Add(shown); content.Children.Add(cards);
+            search.TextChanged += (_, _) => { ruleSearch = search.Text; ShowRules(); };
+            state.SelectionChanged += (_, _) => { ruleStateFilter = Math.Max(0, state.SelectedIndex); ShowRules(); };
+            ShowRules();
+            void ShowRules()
+            {
+                var query = ruleSearch.Trim();
+                var visible = (status?.Tasks ?? []).Where(task => (ruleStateFilter == 0 || task.Paused == (ruleStateFilter == 2)) &&
+                    (query.Length == 0 || task.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                     (FindCapability(task.Detection, TaskCapabilityKind.Detection)?.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                     (FindCapability(task.Action, TaskCapabilityKind.Action)?.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false))).ToArray();
+                shown.Text = $"显示 {visible.Length} / {status?.Tasks.Length ?? 0} 个任务";
+                cards.Children.Clear();
+                if (visible.Length == 0) cards.Children.Add(Text("没有匹配的任务，请修改关键词或切换显示范围。", 14, Muted));
+                foreach (var task in visible)
+                {
+                    var body = Column(14);
+                    var heading = Row(12); heading.Children.Add(Text(task.Title, 20, Ink, true)); heading.Children.Add(Badge(task.Paused ? "已暂停" : "已启用", task.Paused)); body.Children.Add(heading);
+                    body.Children.Add(Text("检测  " + Summary(task.Detection, TaskCapabilityKind.Detection), 14, Muted));
+                    body.Children.Add(Text("执行  " + Summary(task.Action, TaskCapabilityKind.Action), 15, Ink, true));
+                    var actions = Row(8);
+                    var edit = Action("编辑"); edit.Click += (_, _) => SelectRule(task);
+                    var toggle = Action(task.Paused ? "启用" : "暂停"); toggle.Click += async (_, _) => await ToggleRuleAsync(task);
+                    actions.Children.Add(edit); actions.Children.Add(toggle); body.Children.Add(actions); cards.Children.Add(Card(body));
+                }
+            }
         }
         if (status is not null)
         {
