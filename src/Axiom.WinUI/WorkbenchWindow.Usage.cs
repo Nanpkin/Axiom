@@ -92,7 +92,7 @@ public sealed partial class WorkbenchWindow
             var restore = Action($"重新显示已处理建议（{usageSnapshot.DismissedSuggestions}）");
             restore.Click += async (_, _) => await UsageCommandAsync("restore-suggestions", selected.Id);
             content.Children.Add(restore);
-            content.Children.Add(Text("撤销与这次记录中已处理模式相关的本地反馈，让这些模式重新显示；不改观察或已有规则。生成草稿后未保存，也可从这里重新审阅。", 12, Muted));
+            content.Children.Add(Text("每次撤销最多12个与本次记录相关的已处理反馈，让这些模式重新显示；不改观察或已有规则。生成草稿后未保存，也可从这里重新审阅。", 12, Muted));
         }
         foreach (var suggestion in usageSnapshot.Suggestions ?? [])
         {

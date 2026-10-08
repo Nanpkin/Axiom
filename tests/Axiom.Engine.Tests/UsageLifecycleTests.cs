@@ -95,6 +95,48 @@ public sealed class UsageLifecycleTests
     }
 
     [Fact(Timeout = 10000)]
+    public async Task HandlingVisiblePatternsRevealsTheNextCandidateAndRestoresInBoundedBatches()
+    {
+        var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".db"); var now = DateTimeOffset.UtcNow;
+        try
+        {
+            using var journal = new UsageJournal(path); var source = new Source();
+            var recorder = new UsageRecorder(new(5, false, false, [], WindowStates: true), now.AddMinutes(-3));
+            for (var repeat = 0; repeat < 3; repeat++)
+                for (var app = 0; app < 13; app++)
+                {
+                    var at = recorder.Session.StartedUtc.AddSeconds(repeat * 40 + app * 2);
+                    var executable = Path.Combine(Path.GetTempPath(), "SyntheticWindow" + app + ".exe");
+                    recorder.Add(new(at, "window-shown", executable)); recorder.Add(new(at.AddSeconds(1), "window-left", executable));
+                }
+            recorder.State("stopped", atUtc: now); journal.Save(recorder.Session);
+            Assert.Equal(13, UsageAnalysis.AnalyzeCandidates(recorder.Session).Length);
+            var visible = UsageAnalysis.Analyze(recorder.Session); Assert.Equal(12, visible.Length);
+            foreach (var suggestion in visible) journal.Feedback(recorder.Session.Id, UsageAnalysis.FeedbackKey(recorder.Session, suggestion), "ignored");
+            var modules = BuiltInAutomationPlugins.Create();
+            var catalog = Catalog with { Capabilities = [.. modules.SelectMany(m => m.Detections.Select(d => d.Descriptor).Concat(m.Actions.Select(a => a.Descriptor)))], Combinations = [.. modules.SelectMany(m => m.Combinations)] };
+            await using var controller = new UsageObservationController(journal, source);
+            Task<AutomationMessage> Request(string operation, string? suggestion = null) => controller.HandleAsync(new(1, "usage", "synthetic", Usage: new(operation, SessionId: recorder.Session.Id, FeedbackId: suggestion)), catalog, default);
+            var read = (await Request("read")).UsageSnapshot!; var next = Assert.Single(read.Suggestions!);
+            Assert.DoesNotContain(visible, s => s.Id == next.Id); Assert.Equal(12, read.DismissedSuggestions);
+            var export = (await Request("export")).ExportText!;
+            using (var json = System.Text.Json.JsonDocument.Parse(export[UsageAnalysis.Prompt.Length..]))
+            {
+                Assert.Equal(1, json.RootElement.GetProperty("patterns").GetArrayLength());
+                Assert.Equal(12, json.RootElement.GetProperty("handledPatterns").GetArrayLength());
+            }
+            var drafted = await Request("draft", next.Id); Assert.True(drafted.Task!.Paused); Assert.Equal(0, drafted.Task.Version);
+            Assert.Empty(drafted.UsageSnapshot!.Suggestions!);
+            var restored = (await Request("restore-suggestions")).UsageSnapshot!;
+            Assert.Equal(12, restored.Suggestions!.Length); Assert.Equal(1, restored.DismissedSuggestions);
+            restored = (await Request("restore-suggestions")).UsageSnapshot!;
+            Assert.Equal(12, restored.Suggestions!.Length); Assert.Equal(0, restored.DismissedSuggestions);
+            Assert.Equal(recorder.Session.Events.Length, restored.TotalEvents); Assert.Empty(journal.Dismissed(null)); Assert.Equal(0, source.Starts);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact(Timeout = 10000)]
     public async Task DuplicateAndOutOfScopeSamplesDoNotRewriteStorageButGapsAndExpiryStillPersist()
     {
         var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".db");

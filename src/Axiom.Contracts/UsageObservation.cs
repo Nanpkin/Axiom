@@ -16,6 +16,7 @@ public sealed record UsageSuggestion(string Id, string Kind, string Title, strin
 public static class UsageValidation
 {
     public const int MaximumEvents = 4096;
+    public const int MaximumCandidatePatterns = 256;
     public const int MaximumObjects = 128;
     public const int MaximumSessions = 12;
     public const int MaximumExportBytes = 65536;

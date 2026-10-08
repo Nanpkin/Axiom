@@ -15,11 +15,13 @@ public static class UsageAnalysis
 {
     private static readonly JsonSerializerOptions Json = new() { UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow, WriteIndented = true, MaxDepth = 16, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.Create(System.Text.Unicode.UnicodeRanges.All) };
     private static readonly JsonSerializerOptions CompactJson = new(Json) { WriteIndented = false };
-    public static UsageSuggestion[] Analyze(UsageSession session)
+    public static UsageSuggestion[] Analyze(UsageSession session) => [.. AnalyzeCandidates(session).Take(12)];
+    // Bounded transient candidates allow feedback to reveal the next useful patterns without expanding the UI or export.
+    public static UsageSuggestion[] AnalyzeCandidates(UsageSession session)
     {
         var events = session.Events.Where(e => e.Kind == "foreground" && e.ObjectId is not null && e.Origin != "axiom").ToArray();
         var pairs = Pairs(session, "foreground", TimeSpan.FromMinutes(2)).GroupBy(p => (p.First.ObjectId, p.Second.ObjectId));
-        var switches = pairs.Where(g => g.Count() >= 3).OrderByDescending(g => g.Count()).Take(12).Select(g =>
+        var switches = pairs.Where(g => g.Count() >= 3).OrderByDescending(g => g.Count()).Select(g =>
         {
             var count = g.Count(); var opportunities = events.Count(e => e.ObjectId == g.Key.Item1);
             var average = (int)g.Average(p => (p.Second.AtUtc - p.First.AtUtc).TotalSeconds);
@@ -29,13 +31,13 @@ public static class UsageAnalysis
                 (session.Gaps.Length > 0 ? "观察存在间断。" : ""), [g.Key.Item1!, g.Key.Item2!], count, opportunities, EvidenceSamples: Evidence(session, g));
         }).ToArray();
         var starts = Pairs(session, "process-start", TimeSpan.FromSeconds(30)).GroupBy(p => (p.First.ObjectId, p.Second.ObjectId))
-            .Where(g => g.Count() >= 3).OrderByDescending(g => g.Count()).Take(8).Select(g => new UsageSuggestion(
+            .Where(g => g.Count() >= 3).OrderByDescending(g => g.Count()).Select(g => new UsageSuggestion(
                 "launch:" + g.Key.Item1 + ":" + g.Key.Item2, "existing", "经常相继启动两个程序",
                 $"{g.Count()} 次在 30 秒内相继启动；前一个程序共出现 {session.Events.Count(e => e.Kind == "process-start" && e.ObjectId == g.Key.Item1)} 次启动机会。",
                 "来源未知，相关不代表因果。仅在你确认属于重复准备工作后审阅规则。检测按程序名，启动按完整路径；已经运行则跳过，结束后不自动关闭。已有 Axiom 动作或记录缺口之间的序列不计入；本次已知 Axiom 动作目标不参与建议。",
                 [g.Key.Item1!, g.Key.Item2!], g.Count(), session.Events.Count(e => e.Kind == "process-start" && e.ObjectId == g.Key.Item1), EvidenceSamples: Evidence(session, g)));
         var exits = Pairs(session, "process-exit", TimeSpan.FromSeconds(30)).GroupBy(p => (p.First.ObjectId, p.Second.ObjectId))
-            .Where(g => g.Count() >= 3).OrderByDescending(g => g.Count()).Take(8).Select(g => new UsageSuggestion(
+            .Where(g => g.Count() >= 3).OrderByDescending(g => g.Count()).Select(g => new UsageSuggestion(
                 "exit:" + g.Key.Item1 + ":" + g.Key.Item2, "existing", "经常相继退出两个程序",
                 $"{g.Count()} 次在 30 秒内相继退出；前一个程序有 {session.Events.Count(e => e.Kind == "process-exit" && e.ObjectId == g.Key.Item1)} 次已观察退出机会。",
                 "退出原因未知，可能是自动退出或崩溃，不证明手动收尾。只覆盖观察期间新核验的进程。候选在检测程序的最后实例退出时，请求正常关闭配套程序最近启动的一个实例；不强制结束、不自动重开。多实例退出次数不等同规则触发次数；未保存内容可能需要确认。Axiom 动作目标和记录缺口不参与序列。",
@@ -71,7 +73,7 @@ public static class UsageAnalysis
         return [.. environmentWindows.Concat(focusWindows).Concat(afterEvents).Concat(starts).Concat(exits).Concat(windowCleanup).Concat(windows).Concat(switches).Select(s =>
             s.Kind == "existing" && !s.ObjectIds.All(id => CanUse(session.Objects.Single(o => o.Id == id).Executable))
                 ? s with { Kind = "insufficient", Limitation = s.Limitation + "此对象不符合当前程序动作的安全范围，不能生成规则。" } : s)
-            .OrderBy(s => s.Kind == "existing" ? 0 : 1).ThenByDescending(s => s.Occurrences).ThenBy(s => s.Id, StringComparer.Ordinal).Take(12)];
+            .OrderBy(s => s.Kind == "existing" ? 0 : 1).ThenByDescending(s => s.Occurrences).ThenBy(s => s.Id, StringComparer.Ordinal).Take(UsageValidation.MaximumCandidatePatterns)];
     }
     private static IEnumerable<(UsageEvent First, UsageEvent Second)> ForegroundLayoutPairs(UsageSession session)
     {
@@ -235,9 +237,9 @@ public static class UsageAnalysis
     }
     public static string Summary(UsageSession session, AutomationSnapshot catalog, IReadOnlySet<string>? dismissed = null)
     {
-        var allSuggestions = Analyze(session);
-        var handled = allSuggestions.Where(s => dismissed?.Contains(FeedbackKey(session, s)) == true).ToArray();
-        var suggestions = allSuggestions.Except(handled).ToArray();
+        var allSuggestions = AnalyzeCandidates(session);
+        var handled = allSuggestions.Where(s => dismissed?.Contains(FeedbackKey(session, s)) == true).Take(12).ToArray();
+        var suggestions = allSuggestions.Where(s => dismissed?.Contains(FeedbackKey(session, s)) != true).Take(12).ToArray();
         var body = new
         {
             version = 1, sessionId = session.Id, environment = new { platform = "Windows 11 x64", source = "user-enabled-metadata-observation" },
@@ -250,7 +252,7 @@ public static class UsageAnalysis
             fieldKinds = FieldKinds(),
             capabilities = SafeCatalog(catalog),
             combinations = catalog.Combinations,
-            omissions = "不含路径、标题、设备标识或完整原始事件；最多 12 个模式及 12 条代表事件。前台切换不能解释全部流程，未知来源不视为手动操作。"
+            omissions = "不含路径、标题、设备标识或完整原始事件；本地至多评估256个候选；最多12个未处理模式、12个已处理标记及12条代表事件。前台切换不能解释全部流程，未知来源不视为手动操作。"
         };
         var result = JsonSerializer.Serialize(body, Json);
         var budget = UsageValidation.MaximumExportBytes - Encoding.UTF8.GetByteCount(Prompt);
