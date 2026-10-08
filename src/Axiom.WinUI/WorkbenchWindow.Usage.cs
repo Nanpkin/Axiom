@@ -102,17 +102,18 @@ public sealed partial class WorkbenchWindow
         var clear = Action("清空记录"); clear.Click += async (_, _) => { if (await ConfirmAsync("清空使用观察？", "全部观察与相关反馈将被删除；现有规则保留。", "清空")) { usageOffset = 0; usageSelection = null; await UsageCommandAsync("clear"); } }; removal.Children.Add(clear); content.Children.Add(removal);
     }
     private static string StateName(string state) => state switch { "recording" => "观察中", "paused" => "已暂停", _ => "已结束" };
-    private static string EventName(string kind) => kind switch { "foreground" => "前台切换", "process-start" => "程序启动", "axiom-action" => "Axiom 发起动作", _ => "记录间断" };
+    private static string EventName(string kind) => kind switch { "foreground" => "前台切换", "process-start" => "程序启动", "axiom-action" => "Axiom 发起动作", "system-locked" => "锁屏", "system-unlocked" => "解锁", "system-resumed" => "睡眠恢复", "system-ac" => "交流电供电", "system-battery" => "电池供电", _ => "记录间断" };
     private static string LocalName(UsageSession session, string? id) => session.Objects.FirstOrDefault(o => o.Id == id) is { } item ? Path.GetFileName(item.Executable) : "—";
 
     private async Task StartUsageAsync()
     {
         if (busy || activeDialog is not null) return;
         var body = Column(12); var foreground = new CheckBox { Content = "前台应用切换（不含窗口标题）", IsChecked = true }; var starts = new CheckBox { Content = "程序启动（不含命令行）", IsChecked = true };
+        var system = new CheckBox { Content = "锁屏、解锁、唤醒及供电变化", IsChecked = true };
         var duration = new ComboBox { Header = "持续时间", ItemsSource = new[] { "5 分钟", "15 分钟", "30 分钟", "60 分钟", "120 分钟" }, SelectedIndex = 1 };
         var exclusions = new TextBox { Header = "排除应用：每行一个 exe 文件名", AcceptsReturn = true, Height = 80, MaxLength = 17000 };
         var purpose = new TextBox { Header = "我准备做什么（选填，会进入导出预览）", MaxLength = 500 };
-        body.Children.Add(foreground); body.Children.Add(starts); body.Children.Add(duration); body.Children.Add(exclusions); body.Children.Add(purpose);
+        body.Children.Add(foreground); body.Children.Add(starts); body.Children.Add(system); body.Children.Add(duration); body.Children.Add(exclusions); body.Children.Add(purpose);
         body.Children.Add(Text("记录只留本机；关闭窗口即停止，重启不会自动恢复。Axiom 动作会单独标记，其他事件来源未知。", 12, Muted));
         var dialog = new ContentDialog { Title = "主动开启使用观察", Content = body, PrimaryButtonText = "开始", CloseButtonText = "取消", DefaultButton = ContentDialogButton.Close, XamlRoot = shell.XamlRoot };
         if (await ShowDialogAsync(dialog) != ContentDialogResult.Primary) return;
@@ -120,7 +121,7 @@ public sealed partial class WorkbenchWindow
         try
         {
             var options = new UsageOptions(new[] { 5, 15, 30, 60, 120 }[duration.SelectedIndex], foreground.IsChecked == true, starts.IsChecked == true,
-                exclusions.Text.Split(['\r', '\n'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries), purpose.Text);
+                exclusions.Text.Split(['\r', '\n'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries), purpose.Text, system.IsChecked == true);
             UsageValidation.Options(options);
             usageLease?.Dispose(); var sid = WindowsIdentity.GetCurrent().User?.Value ?? throw new UnauthorizedAccessException();
             var lease = LocalUserPipe.Create(AutomationProtocol.PipeName(sid)); usageLease = lease;
