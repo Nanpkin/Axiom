@@ -7,8 +7,10 @@ namespace Axiom.Engine.Tests;
 public sealed class WindowsSessionEventTests
 {
     [Fact(Timeout = 15000)]
-    public void RealSharedMessageWindowReleasesOnlyTheCallingLeaseAndCanBeRecreated()
+    public async Task RealSharedMessageWindowReleasesOnlyTheCallingLeaseAndCanBeRecreated()
     {
+        await Task.Run(() =>
+        {
         Assert.Equal(0, WindowsSessionEvents.ActiveConsumers);
         using (var one = new WindowsSessionEvents())
         {
@@ -19,5 +21,6 @@ public sealed class WindowsSessionEventTests
         Assert.Equal(0, WindowsSessionEvents.ActiveConsumers);
         using (var again = new WindowsSessionEvents()) Assert.Equal(1, WindowsSessionEvents.ActiveConsumers);
         Assert.Equal(0, WindowsSessionEvents.ActiveConsumers);
+        });
     }
 }

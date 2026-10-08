@@ -68,7 +68,16 @@ internal sealed class AutomationPipeServer(ImmutableArray<IAutomationTaskBackend
                         {
                             await AutomationProtocol.WriteAsync(pipe, result, deadline.Token);
                             deadline.CancelAfter(Timeout.InfiniteTimeSpan);
-                            await pipe.ReadExactlyAsync(new byte[1], deadline.Token);
+                            var disconnected = pipe.ReadExactlyAsync(new byte[1], deadline.Token).AsTask();
+                            var ended = usage.WaitForEndAsync(active, deadline.Token);
+                            if (await Task.WhenAny(disconnected, ended) == ended && !exit.IsCancellationRequested)
+                            {
+                                await ended;
+                                using var stoppedWrite = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+                                await AutomationProtocol.WriteAsync(pipe, new(1, "usage-ended", request.RequestId), stoppedWrite.Token);
+                            }
+                            deadline.Cancel();
+                            try { await disconnected; } catch (Exception error) when (error is IOException or OperationCanceledException) { }
                         }
                         finally { await usage.EndLeaseAsync(active); }
                     }

@@ -13,6 +13,8 @@ public sealed class SystemEventTests
     [InlineData("resumed")]
     [InlineData("ac")]
     [InlineData("battery")]
+    [InlineData("network-up")]
+    [InlineData("network-down")]
     public void SessionSignalsCompileToEventEdgesAndSaveAsOrdinaryRules(string kind)
     {
         var detection = new TaskInvocation(SystemEventCapabilities.Event, 1, ImmutableDictionary<string,string>.Empty.Add("event", kind));

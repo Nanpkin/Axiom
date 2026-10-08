@@ -55,7 +55,7 @@ public sealed partial class WorkbenchWindow : Window
         shell = BuildShell();
         Content = shell;
         InitializeTheme();
-        Closed += (_, _) => { closed = true; usageLease?.Dispose(); usageExpiry?.Cancel(); };
+        Closed += (_, _) => { closed = true; usageLease?.Dispose(); };
         AppWindow.Closing += async (_, args) =>
         {
             if (closingConfirmed) return;

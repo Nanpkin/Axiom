@@ -24,3 +24,5 @@ UsageObservationTests
 SystemEventTests
 
 UsageLifecycleTests
+
+OpenTargetTests

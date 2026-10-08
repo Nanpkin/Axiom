@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Threading.Channels;
@@ -45,13 +46,14 @@ public sealed class WindowsSessionEvents : IDisposable
         internal nint Window;
         private readonly Procedure procedure;
         private byte supply = 255;
+        private bool network;
         internal Hub() { procedure = Handle; new Thread(Run) { IsBackground = true, Name = "Axiom session and power events" }.Start(); }
         private void Run()
         {
             var name = "AxiomSystemEvents-" + Guid.NewGuid().ToString("N");
             var instance = GetModuleHandle(null);
             var cls = new WindowClass { Size = (uint)Marshal.SizeOf<WindowClass>(), Procedure = procedure, Name = name, Instance = instance };
-            var registered = false; var notified = false;
+            var registered = false; var notified = false; var networkSubscribed = false;
             try
             {
                 if (RegisterClassEx(ref cls) == 0) throw new Win32Exception(Marshal.GetLastWin32Error()); registered = true;
@@ -59,6 +61,8 @@ public sealed class WindowsSessionEvents : IDisposable
                 if (Window == 0) throw new Win32Exception(Marshal.GetLastWin32Error());
                 if (!WTSRegisterSessionNotification(Window, 0)) throw new Win32Exception(Marshal.GetLastWin32Error()); notified = true;
                 if (GetSystemPowerStatus(out var initial)) supply = initial.AcLine;
+                network = NetworkInterface.GetIsNetworkAvailable();
+                NetworkChange.NetworkAvailabilityChanged += NetworkChanged; networkSubscribed = true;
                 Ready.TrySetResult();
                 int result;
                 while ((result = GetMessage(out var message, 0, 0, 0)) > 0) { TranslateMessage(ref message); DispatchMessage(ref message); }
@@ -71,11 +75,20 @@ public sealed class WindowsSessionEvents : IDisposable
             }
             finally
             {
+                if (networkSubscribed) NetworkChange.NetworkAvailabilityChanged -= NetworkChanged;
                 if (notified) WTSUnRegisterSessionNotification(Window);
                 if (Window != 0) DestroyWindow(Window);
                 if (registered) UnregisterClass(name, instance);
                 lock (Gate) foreach (var client in Clients) client.queue.Writer.TryComplete(new IOException("系统通知已停止。"));
                 Stopped.TrySetResult();
+            }
+        }
+        private void NetworkChanged(object? sender, NetworkAvailabilityEventArgs args)
+        {
+            lock (Gate)
+            {
+                if (network == args.IsAvailable) return;
+                network = args.IsAvailable; Publish(network ? "network-up" : "network-down");
             }
         }
         private nint Handle(nint window, uint message, nint w, nint l)
