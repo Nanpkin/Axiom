@@ -38,3 +38,5 @@ UsageWindowTests
 AutomationTemplateTests
 
 BatteryThresholdTests
+
+IntervalTests
