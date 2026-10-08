@@ -15,21 +15,30 @@ public static class WindowCapabilities
          new("title", "窗口标题包含", TaskFieldKind.Text, false, "留空匹配可见主窗口；填写可避免关闭同一程序的其他主窗口。", "", 256, [], Group: "更多选项")],
         "每次触发为每个目标关闭一个可见主窗口，独立等待并报告结果；不持续关闭后来手动打开的窗口。",
         "关闭效果与点击 × 相同，由目标程序决定是否留在托盘。不强制结束进程，不处理确认对话框。");
+    public const string State = "window.state";
+    public static TaskCapability StateDescriptor { get; } = new(State, 1, TaskCapabilityKind.Action, "窗口", "整理窗口状态",
+        "为选定程序最小化、最大化或还原一个主窗口。一次执行，之后用户可自由调整。",
+        [.. Descriptor.Fields, new("state", "窗口状态", TaskFieldKind.Choice, true, "不会关闭程序，不自动恢复之前的状态。", "maximize", 16,
+            [new("minimize", "最小化"), new("maximize", "最大化"), new("restore", "还原")])],
+        "等待目标窗口出现后执行一次，结果读回确认。暂停会取消尚未执行的等待。",
+        "这是一次性窗口操作；不持续锁定、不抢回手动调整、不在条件结束后写回旧状态。");
     public static string Value(TaskInvocation config, string field) => config.Parameters.GetValueOrDefault(field)
-        ?? Descriptor.Fields.Single(f => f.Id == field).DefaultValue ?? "";
+        ?? (config.CapabilityId == State ? StateDescriptor : Descriptor).Fields.Single(f => f.Id == field).DefaultValue ?? "";
     public static decimal Number(TaskInvocation config, string field) => decimal.Parse(Value(config, field), CultureInfo.InvariantCulture);
     public static string Validate(TaskInvocation config) => ValidateTargets(config).Single();
     public static string[] ValidateTargets(TaskInvocation config)
     {
-        if (config.CapabilityId != Close || config.SchemaVersion != 1 || config.Parameters is null || config.Parameters.Keys.Any(k => !Descriptor.Fields.Any(f => f.Id == k)))
+        var descriptor = config.CapabilityId == State ? StateDescriptor : Descriptor;
+        if (config.CapabilityId is not (Close or State) || config.SchemaVersion != 1 || config.Parameters is null || config.Parameters.Keys.Any(k => !descriptor.Fields.Any(f => f.Id == k)))
             throw new ArgumentException("窗口操作配置无效。");
-        foreach (var field in Descriptor.Fields)
+        foreach (var field in descriptor.Fields)
         {
             var value = Value(config, field.Id);
             if (field.Required && string.IsNullOrWhiteSpace(value) || value.Length > field.MaximumLength) throw new ArgumentException("请正确填写" + field.Label + "。");
             if (field.Kind == TaskFieldKind.Number && (!decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out var n) || n < field.Minimum || n > field.Maximum))
                 throw new ArgumentException(field.Label + "超出范围。");
         }
+        if (config.CapabilityId == State && Value(config, "state") is not ("minimize" or "maximize" or "restore")) throw new ArgumentException("窗口状态无效。");
         return ExecutablePaths.Parse(Value(config, "executable"));
     }
 }

@@ -49,7 +49,7 @@ internal sealed class WindowsWindowEvents : IDisposable
         private void Run()
         {
             ThreadId = GetCurrentThreadId(); PeekMessage(out _, 0, 0, 0, 0);
-            var hook = SetWinEventHook(0x8000, 0x8003, 0, callback, 0, 0, 0);
+            var hook = SetWinEventHook(0x8000, 0x800B, 0, callback, 0, 0, 0);
             if (hook == 0) { Ready.TrySetException(new Win32Exception(Marshal.GetLastWin32Error())); Stopped.TrySetResult(); return; }
             Ready.TrySetResult();
             try { while (GetMessage(out _, 0, 0, 0) > 0) { } }
@@ -57,6 +57,7 @@ internal sealed class WindowsWindowEvents : IDisposable
         }
         private void OnEvent(nint hook, uint kind, nint window, int objectId, int childId, uint thread, uint time)
         {
+            if (kind is not (0x8000 or 0x8001 or 0x8002 or 0x8003 or 0x800A or 0x800B)) return;
             if (window == 0 || objectId != 0 || childId != 0 || kind is 0x8000 or 0x8002 && GetAncestor(window, 2) != window) return;
             lock (Gate)
                 foreach (var client in Clients)

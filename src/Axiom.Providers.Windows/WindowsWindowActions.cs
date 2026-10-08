@@ -9,8 +9,9 @@ namespace Axiom.Providers.Windows;
 [SupportedOSPlatform("windows")]
 public static class WindowsWindowActions
 {
-    public static async Task<ProgramControlResult> CloseAsync(string path, string title, TimeSpan wait, CancellationToken token)
+    public static async Task<ProgramControlResult> CloseAsync(string path, string title, TimeSpan wait, CancellationToken token, string? state = null)
     {
+        if (state is not (null or "minimize" or "maximize" or "restore")) throw new ArgumentException("窗口状态无效。");
         if (wait < TimeSpan.FromSeconds(1) || wait > TimeSpan.FromSeconds(30)) throw new ArgumentOutOfRangeException(nameof(wait));
         if (!File.Exists(path)) return new(false, "目标程序不存在，请重新选择路径。");
         token.ThrowIfCancellationRequested();
@@ -54,6 +55,17 @@ public static class WindowsWindowActions
         {
             if (!current.Any(p => p.Id == pid) || !Candidate(target, title) || GetWindowThreadProcessId(target, out var owner) == 0 || owner != pid)
                 return new(false, "目标窗口已变化，未发出关闭请求。");
+            if (state is not null)
+            {
+                bool Confirmed() => Visible(target, pid) && (state == "minimize" ? IsIconic(target) : state == "maximize" ? IsZoomed(target) : !IsIconic(target) && !IsZoomed(target));
+                if (Confirmed()) return new(true, "窗口已处于所选状态；未重复操作。");
+                if (!ShowWindowAsync(target, state == "minimize" ? 6 : state == "maximize" ? 3 : 9)) return new(false, "无法更改窗口状态。");
+                using var stateDeadline = CancellationTokenSource.CreateLinkedTokenSource(token); stateDeadline.CancelAfter(TimeSpan.FromSeconds(3));
+                try { while (!Confirmed()) await events.Events.Reader.ReadAsync(stateDeadline.Token); }
+                catch (OperationCanceledException) when (!token.IsCancellationRequested)
+                { if (!Confirmed()) return new(false, "已请求整理，但窗口状态未确认；不会自动重试。"); }
+                return new(true, "窗口状态已确认；后续手动调整不受干预。");
+            }
             if (!PostMessage(target, 0x0010, 0, 0)) return new(false, "无法请求关闭窗口：" + new Win32Exception(Marshal.GetLastWin32Error()).Message);
             using var confirmation = CancellationTokenSource.CreateLinkedTokenSource(token); confirmation.CancelAfter(TimeSpan.FromSeconds(3));
             try
@@ -75,6 +87,9 @@ public static class WindowsWindowActions
         return text.ToString().Contains(title,StringComparison.OrdinalIgnoreCase);
     }
     private static bool Visible(nint window,int pid) => IsWindow(window) && IsWindowVisible(window) && GetWindowThreadProcessId(window,out var owner) != 0 && owner == pid;
+    [DllImport("user32.dll")] private static extern bool IsIconic(nint window);
+    [DllImport("user32.dll")] private static extern bool IsZoomed(nint window);
+    [DllImport("user32.dll")] private static extern bool ShowWindowAsync(nint window, int command);
     private delegate bool EnumCallback(nint window,nint state);
     [DllImport("user32.dll")] private static extern bool EnumWindows(EnumCallback callback,nint state);
     [DllImport("user32.dll")] private static extern bool IsWindow(nint window);
