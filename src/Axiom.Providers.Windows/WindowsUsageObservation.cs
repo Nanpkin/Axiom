@@ -11,7 +11,7 @@ public sealed record NativeUsageSample(DateTimeOffset AtUtc, string Kind, string
 [SupportedOSPlatform("windows")]
 public static class WindowsUsageObservation
 {
-    public static async Task RunAsync(bool foreground, bool starts, bool systemEvents, bool exits, bool windowStates, string[] excludedApplications, Action<NativeUsageSample> publish, CancellationToken token)
+    public static async Task RunAsync(bool foreground, bool starts, bool systemEvents, bool exits, bool windowStates, string[] excludedApplications, Action<NativeUsageSample> publish, CancellationToken token, bool audioEvents = false)
     {
         using var currentProcess = Process.GetCurrentProcess();
         using var identity = WindowsIdentity.GetCurrent();
@@ -24,6 +24,8 @@ public static class WindowsUsageObservation
         using var source = starts || exits ? new WindowsProcessStartEvents([], observeAll: true) : null;
         using var window = foreground ? new WindowsForegroundEvents() : null;
         using var system = systemEvents ? new WindowsSessionEvents() : null;
+        using var audio = audioEvents ? new WindowsAudioEvents() : null;
+        if (audio is not null) jobs.Add(Audio());
         if (system is not null) jobs.Add(System());
         if (source is not null) jobs.Add(Starts());
         if (window is not null) jobs.Add(Windows());
@@ -31,6 +33,10 @@ public static class WindowsUsageObservation
         try { await await Task.WhenAny(jobs); }
         finally { lifetime.Cancel(); try { await Task.WhenAll(jobs.Where(t => !ReferenceEquals(t, exitTracker.Failure))); } catch (OperationCanceledException) { } }
 
+        async Task Audio()
+        {
+            await foreach (var kind in audio!.Events.ReadAllAsync(lifetime.Token)) publish(new(DateTimeOffset.UtcNow, "audio-" + kind, null));
+        }
         async Task System()
         {
             await foreach (var kind in system!.Events.ReadAllAsync(lifetime.Token)) publish(new(DateTimeOffset.UtcNow, "system-" + kind, null));

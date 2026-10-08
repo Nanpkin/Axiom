@@ -40,3 +40,5 @@ AutomationTemplateTests
 BatteryThresholdTests
 
 IntervalTests
+
+AudioCapabilityTests

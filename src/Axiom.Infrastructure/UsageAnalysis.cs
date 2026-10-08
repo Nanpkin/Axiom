@@ -56,10 +56,10 @@ public static class UsageAnalysis
             "来源未知，可能是应用或系统自行布局，不证明手动重复劳动。只记录显示变化类别，没有保存分辨率或显示器标识，不能识别特定屏幕组合；并非所有插拔都会通知。候选每次通知后整理一个匹配窗口，按执行时该窗口所在显示器工作区处理，不恢复原布局、不持续压制手动调整。多窗口时可能不是同一个窗口。缺口、其他系统边界和Axiom动作会中断序列。",
             [g.Key.ObjectId!], g.Count(), session.Events.Count(e => e.Kind == "system-display-changed"), EventKind: "display-changed", EvidenceSamples: Evidence(session, g), WindowState: WindowCommand(g.Key.Kind)));
         var afterEvents = SystemPairs(session).GroupBy(p => (p.First.Kind, p.Second.ObjectId)).Where(g => g.Count() >= 3).Select(g => new UsageSuggestion(
-            "event:" + g.Key.Kind + ":" + g.Key.ObjectId, "existing", "系统事件后反复打开同一程序",
+            "event:" + g.Key.Kind + ":" + g.Key.ObjectId, "existing", "环境事件后反复打开同一程序",
             $"{g.Count()} 次在 {SystemName(g.Key.Kind)} 后一分钟内启动；此事件共出现 {session.Events.Count(e => e.Kind == g.Key.Kind)} 次。",
-            "来源未知，不证明是手动操作或因果。先确认这是你希望自动完成的步骤。候选只启动一次，已运行则跳过；之后不自动关闭。缺口或 Axiom 动作会中断序列，已知动作目标不参加分析。" + (g.Key.Kind == "system-usb-arrived" ? "触发范围是任意USB设备接入通知，不能筛选某个设备；复合设备或系统重枚举可能产生多次。" : ""),
-            [g.Key.ObjectId!], g.Count(), session.Events.Count(e => e.Kind == g.Key.Kind), g.Key.Kind[7..], Evidence(session, g)));
+            "来源未知，不证明是手动操作或因果。先确认这是你希望自动完成的步骤。候选只启动一次，已运行则跳过；之后不自动关闭。缺口或 Axiom 动作会中断序列，已知动作目标不参加分析。" + (g.Key.Kind == "system-usb-arrived" ? "触发范围是任意USB设备接入通知，不能筛选某个设备；复合设备或系统重枚举可能产生多次。" : g.Key.Kind.StartsWith("audio-", StringComparison.Ordinal) ? "触发范围是Windows默认音频角色变化，不能筛选具体设备；应用自己的音频选择可能不受影响。" : ""),
+            [g.Key.ObjectId!], g.Count(), session.Events.Count(e => e.Kind == g.Key.Kind), g.Key.Kind.StartsWith("audio-", StringComparison.Ordinal) ? g.Key.Kind : g.Key.Kind[7..], Evidence(session, g)));
         return [.. environmentWindows.Concat(afterEvents).Concat(starts).Concat(exits).Concat(windowCleanup).Concat(windows).Concat(switches).OrderByDescending(s => s.Occurrences).Take(12).Select(s =>
             s.Kind == "existing" && !s.ObjectIds.All(id => CanUse(session.Objects.Single(o => o.Id == id).Executable))
                 ? s with { Kind = "insufficient", Limitation = s.Limitation + "此对象不符合当前程序动作的安全范围，不能生成规则。" } : s)];
@@ -71,7 +71,7 @@ public static class UsageAnalysis
         foreach (var item in session.Events.OrderBy(e => e.AtUtc))
         {
             if (item.Kind == "system-display-changed") { changed = item; seen.Clear(); continue; }
-            if (item.Kind is "gap" or "axiom-action" || item.Kind.StartsWith("system-", StringComparison.Ordinal)) { changed = null; continue; }
+            if (item.Kind is "gap" or "axiom-action" || IsEnvironmentEvent(item.Kind)) { changed = null; continue; }
             if (changed is null || item.ObjectId is null || automated.Contains(item.ObjectId)) continue;
             if (item.AtUtc - changed.AtUtc > TimeSpan.FromMinutes(1)) { changed = null; continue; }
             if (item.Kind is "window-left" or "window-right" or "window-center" && seen.Add(item.ObjectId)) yield return (changed, item);
@@ -83,7 +83,7 @@ public static class UsageAnalysis
         UsageEvent? hidden = null; var seen = new HashSet<string>();
         foreach (var item in session.Events.OrderBy(e => e.AtUtc))
         {
-            if (item.Kind is "gap" or "axiom-action" || item.Kind.StartsWith("system-", StringComparison.Ordinal)) { hidden = null; continue; }
+            if (item.Kind is "gap" or "axiom-action" || IsEnvironmentEvent(item.Kind)) { hidden = null; continue; }
             if (item.ObjectId is null || automated.Contains(item.ObjectId)) continue;
             if (item.Kind == "window-hidden") { hidden = item; seen.Clear(); continue; }
             if (hidden is null) continue;
@@ -99,7 +99,7 @@ public static class UsageAnalysis
         var shown = new Dictionary<string, UsageEvent>();
         foreach (var item in session.Events.OrderBy(e => e.AtUtc))
         {
-            if (item.Kind is "gap" or "axiom-action" || item.Kind.StartsWith("system-", StringComparison.Ordinal)) { shown.Clear(); continue; }
+            if (item.Kind is "gap" or "axiom-action" || IsEnvironmentEvent(item.Kind)) { shown.Clear(); continue; }
             if (item.ObjectId is null || automated.Contains(item.ObjectId)) continue;
             if (item.Kind == "window-shown") { shown[item.ObjectId] = item; continue; }
             if (item.Kind == "window-hidden") { shown.Remove(item.ObjectId); continue; }
@@ -107,8 +107,9 @@ public static class UsageAnalysis
                 yield return (first, item);
         }
     }
+    private static bool IsEnvironmentEvent(string kind) => kind.StartsWith("system-", StringComparison.Ordinal) || kind.StartsWith("audio-", StringComparison.Ordinal);
     private static bool CanUse(string path) { try { ExecutablePaths.ValidatePath(path); return true; } catch (ArgumentException) { return false; } }
-    private static string SystemName(string kind) => kind switch { "system-unlocked" => "解锁", "system-resumed" => "唤醒", "system-ac" => "接通交流电", "system-battery" => "切换电池", "system-network-up" => "网络可用", "system-usb-arrived" => "USB接入通知", "system-battery-low20" => "电量降至20%或以下", "system-battery-low10" => "电量降至10%或以下", _ => "系统变化" };
+    private static string SystemName(string kind) => kind switch { "system-unlocked" => "解锁", "system-resumed" => "唤醒", "system-ac" => "接通交流电", "system-battery" => "切换电池", "system-network-up" => "网络可用", "system-usb-arrived" => "USB接入通知", "audio-output" => "默认播放设备变化", "audio-input" => "默认通信麦克风变化", "system-battery-low20" => "电量降至20%或以下", "system-battery-low10" => "电量降至10%或以下", _ => "系统变化" };
     private static UsageEvidence[] Evidence(UsageSession session, IEnumerable<(UsageEvent First, UsageEvent Second)> pairs) =>
         [.. pairs.Take(3).Select(p => new UsageEvidence((int)(p.First.AtUtc - session.StartedUtc).TotalSeconds, (int)(p.Second.AtUtc - session.StartedUtc).TotalSeconds))];
     private static IEnumerable<(UsageEvent First, UsageEvent Second)> SystemPairs(UsageSession session)
@@ -118,9 +119,9 @@ public static class UsageAnalysis
         foreach (var item in session.Events.OrderBy(e => e.AtUtc))
         {
             if (item.Kind is "gap" or "axiom-action") { trigger = null; continue; }
-            if (item.Kind.StartsWith("system-", StringComparison.Ordinal))
+            if (IsEnvironmentEvent(item.Kind))
             {
-                trigger = item.Kind is "system-unlocked" or "system-resumed" or "system-ac" or "system-battery" or "system-network-up" or "system-battery-low20" or "system-battery-low10" or "system-usb-arrived" ? item : null;
+                trigger = item.Kind is "system-unlocked" or "system-resumed" or "system-ac" or "system-battery" or "system-network-up" or "system-battery-low20" or "system-battery-low10" or "system-usb-arrived" or "audio-output" or "audio-input" ? item : null;
                 seen.Clear(); continue;
             }
             if (trigger is null || item.Kind != "process-start" || item.ObjectId is null || automated.Contains(item.ObjectId)) continue;
@@ -134,7 +135,7 @@ public static class UsageAnalysis
         UsageEvent? previous = null;
         foreach (var item in session.Events.OrderBy(e => e.AtUtc))
         {
-            if (item.Kind is "gap" or "axiom-action" || item.Kind.StartsWith("system-", StringComparison.Ordinal)) { previous = null; continue; }
+            if (item.Kind is "gap" or "axiom-action" || IsEnvironmentEvent(item.Kind)) { previous = null; continue; }
             if (item.ObjectId is not null && automated.Contains(item.ObjectId)) { previous = null; continue; }
             if (item.Kind != kind || item.ObjectId is null) continue;
             if (previous is not null && previous.ObjectId != item.ObjectId && item.AtUtc >= previous.AtUtc && item.AtUtc - previous.AtUtc <= maximum)
@@ -145,9 +146,10 @@ public static class UsageAnalysis
     public static AutomationTask Draft(UsageSession session, UsageSuggestion suggestion, AutomationSnapshot catalog)
     {
         if (suggestion.Kind != "existing" || suggestion.ObjectIds.Length != (suggestion.EventKind is null && suggestion.WindowState is null ? 2 : 1)) throw new ArgumentException("此建议尚不足以生成规则。");
+        var audio = suggestion.EventKind?.StartsWith("audio-", StringComparison.Ordinal) == true;
         var windowClosing = suggestion.Id.StartsWith("window-exit:", StringComparison.Ordinal);
         var closing = windowClosing || suggestion.Id.StartsWith("exit:", StringComparison.Ordinal);
-        var detection = catalog.Capabilities.Single(c => c.Id == (suggestion.EventKind is not null ? SystemEventCapabilities.Event : suggestion.WindowState is not null ? WindowPresenceCapabilities.Visible : windowClosing ? WindowPresenceCapabilities.Absent : closing ? "process.exited" : "process.running") && c.Kind == TaskCapabilityKind.Detection);
+        var detection = catalog.Capabilities.Single(c => c.Id == (audio ? AudioCapabilities.Changed : suggestion.EventKind is not null ? SystemEventCapabilities.Event : suggestion.WindowState is not null ? WindowPresenceCapabilities.Visible : windowClosing ? WindowPresenceCapabilities.Absent : closing ? "process.exited" : "process.running") && c.Kind == TaskCapabilityKind.Detection);
         var action = catalog.Capabilities.Single(c => c.Id == (suggestion.WindowState is not null ? WindowCapabilities.State : closing ? "program.close" : "program.start") && c.Kind == TaskCapabilityKind.Action);
         TaskInvocation Make(TaskCapability capability, string field, string alias) => new(capability.Id, capability.SchemaVersion,
             capability.Fields.Where(f => f.DefaultValue is not null).ToImmutableDictionary(f => f.Id, f => f.DefaultValue!).SetItem(field, alias));
@@ -155,7 +157,7 @@ public static class UsageAnalysis
         if (suggestion.WindowState is not null) actionInvocation = actionInvocation with { Parameters = actionInvocation.Parameters.SetItem("state", suggestion.WindowState) };
         if (closing) actionInvocation = actionInvocation with { Parameters = actionInvocation.Parameters.SetItem("mode", "graceful").SetItem("instances", "latest") };
         var candidate = new UsageImport(1, session.Id, "existing", suggestion.WindowState is not null ? suggestion.EventKind is null ? "窗口出现后整理" : "系统变化后整理窗口" : closing ? "退出后关闭配套程序" : "启动配套程序", suggestion.Evidence,
-            suggestion.EventKind is null ? Make(detection, detection.Fields.Single(f => f.Kind == TaskFieldKind.ProcessSelection).Id, suggestion.ObjectIds[0]) : Make(detection, "event", suggestion.EventKind), actionInvocation);
+            suggestion.EventKind is null ? Make(detection, detection.Fields.Single(f => f.Kind == TaskFieldKind.ProcessSelection).Id, suggestion.ObjectIds[0]) : Make(detection, audio ? "endpoint" : "event", audio ? suggestion.EventKind[6..] : suggestion.EventKind), actionInvocation);
         return Import(JsonSerializer.Serialize(candidate), session, catalog).Draft!;
     }
     private static TaskCapability[] SafeCatalog(AutomationSnapshot catalog) => [.. catalog.Capabilities.Select(c => c with
@@ -195,7 +197,7 @@ public static class UsageAnalysis
         var body = new
         {
             version = 1, sessionId = session.Id, environment = new { platform = "Windows 11 x64", source = "user-enabled-metadata-observation" },
-            coverage = new { plannedMinutes = (session.EndsUtc - session.StartedUtc).TotalMinutes, stoppedAfterSeconds = session.StoppedUtc is { } stopped ? (double?)(stopped - session.StartedUtc).TotalSeconds : null, firstEventOffset = session.Events.MinBy(e => e.AtUtc) is { } first ? (double?)(first.AtUtc - session.StartedUtc).TotalSeconds : null, lastEventOffset = session.Events.MaxBy(e => e.AtUtc) is { } last ? (double?)(last.AtUtc - session.StartedUtc).TotalSeconds : null, session.State, events = session.Events.Length, session.Options.Foreground, session.Options.ProcessStarts, session.Options.ProcessExits, session.Options.WindowStates, session.Options.SystemEvents, gaps = session.Gaps },
+            coverage = new { plannedMinutes = (session.EndsUtc - session.StartedUtc).TotalMinutes, stoppedAfterSeconds = session.StoppedUtc is { } stopped ? (double?)(stopped - session.StartedUtc).TotalSeconds : null, firstEventOffset = session.Events.MinBy(e => e.AtUtc) is { } first ? (double?)(first.AtUtc - session.StartedUtc).TotalSeconds : null, lastEventOffset = session.Events.MaxBy(e => e.AtUtc) is { } last ? (double?)(last.AtUtc - session.StartedUtc).TotalSeconds : null, session.State, events = session.Events.Length, session.Options.Foreground, session.Options.ProcessStarts, session.Options.ProcessExits, session.Options.WindowStates, session.Options.SystemEvents, session.Options.AudioEvents, gaps = session.Gaps },
             objects = session.Objects.Select(o => new { id = o.Id, kind = "application" }),
             patterns = suggestions,
             evidence = session.Events.Where(e => e.Kind != "gap").Take(12).Select(e => new { offsetSeconds = (int)(e.AtUtc - session.StartedUtc).TotalSeconds, e.Kind, e.ObjectId, e.Origin, e.DwellSeconds }),
@@ -262,6 +264,7 @@ public static class UsageAnalysis
             var resolved = invocation with { Parameters = parameters.ToImmutable() };
             AutomationTaskCompiler.ValidateInvocation(resolved, capability);
             // Provider-specific constraints are also checked before offering the draft.
+            if (resolved.CapabilityId == AudioCapabilities.Changed) AudioCapabilities.Validate(resolved);
             if (resolved.CapabilityId == IntervalCapabilities.Elapsed) IntervalCapabilities.Validate(resolved);
             if (resolved.CapabilityId == SystemEventCapabilities.Event) SystemEventCapabilities.Validate(resolved);
             if (resolved.CapabilityId is WindowCapabilities.Close or WindowCapabilities.State) WindowCapabilities.ValidateTargets(resolved);
