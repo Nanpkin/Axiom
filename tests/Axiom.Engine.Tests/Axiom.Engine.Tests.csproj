@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <Compile Include="../../src/Axiom.Providers.Windows/IntervalEventSource.cs" Link="IntervalEventSource.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/BatteryThresholdEvents.cs" Link="BatteryThresholdEvents.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/UsageWindowHistory.cs" Link="UsageWindowHistory.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsUsageWindows.cs" Link="WindowsUsageWindows.cs" />

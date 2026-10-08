@@ -13,7 +13,7 @@ public sealed class UsageObservationTests
     private static UsageRecorder Recorder() => new(new(5, true, true, ["Private.exe"]), Now);
     private static AutomationSnapshot Catalog()
     {
-        var modules = new IAutomationPlugin[] { new ProgramPlugin(), new WindowPlugin(), new SystemEventPlugin(), new WindowPresencePlugin() };
+        var modules = new IAutomationPlugin[] { new ProgramPlugin(), new WindowPlugin(), new SystemEventPlugin(), new IntervalPlugin(), new WindowPresencePlugin() };
         return new([], [.. modules.SelectMany(m => m.Detections.Select(d => d.Descriptor).Concat(m.Actions.Select(a => a.Descriptor)))],
             [.. modules.SelectMany(m => m.Combinations)], true, "ready", "", Now, []);
     }
@@ -214,7 +214,7 @@ public sealed class UsageObservationTests
     [Fact]
     public void FullRegisteredCatalogFitsExportAndOversizedDescriptionsAreSummarized()
     {
-        var modules = new IAutomationPlugin[] { new ProgramPlugin(), new WindowPlugin(), new SystemEventPlugin(), new AxiomStartupPlugin(), new KeyboardPlugin(), new TrayPlugin(), new OpenTargetPlugin(), new ForegroundPlugin(), new WindowPresencePlugin() };
+        var modules = new IAutomationPlugin[] { new ProgramPlugin(), new WindowPlugin(), new SystemEventPlugin(), new IntervalPlugin(), new AxiomStartupPlugin(), new KeyboardPlugin(), new TrayPlugin(), new OpenTargetPlugin(), new ForegroundPlugin(), new WindowPresencePlugin() };
         var catalog = Catalog() with { Capabilities = [.. modules.SelectMany(m => m.Detections.Select(d => d.Descriptor).Concat(m.Actions.Select(a => a.Descriptor))).DistinctBy(c => (c.Kind, c.Id))], Combinations = [.. modules.SelectMany(m => m.Combinations)] };
         var recorder = Recorder(); recorder.Add(new(Now, "foreground", App("Editor")));
         var normal = UsageAnalysis.Prompt + UsageAnalysis.Summary(recorder.Session, catalog);
@@ -235,6 +235,21 @@ public sealed class UsageObservationTests
         var second = Recorder(); second.Add(new(Now, "foreground", App("Editor")));
         Assert.NotEqual(recorder.Session.Objects[0].Id, second.Session.Objects[0].Id);
     }
+    [Fact]
+    public void ImportedIntervalRequiresIntegerMinutesBeforeOfferingAPausedDraft()
+    {
+        var recorder = Recorder(); recorder.Add(new(Now, "foreground", App("Reminder")));
+        var proposal = new UsageImport(1, recorder.Session.Id, "existing", "定时准备", "合成测试候选",
+            new(IntervalCapabilities.Elapsed, 1, ImmutableDictionary<string, string>.Empty.Add("minutes", "1.5")),
+            new("program.start", 1, ProgramCapabilities.Describe(true).Fields.Where(f => f.DefaultValue is not null)
+                .ToImmutableDictionary(f => f.Id, f => f.DefaultValue!).Add("executable", recorder.Session.Objects[0].Id)));
+        Assert.Throws<ArgumentException>(() => UsageAnalysis.Import(JsonSerializer.Serialize(proposal), recorder.Session, Catalog()));
+        var valid = proposal with { Detection = proposal.Detection! with { Parameters = proposal.Detection.Parameters.SetItem("minutes", "30") } };
+        var draft = UsageAnalysis.Import(JsonSerializer.Serialize(valid), recorder.Session, Catalog()).Draft!;
+        Assert.True(draft.Paused); Assert.Equal("30", draft.Detection.Parameters["minutes"]);
+        Assert.Equal(App("Reminder"), draft.Action.Parameters["executable"]);
+    }
+
     [Fact]
     public void ImportRejectsUntrustedStructureVersionsObjectsAndFreeExecutionText()
     {

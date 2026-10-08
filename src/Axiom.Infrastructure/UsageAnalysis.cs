@@ -244,6 +244,7 @@ public static class UsageAnalysis
             var resolved = invocation with { Parameters = parameters.ToImmutable() };
             AutomationTaskCompiler.ValidateInvocation(resolved, capability);
             // Provider-specific constraints are also checked before offering the draft.
+            if (resolved.CapabilityId == IntervalCapabilities.Elapsed) IntervalCapabilities.Validate(resolved);
             if (resolved.CapabilityId == SystemEventCapabilities.Event) SystemEventCapabilities.Validate(resolved);
             if (resolved.CapabilityId is WindowCapabilities.Close or WindowCapabilities.State) WindowCapabilities.ValidateTargets(resolved);
             if (resolved.CapabilityId is "program.start" or "program.close") ProgramCapabilities.ValidateTargets(resolved);

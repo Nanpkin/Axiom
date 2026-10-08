@@ -152,7 +152,7 @@ internal sealed class PluginTaskRuntime : IAutomationTaskBackend, ICapabilityExe
             lock (statusGate) return new([.. tasks], compiler.Catalog, Combinations, watching.Length == 0 || connected &&
                 (firstBoot is not null || !tasks.Any(t => !t.Paused && t.Detection.CapabilityId == AxiomStartupPlugin.CapabilityId && t.Detection.Parameters["frequency"] == "firstBoot")), state, reason, at,
                 [.. engine.ReadSnapshot().States.Where(p => watching.Contains(p.Key)).Select(p => new TaskObservation(
-                    p.Key.CapabilityId == AxiomStartupPlugin.CapabilityId ? tasks.SingleOrDefault(t => t.Id == p.Key.ResourceId)?.Title ?? "Axiom 启动" : p.Key.CapabilityId == SystemEventCapabilities.Event ? SystemEventName(p.Key.ResourceId) : p.Key.ResourceId,
+                    p.Key.CapabilityId == AxiomStartupPlugin.CapabilityId ? tasks.SingleOrDefault(t => t.Id == p.Key.ResourceId)?.Title ?? "Axiom 启动" : p.Key.CapabilityId == SystemEventCapabilities.Event ? SystemEventName(p.Key.ResourceId) : p.Key.CapabilityId == IntervalCapabilities.Elapsed ? "每隔 " + p.Key.ResourceId + " 分钟" : p.Key.ResourceId,
                     p.Value.Observation.Quality != StateQuality.Known ? observationReasons.GetValueOrDefault(p.Key, "状态未知") : p.Key.CapabilityId == HotkeyCapabilities.Pressed
                         ? "等待快捷键" : p.Value.Observation.Value?.Number is not null ? "等待下一次事件" : p.Key.CapabilityId == AxiomStartupPlugin.CapabilityId
                         ? p.Value.Observation.Value?.Boolean == true ? "已触发启动条件" : "等待下次启动"
