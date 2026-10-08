@@ -13,6 +13,7 @@ public sealed class WindowsSessionEvents : IDisposable
     private static Hub? shared;
     private readonly Channel<string> queue = Channel.CreateBounded<string>(64);
     private bool disposed;
+    public static int ActiveConsumers { get { lock (Gate) return shared?.Clients.Count ?? 0; } }
     public ChannelReader<string> Events => queue.Reader;
     public WindowsSessionEvents()
     {

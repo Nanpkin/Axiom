@@ -31,16 +31,18 @@ public static class UsageAnalysis
             .Where(g => g.Count() >= 3).OrderByDescending(g => g.Count()).Take(8).Select(g => new UsageSuggestion(
                 "launch:" + g.Key.Item1 + ":" + g.Key.Item2, "existing", "经常相继启动两个程序",
                 $"{g.Count()} 次在 30 秒内相继启动；前一个程序共出现 {session.Events.Count(e => e.Kind == "process-start" && e.ObjectId == g.Key.Item1)} 次启动机会。",
-                "来源未知，相关不代表因果。仅在你确认属于重复准备工作后审阅规则。检测按程序名，启动按完整路径；已经运行则跳过，结束后不自动关闭。已有 Axiom 动作或记录缺口之间的序列不计入。",
+                "来源未知，相关不代表因果。仅在你确认属于重复准备工作后审阅规则。检测按程序名，启动按完整路径；已经运行则跳过，结束后不自动关闭。已有 Axiom 动作或记录缺口之间的序列不计入；本次已知 Axiom 动作目标不参与建议。",
                 [g.Key.Item1!, g.Key.Item2!], g.Count(), session.Events.Count(e => e.Kind == "process-start" && e.ObjectId == g.Key.Item1)));
         return [.. starts, .. switches];
     }
     private static IEnumerable<(UsageEvent First, UsageEvent Second)> Pairs(UsageSession session, string kind, TimeSpan maximum)
     {
+        var automated = session.Events.Where(e => e.Kind == "axiom-action" && e.ObjectId is not null).Select(e => e.ObjectId).ToHashSet();
         UsageEvent? previous = null;
         foreach (var item in session.Events)
         {
             if (item.Kind is "gap" or "axiom-action" || item.Kind.StartsWith("system-", StringComparison.Ordinal)) { previous = null; continue; }
+            if (item.ObjectId is not null && automated.Contains(item.ObjectId)) { previous = null; continue; }
             if (item.Kind != kind || item.ObjectId is null) continue;
             if (previous is not null && previous.ObjectId != item.ObjectId && item.AtUtc >= previous.AtUtc && item.AtUtc - previous.AtUtc <= maximum)
                 yield return (previous, item);
@@ -58,19 +60,46 @@ public static class UsageAnalysis
             Make(detection, detection.Fields.Single(f => f.Kind == TaskFieldKind.ProcessSelection).Id, suggestion.ObjectIds[0]), Make(action, "executable", suggestion.ObjectIds[1]));
         return Import(JsonSerializer.Serialize(candidate), session, catalog).Draft!;
     }
+    private static TaskCapability[] SafeCatalog(AutomationSnapshot catalog) => [.. catalog.Capabilities.Select(c => c with
+    {
+        Fields = [.. c.Fields.Select(f => f.Kind is TaskFieldKind.Resource or TaskFieldKind.FilePath or TaskFieldKind.DirectoryPath or TaskFieldKind.ProcessSelection or TaskFieldKind.ExecutableSelection or TaskFieldKind.TraySelection
+            ? f with { DefaultValue = null, Choices = [] } : f)]
+    })];
+    public static string CapabilityCatalog(AutomationSnapshot catalog, bool readable)
+    {
+        var capabilities = SafeCatalog(catalog);
+        if (!readable) return JsonSerializer.Serialize(new { version = 1, capabilities, combinations = catalog.Combinations }, Json);
+        var text = new StringBuilder("# Axiom 当前能力目录\n\n从本次后台真实注册生成；不含本机对象标识。\n\n");
+        foreach (var capability in capabilities)
+        {
+            text.AppendLine($"## {capability.Name} ({capability.Id}, schema {capability.SchemaVersion})").AppendLine();
+            text.AppendLine(capability.Description).AppendLine().AppendLine(capability.Behavior).AppendLine();
+            foreach (var field in capability.Fields)
+                text.AppendLine($"- {field.Id} / {field.Label}: {field.Kind}; {(field.Required ? "必填" : "选填")}; 默认 {field.DefaultValue ?? "无"}; 范围 {field.Minimum}–{field.Maximum}; {field.Hint}");
+            text.AppendLine().AppendLine(capability.EditWarning).AppendLine();
+        }
+        text.AppendLine("## 已接通组合").AppendLine();
+        foreach (var combination in catalog.Combinations) text.AppendLine($"- {combination.DetectionId} → {combination.ActionId}");
+        return text.ToString();
+    }
+    // This local feedback key is never exported as an anonymous object identifier.
+    public static string FeedbackKey(UsageSession session, UsageSuggestion suggestion)
+    {
+        var text = suggestion.Id.Split(':')[0] + ":" + string.Join("|", suggestion.ObjectIds.Select(id => session.Objects.Single(o => o.Id == id).Executable.ToLowerInvariant()));
+        return "local:" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(text)));
+    }
     public static string Summary(UsageSession session, AutomationSnapshot catalog)
     {
         var suggestions = Analyze(session);
         var body = new
         {
             version = 1, sessionId = session.Id, environment = new { platform = "Windows 11 x64", source = "user-enabled-metadata-observation" },
-            coverage = new { minutes = (session.EndsUtc - session.StartedUtc).TotalMinutes, session.State, events = session.Events.Length, session.Options.Foreground, session.Options.ProcessStarts, session.Options.SystemEvents, gaps = session.Gaps },
+            coverage = new { plannedMinutes = (session.EndsUtc - session.StartedUtc).TotalMinutes, stoppedAfterSeconds = session.StoppedUtc is { } stopped ? (double?)(stopped - session.StartedUtc).TotalSeconds : null, firstEventOffset = session.Events.FirstOrDefault() is { } first ? (double?)(first.AtUtc - session.StartedUtc).TotalSeconds : null, lastEventOffset = session.Events.LastOrDefault() is { } last ? (double?)(last.AtUtc - session.StartedUtc).TotalSeconds : null, session.State, events = session.Events.Length, session.Options.Foreground, session.Options.ProcessStarts, session.Options.SystemEvents, gaps = session.Gaps },
             objects = session.Objects.Select(o => new { id = o.Id, kind = "application" }),
             patterns = suggestions,
-            evidence = session.Events.Where(e => e.Kind != "gap").Take(12).Select(e => new { offsetSeconds = (int)(e.AtUtc - session.StartedUtc).TotalSeconds, e.Kind, e.ObjectId, e.Origin }),
+            evidence = session.Events.Where(e => e.Kind != "gap").Take(12).Select(e => new { offsetSeconds = (int)(e.AtUtc - session.StartedUtc).TotalSeconds, e.Kind, e.ObjectId, e.Origin, e.DwellSeconds }),
             purpose = session.Options.Purpose,
-            capabilities = catalog.Capabilities.Select(c => c with { Fields = [.. c.Fields.Select(f => f.Kind is TaskFieldKind.Resource or TaskFieldKind.FilePath or TaskFieldKind.DirectoryPath or TaskFieldKind.ProcessSelection or TaskFieldKind.ExecutableSelection or TaskFieldKind.TraySelection
-                ? f with { DefaultValue = null, Choices = [] } : f)] }),
+            capabilities = SafeCatalog(catalog),
             combinations = catalog.Combinations,
             omissions = "不含路径、标题、设备标识或完整原始事件；最多 12 个模式及 12 条代表事件。前台切换不能解释全部流程，未知来源不视为手动操作。"
         };

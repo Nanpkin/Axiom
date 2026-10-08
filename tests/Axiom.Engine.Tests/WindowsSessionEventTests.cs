@@ -1,0 +1,23 @@
+using System.Runtime.Versioning;
+using Axiom.Providers.Windows;
+
+namespace Axiom.Engine.Tests;
+
+[SupportedOSPlatform("windows")]
+public sealed class WindowsSessionEventTests
+{
+    [Fact(Timeout = 15000)]
+    public void RealSharedMessageWindowReleasesOnlyTheCallingLeaseAndCanBeRecreated()
+    {
+        Assert.Equal(0, WindowsSessionEvents.ActiveConsumers);
+        using (var one = new WindowsSessionEvents())
+        {
+            using var two = new WindowsSessionEvents(); Assert.Equal(2, WindowsSessionEvents.ActiveConsumers);
+            one.Dispose(); Assert.Equal(1, WindowsSessionEvents.ActiveConsumers);
+            Assert.False(two.Events.Completion.IsCompleted);
+        }
+        Assert.Equal(0, WindowsSessionEvents.ActiveConsumers);
+        using (var again = new WindowsSessionEvents()) Assert.Equal(1, WindowsSessionEvents.ActiveConsumers);
+        Assert.Equal(0, WindowsSessionEvents.ActiveConsumers);
+    }
+}

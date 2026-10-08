@@ -1,5 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsSessionEvents.cs" Link="WindowsSessionEvents.cs" />
+    <Compile Include="../../src/Axiom.ServiceHost/UsageObservationController.cs" Link="UsageObservationController.cs" />
     <Compile Include="../../src/Axiom.Launcher/LoginTaskCleanup.cs" Link="LoginTaskCleanup.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/HotkeyRegistrationHub.cs" Link="HotkeyRegistrationHub.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsTrayEvents.cs" Link="WindowsTrayEvents.cs" />

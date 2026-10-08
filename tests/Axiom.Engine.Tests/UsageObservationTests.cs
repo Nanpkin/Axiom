@@ -29,6 +29,32 @@ public sealed class UsageObservationTests
         Assert.Equal("stopped", recorder.Session.State); Assert.Single(recorder.Session.Events); Assert.Single(recorder.Session.Objects);
     }
     [Fact]
+    public void ForegroundDwellMergesAcrossOtherEventsAndExclusionsBreakPatterns()
+    {
+        var recorder = Recorder(); recorder.Add(new(Now, "foreground", App("Editor")));
+        recorder.Add(new(Now.AddSeconds(1), "process-start", App("Other")));
+        Assert.False(recorder.Add(new(Now.AddSeconds(2), "foreground", App("Editor"))));
+        recorder.Add(new(Now.AddSeconds(5), "foreground", App("Private")));
+        Assert.Equal(5d, recorder.Session.Events[0].DwellSeconds);
+        Assert.Contains(recorder.Session.Events, e => e.Kind == "gap"); Assert.DoesNotContain(recorder.Session.Objects, o => o.Executable == App("Private"));
+        recorder.Add(new(Now.AddSeconds(10), "foreground", App("Editor")));
+        recorder.State("stopped", atUtc: Now.AddSeconds(20));
+        Assert.Equal(10d, recorder.Session.Events.Last().DwellSeconds);
+        Assert.Equal(Now.AddSeconds(20), recorder.Session.StoppedUtc);
+        var summary = UsageAnalysis.Summary(recorder.Session, Catalog()); Assert.Contains("stoppedAfterSeconds", summary); Assert.Contains("plannedMinutes", summary);
+    }
+    [Fact]
+    public void CapabilityExportsShareLiveRegistrationAndFeedbackStaysLocalAcrossSessions()
+    {
+        var catalog = Catalog(); var json = UsageAnalysis.CapabilityCatalog(catalog, false); var readable = UsageAnalysis.CapabilityCatalog(catalog, true);
+        foreach (var capability in catalog.Capabilities) { Assert.Contains(capability.Id, json); Assert.Contains(capability.Id, readable); }
+        var one = Recorder(); one.Add(new(Now, "foreground", App("Editor"))); var two = Recorder(); two.Add(new(Now, "foreground", App("Editor")));
+        var first = new UsageSuggestion("switch:any", "insufficient", "", "", "", [one.Session.Objects[0].Id], 3, 3);
+        var second = first with { ObjectIds = [two.Session.Objects[0].Id] };
+        Assert.Equal(UsageAnalysis.FeedbackKey(one.Session, first), UsageAnalysis.FeedbackKey(two.Session, second));
+        Assert.DoesNotContain(UsageAnalysis.FeedbackKey(one.Session, first), UsageAnalysis.Summary(one.Session, catalog));
+    }
+    [Fact]
     public void CapacityStopsWithoutDroppingAnUnreportedTail()
     {
         var recorder = Recorder();
@@ -54,6 +80,8 @@ public sealed class UsageObservationTests
         Assert.NotNull(engine.Compile(draft, "owner", ResourceScope.Session("owner", 1)));
         var controlled = recorder.Session with { Events = [.. recorder.Session.Events.SelectMany(e => new[] { e, new UsageEvent(e.AtUtc, "axiom-action", null, "axiom") })] };
         Assert.Empty(UsageAnalysis.Analyze(controlled));
+        var marked = recorder.Session with { Events = [new UsageEvent(Now, "axiom-action", recorder.Session.Objects[0].Id, "axiom"), .. recorder.Session.Events] };
+        Assert.Empty(UsageAnalysis.Analyze(marked));
     }
     [Fact]
     public void SummaryUsesRandomLocalAliasesAndNeverExportsPathsOrExcludedNames()

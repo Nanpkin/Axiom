@@ -4,8 +4,14 @@ using Axiom.Infrastructure;
 
 namespace Axiom.ServiceHost;
 
-internal sealed class UsageObservationController(UsageJournal journal, string sid) : IAsyncDisposable
+internal interface IUsageObservationSource
 {
+    Task RunAsync(UsageOptions options, Action ready, Action<UsageSample> publish, CancellationToken token);
+}
+
+internal sealed class UsageObservationController(UsageJournal journal, IUsageObservationSource source, TimeProvider? time = null) : IAsyncDisposable
+{
+    private readonly TimeProvider clock = time ?? TimeProvider.System;
     private readonly object gate = new();
     private readonly SemaphoreSlim operations = new(1, 1);
     private UsageRecorder? current;
@@ -24,7 +30,7 @@ internal sealed class UsageObservationController(UsageJournal journal, string si
             {
                 lock (gate) if (current is not null && current.Session.State is "recording" or "paused") throw new InvalidOperationException("请先结束当前观察。");
                 await StopWorkerAsync(); sessionLifetime?.Cancel();
-                current = new(request.Options!, DateTimeOffset.UtcNow); lock (gate) journal.Save(current.Session);
+                current = new(request.Options!, clock.GetUtcNow()); lock (gate) journal.Save(current.Session);
                 sessionLifetime?.Dispose(); sessionLifetime = new();
                 expiry = ExpireAsync(current.Session.Id, current.Session.EndsUtc, sessionLifetime.Token);
                 await StartWorkerAsync();
@@ -34,7 +40,7 @@ internal sealed class UsageObservationController(UsageJournal journal, string si
                 await StopWorkerAsync();
                 lock (gate) if (current is not null)
                 {
-                    current.State(request.Operation == "pause" && current.Session.State != "stopped" ? "paused" : "stopped", request.Operation == "pause" ? "用户暂停，期间未记录。" : null);
+                    current.State(request.Operation == "pause" && current.Session.State != "stopped" ? "paused" : "stopped", request.Operation == "pause" ? "用户暂停，期间未记录。" : null, clock.GetUtcNow());
                     journal.Save(current.Session);
                 }
                 if (request.Operation == "stop") sessionLifetime?.Cancel();
@@ -43,8 +49,8 @@ internal sealed class UsageObservationController(UsageJournal journal, string si
             {
                 lock (gate)
                 {
-                    if (current?.Session.State != "paused" || current.Session.EndsUtc <= DateTimeOffset.UtcNow) throw new InvalidOperationException("观察已结束，请新建一次观察。");
-                    current.State("recording"); journal.Save(current.Session);
+                    if (current?.Session.State != "paused" || current.Session.EndsUtc <= clock.GetUtcNow()) throw new InvalidOperationException("观察已结束，请新建一次观察。");
+                    current.State("recording", atUtc: clock.GetUtcNow()); journal.Save(current.Session);
                 }
                 await StartWorkerAsync();
             }
@@ -55,20 +61,21 @@ internal sealed class UsageObservationController(UsageJournal journal, string si
             }
             lock (gate)
             {
-                var sessions = journal.Read(DateTimeOffset.UtcNow);
+                var sessions = journal.Read(clock.GetUtcNow());
                 var selected = sessions.FirstOrDefault(s => s.Id == request.SessionId) ?? (request.SessionId is null ? sessions.FirstOrDefault() : null);
                 if (request.Operation == "feedback")
                 {
                     if (selected is null || !UsageAnalysis.Analyze(selected).Any(s => s.Id == request.FeedbackId)) throw new ArgumentException("建议已不存在。");
-                    journal.Feedback(selected.Id, request.FeedbackId!, request.Text!);
+                    journal.Feedback(selected.Id, UsageAnalysis.FeedbackKey(selected, UsageAnalysis.Analyze(selected).Single(s => s.Id == request.FeedbackId)), request.Text!);
                 }
                 string? export = null; AutomationTask? draft = null;
+                if (request.Operation is "catalog" or "catalog-readable") export = UsageAnalysis.CapabilityCatalog(catalog, request.Operation == "catalog-readable");
                 if (request.Operation == "draft")
                 {
                     if (selected is null) throw new ArgumentException("记录不存在。");
                     var suggestion = UsageAnalysis.Analyze(selected).Single(s => s.Id == request.FeedbackId);
                     draft = UsageAnalysis.Draft(selected, suggestion, catalog);
-                    journal.Feedback(selected.Id, suggestion.Id, "accepted");
+                    journal.Feedback(selected.Id, UsageAnalysis.FeedbackKey(selected, suggestion), "accepted");
                 }
                 if (request.Operation is "export" or "import" or "extension")
                 {
@@ -85,10 +92,11 @@ internal sealed class UsageObservationController(UsageJournal journal, string si
                         else { draft = imported.Draft; export = imported.Proposal.Kind + "：" + imported.Proposal.Title + "\n" + imported.Proposal.Explanation; }
                     }
                 }
+                var dismissed = journal.Dismissed(null);
                 var snapshot = new UsageSnapshot([.. sessions.Select(s => s with { Objects = [], Events = [], Options = s.Options with { ExcludedApplications = [] } })],
-                    current?.Session.State is "recording" or "paused" ? current.Session.Id : null, DateTimeOffset.UtcNow,
+                    current?.Session.State is "recording" or "paused" ? current.Session.Id : null, clock.GetUtcNow(),
                     selected is null ? null : selected with { Events = [.. selected.Events.Skip(request.Offset).Take(64)] }, selected?.Events.Length ?? 0,
-                    selected is null ? [] : [.. UsageAnalysis.Analyze(selected).Where(s => !journal.Dismissed(selected.Id).Contains(s.Id))]);
+                    selected is null ? [] : [.. UsageAnalysis.Analyze(selected).Where(s => !dismissed.Contains(UsageAnalysis.FeedbackKey(selected, s)))]);
                 return new(1, "usage", message.RequestId, Task: draft, UsageSnapshot: snapshot, ExportText: export);
             }
         }
@@ -101,13 +109,13 @@ internal sealed class UsageObservationController(UsageJournal journal, string si
         {
             if (current?.Session.Id != id) return;
             await StopWorkerAsync(); sessionLifetime?.Cancel();
-            lock (gate) { current.State("stopped"); journal.Save(current.Session); }
+            lock (gate) { current.State("stopped", atUtc: clock.GetUtcNow()); journal.Save(current.Session); }
         }
         finally { operations.Release(); }
     }
     private async Task ExpireAsync(string id, DateTimeOffset at, CancellationToken token)
     {
-        try { await Task.Delay(at - DateTimeOffset.UtcNow, token); await EndLeaseAsync(id); }
+        try { await Task.Delay(at - clock.GetUtcNow(), clock, token); await EndLeaseAsync(id); }
         catch (OperationCanceledException) { }
     }
     private async Task StartWorkerAsync()
@@ -125,25 +133,16 @@ internal sealed class UsageObservationController(UsageJournal journal, string si
     {
         try
         {
-            using var pipe = LocalUserPipe.Create(ProviderProtocol.PipeName(sid));
-            await pipe.ConnectForUserAsync(3000, token);
-            UsageSession session; lock (gate) session = current!.Session;
-            var id = Guid.NewGuid().ToString("N");
-            await ProviderProtocol.WriteAsync(pipe, new(1, "observe-usage", id, DateTimeOffset.UtcNow.AddSeconds(10), UsageOptions: session.Options), token);
-            using var ready = CancellationTokenSource.CreateLinkedTokenSource(token); ready.CancelAfter(TimeSpan.FromSeconds(8));
-            var first = await ProviderProtocol.ReadAsync(pipe, ready.Token);
-            if (first.Type != "usage-ready" || first.RequestId != id || first.Version != 1) throw new IOException("会话观察未就绪。");
-            initialized.TrySetResult();
-            while (!token.IsCancellationRequested)
+            UsageOptions options; lock (gate) options = current!.Session.Options;
+            await source.RunAsync(options, () => initialized.TrySetResult(), sample =>
             {
-                var message = await ProviderProtocol.ReadAsync(pipe, token);
-                if (message.Type != "usage-event" || message.RequestId != id || message.Version != 1 || message.UsageSample is null) throw new IOException("观察流中断。");
                 lock (gate)
                 {
-                    current!.Add(message.UsageSample); journal.Save(current.Session);
-                    if (current.Session.State == "stopped") break;
+                    current!.Add(sample); journal.Save(current.Session);
+                    if (current.Session.State == "stopped") recording!.Cancel();
                 }
-            }
+            }, token);
+            if (!token.IsCancellationRequested) throw new IOException("观察源意外结束。");
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { initialized.TrySetCanceled(token); }
         catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
@@ -155,7 +154,7 @@ internal sealed class UsageObservationController(UsageJournal journal, string si
     public async ValueTask DisposeAsync()
     {
         sessionLifetime?.Cancel(); await StopWorkerAsync(); await expiry;
-        lock (gate) if (current is not null) { current.State("stopped"); journal.Save(current.Session); }
+        lock (gate) if (current is not null) { current.State("stopped", atUtc: clock.GetUtcNow()); journal.Save(current.Session); }
         recording?.Dispose(); sessionLifetime?.Dispose(); operations.Dispose();
     }
 }

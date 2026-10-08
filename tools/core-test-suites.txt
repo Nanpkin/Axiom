@@ -22,3 +22,5 @@ WindowStateTests
 UsageObservationTests
 
 SystemEventTests
+
+UsageLifecycleTests

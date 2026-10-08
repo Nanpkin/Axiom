@@ -47,9 +47,9 @@ public sealed class UsageJournal : IDisposable
         using var command = connection.CreateCommand(); command.CommandText = "INSERT INTO usage_feedback VALUES($s,$id,$v) ON CONFLICT(session,id) DO UPDATE SET value=$v; DELETE FROM usage_feedback WHERE rowid NOT IN (SELECT rowid FROM usage_feedback ORDER BY rowid DESC LIMIT 256);";
         command.Parameters.AddWithValue("$s", session); command.Parameters.AddWithValue("$id", id); command.Parameters.AddWithValue("$v", value); command.ExecuteNonQuery();
     }
-    public HashSet<string> Dismissed(string session)
+    public HashSet<string> Dismissed(string? session)
     {
-        using var command = connection.CreateCommand(); command.CommandText = "SELECT id FROM usage_feedback WHERE session=$s"; command.Parameters.AddWithValue("$s", session);
+        using var command = connection.CreateCommand(); command.CommandText = session is null ? "SELECT id FROM usage_feedback" : "SELECT id FROM usage_feedback WHERE session=$s"; if (session is not null) command.Parameters.AddWithValue("$s", session);
         using var reader = command.ExecuteReader(); var ids = new HashSet<string>(); while (reader.Read()) ids.Add(reader.GetString(0)); return ids;
     }
     public void Dispose() => connection.Dispose();
@@ -63,25 +63,41 @@ public sealed class UsageRecorder
         UsageValidation.Options(options);
         Session = new(Guid.NewGuid().ToString("D"), now, now.AddMinutes(options.Minutes), "recording", options, [], [], []);
     }
-    public void State(string state, string? gap = null)
+    public void State(string state, string? gap = null, DateTimeOffset? atUtc = null)
     {
+        var at = atUtc ?? DateTimeOffset.UtcNow;
+        if (state is not ("recording" or "paused" or "stopped")) throw new ArgumentException("观察状态无效。");
+        if (state is "paused" or "stopped" || gap is not null) CloseDwell(at);
         if (gap is not null && Session.Events.Length < UsageValidation.MaximumEvents)
-            Session = Session with { Events = [.. Session.Events, new(DateTimeOffset.UtcNow, "gap", null, "unknown")] };
-        Session = Session with { State = state, Gaps = gap is null ? Session.Gaps : [.. Session.Gaps.TakeLast(31), gap] };
+            Session = Session with { Events = [.. Session.Events, new(at, "gap", null, "unknown")] };
+        Session = Session with { State = state, StoppedUtc = state == "stopped" ? Session.StoppedUtc ?? at : Session.StoppedUtc, Gaps = gap is null ? Session.Gaps : [.. Session.Gaps.TakeLast(31), gap] };
+    }
+    private void CloseDwell(DateTimeOffset at)
+    {
+        var index = Array.FindLastIndex(Session.Events, e => e.Kind == "foreground" && e.DwellSeconds is null);
+        if (index < 0) return;
+        var events = Session.Events.ToArray(); var previous = events[index];
+        events[index] = previous with { DwellSeconds = Math.Max(0, (at - previous.AtUtc).TotalSeconds) };
+        Session = Session with { Events = events };
     }
     public bool Add(UsageSample sample)
     {
         if (Session.State != "recording") return false;
-        if (sample.AtUtc >= Session.EndsUtc) { State("stopped"); return false; }
+        if (sample.AtUtc >= Session.EndsUtc) { State("stopped", atUtc: Session.EndsUtc); return false; }
         if (sample.AtUtc < Session.StartedUtc || sample.Kind is not ("foreground" or "process-start" or "axiom-action" or "gap" or "system-locked" or "system-unlocked" or "system-resumed" or "system-ac" or "system-battery") || sample.Origin is not ("unknown" or "axiom")) throw new ArgumentException("观察事件无效。");
-        if (sample.Kind == "gap") { State(Session.Events.Length >= UsageValidation.MaximumEvents - 1 ? "stopped" : "recording", "事件无法识别或队列溢出；这一段数据不完整。"); return true; }
+        if (sample.Kind == "gap") { State(Session.Events.Length >= UsageValidation.MaximumEvents - 1 ? "stopped" : "recording", "事件无法识别或队列溢出；这一段数据不完整。", sample.AtUtc); return true; }
         if (sample.Kind == "foreground" && !Session.Options.Foreground || sample.Kind == "process-start" && !Session.Options.ProcessStarts) return false;
         if (sample.Kind.StartsWith("system-", StringComparison.Ordinal) && !Session.Options.SystemEvents) return false;
         string? id = null;
         if (sample.Executable is { } path)
         {
             if (path.Length > 1024 || !Path.IsPathFullyQualified(path)) { State("recording", "程序身份无法确认。"); return false; }
-            if (Session.Options.ExcludedApplications.Contains(Path.GetFileName(path), StringComparer.OrdinalIgnoreCase)) return false;
+            if (Session.Options.ExcludedApplications.Contains(Path.GetFileName(path), StringComparer.OrdinalIgnoreCase))
+            {
+                if (sample.Kind == "foreground" && Session.Events.Any(e => e.Kind == "foreground" && e.DwellSeconds is null))
+                    State("recording", "排除应用期间的前台活动未记录，相关序列中断。", sample.AtUtc);
+                return false;
+            }
             var known = Session.Objects.FirstOrDefault(o => o.Executable.Equals(path, StringComparison.OrdinalIgnoreCase));
             if (known is null)
             {
@@ -90,8 +106,9 @@ public sealed class UsageRecorder
             }
             id = known.Id;
         }
-        var last = Session.Events.LastOrDefault();
-        if (last is not null && last.Kind == sample.Kind && last.ObjectId == id && sample.Kind == "foreground") return false;
+        var last = Session.Events.LastOrDefault(e => e.Kind is "foreground" or "gap");
+        if (last is { Kind: "foreground", DwellSeconds: null } && last.ObjectId == id && sample.Kind == "foreground") return false;
+        if (sample.Kind == "foreground" || sample.Kind is "system-locked" or "system-resumed") CloseDwell(sample.AtUtc);
         if (Session.Events.Length >= UsageValidation.MaximumEvents) { State("stopped", "达到 4096 条事件上限，观察已结束。"); return false; }
         Session = Session with { Events = [.. Session.Events, new(sample.AtUtc, sample.Kind, id, sample.Origin)] }; return true;
     }
