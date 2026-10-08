@@ -44,7 +44,7 @@ public sealed class UsageLifecycleTests
             var response = await controller.HandleAsync(new(1, "usage", "synthetic", Usage: new("import", SessionId: recorder.Session.Id,
                 Text: System.Text.Json.JsonSerializer.Serialize(proposal))), catalog, default);
             Assert.True(response.Task!.Paused); Assert.Equal(0, response.Task.Version); Assert.Equal("", response.Task.Action.Parameters["target"]);
-            Assert.Contains("仍需手工填写", response.ExportText); Assert.Contains("目录路径或网址", response.ExportText);
+            Assert.Contains("仍需手工填写", response.ExportText); Assert.Contains("目录/文档路径或网址", response.ExportText);
             Assert.Contains("才能保存或启用", response.ExportText); Assert.Equal(0, source.Starts); Assert.Null(response.UsageSnapshot!.ActiveId);
             Assert.Single(journal.Read(DateTimeOffset.UtcNow)); Assert.Empty(journal.Dismissed(null));
         }
