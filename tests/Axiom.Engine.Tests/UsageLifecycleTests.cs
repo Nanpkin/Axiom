@@ -27,6 +27,31 @@ public sealed class UsageLifecycleTests
         controller.HandleAsync(new(1, "usage", "test", Usage: new(operation, options)), Catalog, default);
 
     [Fact(Timeout = 10000)]
+    public async Task ImportedPlaceholdersAreExplainedBeforeReviewAndDoNotStartObservationOrSaveRules()
+    {
+        var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".db");
+        try
+        {
+            using var journal = new UsageJournal(path); var source = new Source(); var recorder = new UsageRecorder(new(5, true, false, []), DateTimeOffset.UtcNow);
+            recorder.State("stopped", atUtc: recorder.Session.StartedUtc); journal.Save(recorder.Session);
+            var modules = BuiltInAutomationPlugins.Create();
+            var catalog = Catalog with { Capabilities = [.. modules.SelectMany(m => m.Detections.Select(d => d.Descriptor).Concat(m.Actions.Select(a => a.Descriptor)))],
+                Combinations = [.. modules.SelectMany(m => m.Combinations)] };
+            var proposal = new UsageImport(1, recorder.Session.Id, "existing", "合成提醒", "合成测试候选",
+                new(SystemEventCapabilities.Event, 1, System.Collections.Immutable.ImmutableDictionary<string, string>.Empty.Add("event", "unlocked")),
+                new(OpenTargetCapabilities.Open, 1, System.Collections.Immutable.ImmutableDictionary<string, string>.Empty.Add("kind", "url").Add("target", "").Add("delaySeconds", "0")));
+            await using var controller = new UsageObservationController(journal, source);
+            var response = await controller.HandleAsync(new(1, "usage", "synthetic", Usage: new("import", SessionId: recorder.Session.Id,
+                Text: System.Text.Json.JsonSerializer.Serialize(proposal))), catalog, default);
+            Assert.True(response.Task!.Paused); Assert.Equal(0, response.Task.Version); Assert.Equal("", response.Task.Action.Parameters["target"]);
+            Assert.Contains("仍需手工填写", response.ExportText); Assert.Contains("目录路径或网址", response.ExportText);
+            Assert.Contains("才能保存或启用", response.ExportText); Assert.Equal(0, source.Starts); Assert.Null(response.UsageSnapshot!.ActiveId);
+            Assert.Single(journal.Read(DateTimeOffset.UtcNow)); Assert.Empty(journal.Dismissed(null));
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact(Timeout = 10000)]
     public async Task RestoringHandledPatternsKeepsRecordsAndUnrelatedFeedbackWhileExportMarksThem()
     {
         var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".db");
