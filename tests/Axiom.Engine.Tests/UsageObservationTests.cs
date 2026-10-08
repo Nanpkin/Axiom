@@ -167,6 +167,7 @@ public sealed class UsageObservationTests
     [InlineData("unlocked")]
     [InlineData("battery-low20")]
     [InlineData("battery-low10")]
+    [InlineData("usb-arrived")]
     public void RepeatedSystemEventStartsHaveRepresentativeEvidenceAndOnlyOneCountPerOpportunity(string kind)
     {
         var recorder = new UsageRecorder(new(5, false, true, [], SystemEvents: true), Now);
@@ -178,6 +179,7 @@ public sealed class UsageObservationTests
         }
         var suggestion = Assert.Single(UsageAnalysis.Analyze(recorder.Session));
         Assert.Equal(3, suggestion.Occurrences); Assert.Equal(3, suggestion.Opportunities); Assert.Equal(kind, suggestion.EventKind);
+        if (kind == "usb-arrived") Assert.Contains("任意USB设备", suggestion.Limitation);
         Assert.Equal(new UsageEvidence(0, 5), suggestion.EvidenceSamples![0]);
         var draft = UsageAnalysis.Draft(recorder.Session, suggestion, Catalog()); Assert.True(draft.Paused);
         Assert.Equal(SystemEventCapabilities.Event, draft.Detection.CapabilityId); Assert.Equal(kind, draft.Detection.Parameters["event"]);

@@ -79,3 +79,5 @@ Host 自身生命周期检测位于 Host：`AxiomStartupPlugin → PluginTaskRun
 周期计时：`IntervalCapabilities` 参数与整数校验，`IntervalPlugin` 事件编译和组合，`IntervalCapabilityProvider` 首快照零计数与会话事件，`IntervalEventSource` 单调时钟/最近到期单计时器/过期合并/取消；`IntervalTests` 用可控时钟验证共享、跳时及释放。计时检测不是动作延迟，后者仍由Engine负责。
 
 显示模式变化：共享 `WindowsSessionEvents` 接收 `WM_DISPLAYCHANGE` 但不保留载荷，复用系统事件能力和主动范围；`UsageAnalysis.DisplayLayoutPairs` 提取每次事件后同应用首个近似布局，`Draft` 将系统事件与窗口状态组合；合成原生通知与证据/暂停草稿回归分开验证。
+
+USB类别通知：`WindowsSessionEvents` 注册USB接口GUID、处理接入/移除头并注销句柄，不解析设备名称字段；经系统检测及主动观察进入 `UsageAnalysis.SystemPairs`，保留任意设备/重复通知限制。`WindowsSessionEventTests` 的合成通知验证共享投递，不模拟物理插拔。
