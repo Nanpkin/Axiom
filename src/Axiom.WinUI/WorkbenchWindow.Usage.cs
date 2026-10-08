@@ -13,6 +13,7 @@ public sealed partial class WorkbenchWindow
 {
     private UsageSnapshot? usageSnapshot;
     private NamedPipeClientStream? usageLease;
+    private NamedPipeClientStream? pendingUsageLease;
     private string? usageSelection;
     private int usageOffset;
     private readonly Button usageStop = Action("结束使用观察");
@@ -150,26 +151,48 @@ public sealed partial class WorkbenchWindow
         body.Children.Add(foreground); body.Children.Add(starts); body.Children.Add(exits); body.Children.Add(windows); body.Children.Add(system); body.Children.Add(audio); body.Children.Add(duration); body.Children.Add(exclusions); body.Children.Add(purpose);
         body.Children.Add(Text("记录只留本机；关闭窗口即停止，重启不会自动恢复。Axiom 动作会单独标记，其他事件来源未知。退出仅覆盖本次核验的新进程，最多同时 128 个；暂停期间和恢复前已有进程不补跟踪。", 12, Muted));
         var dialog = new ContentDialog { Title = "主动开启使用观察", Content = new ScrollViewer { Content = body, MaxHeight = Math.Max(180, Math.Min(560, shell.ActualHeight - 180)), VerticalScrollBarVisibility = ScrollBarVisibility.Auto }, PrimaryButtonText = "开始", CloseButtonText = "取消", DefaultButton = ContentDialogButton.Close, XamlRoot = shell.XamlRoot };
-        if (await ShowDialogAsync(dialog) != ContentDialogResult.Primary) return;
-        SetBusy(true);
-        try
+        var error = Text("", 12, Amber); body.Children.Add(error);
+        Control[] inputs = [foreground, starts, exits, windows, system, audio, duration, exclusions, purpose];
+        var submitting = false;
+        dialog.Closing += (_, args) => { if (submitting) args.Cancel = true; };
+        dialog.PrimaryButtonClick += async (_, args) =>
         {
-            var options = new UsageOptions(new[] { 5, 15, 30, 60, 120 }[duration.SelectedIndex], foreground.IsChecked == true, starts.IsChecked == true,
-                exclusions.Text.Split(['\r', '\n'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries), purpose.Text, system.IsChecked == true, exits.IsChecked == true, windows.IsChecked == true, audio.IsChecked == true);
-            UsageValidation.Options(options);
-            usageLease?.Dispose(); var sid = WindowsIdentity.GetCurrent().User?.Value ?? throw new UnauthorizedAccessException();
-            var lease = LocalUserPipe.Create(AutomationProtocol.PipeName(sid)); usageLease = lease;
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(12)); await lease.ConnectForUserAsync(3000, timeout.Token);
-            var id = Guid.NewGuid().ToString("N");
-            await AutomationProtocol.WriteAsync(lease, new(1, "usage", id, DateTimeOffset.UtcNow.AddSeconds(12), Usage: new("start", options)), timeout.Token);
-            var response = await AutomationProtocol.ReadAsync(lease, timeout.Token);
-            if (response.RequestId != id || response.Version != 1 || response.Type != "usage" || response.UsageSnapshot is null) throw new InvalidOperationException(response.Error ?? "开启结果未确认。");
-            usageSnapshot = response.UsageSnapshot; usageSelection = usageSnapshot.ActiveId; usageOffset = 0; UpdateUsageIndicator();
-            _ = WatchUsageLeaseAsync(lease, id);
-        }
-        catch (Exception error) { usageLease?.Dispose(); usageLease = null; ShowNotice(error.Message); }
-        finally { SetBusy(false); Render(); }
+            var deferral = args.GetDeferral(); submitting = true;
+            foreach (var input in inputs) input.IsEnabled = false;
+            error.Text = "正在校验并连接后台…";
+            NamedPipeClientStream? pendingLease = null;
+            try
+            {
+                var options = new UsageOptions(new[] { 5, 15, 30, 60, 120 }[duration.SelectedIndex], foreground.IsChecked == true, starts.IsChecked == true,
+                    exclusions.Text.Split(['\r', '\n'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries), purpose.Text, system.IsChecked == true, exits.IsChecked == true, windows.IsChecked == true, audio.IsChecked == true);
+                UsageValidation.Options(options);
+                var sid = WindowsIdentity.GetCurrent().User?.Value ?? throw new UnauthorizedAccessException();
+                pendingLease = LocalUserPipe.Create(AutomationProtocol.PipeName(sid)); pendingUsageLease = pendingLease;
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(12)); await pendingLease.ConnectForUserAsync(3000, timeout.Token);
+                var id = Guid.NewGuid().ToString("N");
+                await AutomationProtocol.WriteAsync(pendingLease, new(1, "usage", id, DateTimeOffset.UtcNow.AddSeconds(12), Usage: new("start", options)), timeout.Token);
+                var response = await AutomationProtocol.ReadAsync(pendingLease, timeout.Token);
+                if (closed) throw new OperationCanceledException("窗口已关闭，观察连接已结束。");
+                if (response.RequestId != id || response.Version != 1 || response.Type != "usage" || response.UsageSnapshot is null) throw new InvalidOperationException(response.Error ?? "开启结果未确认。");
+                usageLease?.Dispose(); usageLease = pendingLease; pendingLease = null; pendingUsageLease = null;
+                usageSnapshot = response.UsageSnapshot; usageSelection = usageSnapshot.ActiveId; usageOffset = 0; UpdateUsageIndicator();
+                _ = WatchUsageLeaseAsync(usageLease, id);
+            }
+            catch (Exception failure)
+            {
+                pendingLease?.Dispose(); args.Cancel = true;
+                error.Text = "未确认开启，输入已保留。请修正或检查后台后重试：" + failure.Message;
+            }
+            finally
+            {
+                pendingUsageLease = null;
+                foreach (var input in inputs) input.IsEnabled = true;
+                submitting = false; deferral.Complete();
+            }
+        };
+        if (await ShowDialogAsync(dialog) == ContentDialogResult.Primary) Render();
     }
+
     private async Task WatchUsageLeaseAsync(NamedPipeClientStream lease, string id)
     {
         try
@@ -267,12 +290,23 @@ public sealed partial class WorkbenchWindow
         var description = new TextBox { Header = "操作前后对比、希望自动完成的步骤（不填路径或个人信息）", AcceptsReturn = true, Height = 180, MaxLength = 2000 };
         var body = Column(10); body.Children.Add(title); body.Children.Add(description);
         var dialog = new ContentDialog { Title = "补充并确认扩展需求", Content = body, PrimaryButtonText = "生成任务包", CloseButtonText = "取消", XamlRoot = shell.XamlRoot };
-        if (await ShowDialogAsync(dialog) != ContentDialogResult.Primary) return;
-        try
+        var error = Text("", 12, Amber); body.Children.Add(error);
+        string? package = null; var submitting = false;
+        dialog.Closing += (_, args) => { if (submitting) args.Cancel = true; };
+        dialog.PrimaryButtonClick += async (_, args) =>
         {
-            var json = JsonSerializer.Serialize(new { Version = 1, SessionId = id, Kind = "extension", Title = title.Text, Explanation = description.Text });
-            var result = await UsageAsync(new("extension", SessionId: id, Text: json)); await PreviewUsageTextAsync("扩展开发任务预览", result.ExportText!);
-        }
-        catch (Exception error) { ShowNotice(error.Message); }
+            var deferral = args.GetDeferral(); submitting = true; title.IsEnabled = description.IsEnabled = false;
+            error.Text = "正在校验需求并生成本地任务包…";
+            try
+            {
+                var json = JsonSerializer.Serialize(new { Version = 1, SessionId = id, Kind = "extension", Title = title.Text, Explanation = description.Text });
+                var result = await UsageAsync(new("extension", SessionId: id, Text: json));
+                package = result.ExportText ?? throw new InvalidOperationException("任务包结果未确认。");
+            }
+            catch (Exception failure) { args.Cancel = true; error.Text = "未生成可预览的任务包，输入已保留：" + failure.Message; }
+            finally { title.IsEnabled = description.IsEnabled = true; submitting = false; deferral.Complete(); }
+        };
+        if (await ShowDialogAsync(dialog) == ContentDialogResult.Primary && package is not null)
+            await PreviewUsageTextAsync("扩展开发任务预览", package);
     }
 }
