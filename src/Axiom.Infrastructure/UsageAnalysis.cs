@@ -289,6 +289,8 @@ public static class UsageAnalysis
             // Only the import review allows missing local values. Save/compile and Agent validation remain strict.
             AutomationTaskCompiler.ValidateInvocation(resolved, capability with { Fields = [.. capability.Fields.Select(field =>
                 missing.Contains(field.Id) ? field with { Required = false } : field)] });
+            if (resolved.CapabilityId == NotificationCapabilities.Show)
+                NotificationCapabilities.Validate(resolved with { Parameters = resolved.Parameters.SetItem("title", "review").SetItem("body", "review") });
             if (missing.Count > 0) return resolved;
             // Provider-specific constraints are also checked before offering the draft.
             if (resolved.CapabilityId == FileArrivalCapabilities.Arrived) FileArrivalCapabilities.Validate(resolved);

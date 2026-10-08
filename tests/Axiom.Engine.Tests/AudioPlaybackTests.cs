@@ -72,7 +72,7 @@ public sealed class AudioPlaybackTests
     [Fact(Timeout = 10000)]
     public async Task BusyNativeCallRejectsNewWorkAndFailureReleasesAdmission()
     {
-        var commands = new BoundedAudioCommand(); var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var commands = new BoundedNativeCommand("音频", TimeSpan.FromSeconds(5)); var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var release = new ManualResetEventSlim(); var calls = 0;
         var first = commands.RunAsync(_ => { Interlocked.Increment(ref calls); entered.SetResult(); release.Wait(); return (true, "synthetic"); }, default);
         try
@@ -89,7 +89,7 @@ public sealed class AudioPlaybackTests
     [Fact(Timeout = 10000)]
     public async Task TimeoutDoesNotReleaseAdmissionWhileNativeWorkIsStillBlocked()
     {
-        var commands = new BoundedAudioCommand(); var time = new ManualTimeProvider();
+        var commands = new BoundedNativeCommand("音频", TimeSpan.FromSeconds(5)); var time = new ManualTimeProvider();
         var timerReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         time.TimerCreated = _ => timerReady.TrySetResult();
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

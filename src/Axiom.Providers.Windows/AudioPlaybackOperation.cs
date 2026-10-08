@@ -28,23 +28,3 @@ internal static class AudioPlaybackOperation
             : (false, "静音写入后读回不一致，可能被其他操作改变；不重试、不恢复旧值。");
     }
 }
-internal sealed class BoundedAudioCommand
-{
-    private readonly SemaphoreSlim gate = new(1, 1);
-    internal async Task<(bool Success, string Reason)> RunAsync(Func<CancellationToken, (bool Success, string Reason)> action, CancellationToken token, TimeProvider? timeProvider = null)
-    {
-        token.ThrowIfCancellationRequested();
-        if (!gate.Wait(0)) return (false, "上一次音频操作仍未结束，本次未执行；不排队或创建更多音频线程。");
-        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(token);
-        var work = Task.Run(() =>
-        {
-            try { lifetime.Token.ThrowIfCancellationRequested(); return action(lifetime.Token); }
-            catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
-            { return (false, "音频操作未确认完成；设备可能不可用、权限不足或操作已取消。不自动重试。"); }
-            finally { gate.Release(); }
-        });
-        try { return await work.WaitAsync(TimeSpan.FromSeconds(5), timeProvider ?? TimeProvider.System, token); }
-        catch (TimeoutException) { return (false, "音频操作超时，可能已经修改但结果未确认；不自动重试。"); }
-        finally { lifetime.Cancel(); }
-    }
-}
