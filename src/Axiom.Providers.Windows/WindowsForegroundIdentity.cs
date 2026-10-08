@@ -19,8 +19,8 @@ public static class WindowsForegroundIdentity
             if (handle == 0) return null;
             try
             {
-                if (WindowsGameProcessObserver.ReadOwnerSid(handle) != ownerSid || !GetProcessTimes(handle, out var created, out _, out _, out _) || created > hint.AtFileTime) return null;
-                return WindowsGameProcessObserver.ReadImagePath(handle);
+                if (WindowsProcessIdentity.ReadOwnerSid(handle) != ownerSid || !GetProcessTimes(handle, out var created, out _, out _, out _) || created > hint.AtFileTime) return null;
+                return WindowsProcessIdentity.ReadImagePath(handle);
             }
             finally { CloseHandle(handle); }
         }

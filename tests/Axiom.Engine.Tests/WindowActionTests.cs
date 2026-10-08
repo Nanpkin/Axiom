@@ -119,6 +119,21 @@ public sealed class WindowActionTests
         target.Show(); Assert.False(target.Maximized); Assert.Equal(0, target.CloseCount);
     }
 
+    [Fact(Timeout = 15000)]
+    public async Task WindowPresenceTracksShowHideAndRetainsSharedCommandSubscription()
+    {
+        using var target = new TrayWindow(); using var cancellation = new CancellationTokenSource();
+        var changes = System.Threading.Channels.Channel.CreateUnbounded<WindowPresenceValue[]>();
+        var observing = WindowsWindowPresence.ObserveAsync([Path.GetFileName(Environment.ProcessPath!)], s => changes.Writer.TryWrite(s), cancellation.Token);
+        var initial = await changes.Reader.ReadAsync(); Assert.False(initial.Single().Visible);
+        target.Show(); Assert.True((await changes.Reader.ReadAsync()).Single().Visible);
+        var result = await WindowsWindowActions.CloseAsync(Environment.ProcessPath!, target.Title, TimeSpan.FromSeconds(2), default);
+        Assert.True(result.Success, result.Reason); Assert.False((await changes.Reader.ReadAsync()).Single().Visible);
+        cancellation.Cancel(); await Assert.ThrowsAnyAsync<OperationCanceledException>(() => observing);
+        target.Show(); Assert.True(target.Visible);
+        Assert.True((await WindowsWindowActions.CloseAsync(Environment.ProcessPath!, target.Title, TimeSpan.FromSeconds(2), default)).Success);
+    }
+
     // Native fixture deliberately implements × as hide-to-tray, retaining its process.
     private sealed class TrayWindow : IDisposable
     {

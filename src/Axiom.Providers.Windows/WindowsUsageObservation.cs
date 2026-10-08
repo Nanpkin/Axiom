@@ -54,10 +54,10 @@ public static class WindowsUsageObservation
                 if (handle == 0) throw new Win32Exception(Marshal.GetLastWin32Error());
                 try
                 {
-                    if (WindowsGameProcessObserver.ReadOwnerSid(handle) != ownerSid) return;
+                    if (WindowsProcessIdentity.ReadOwnerSid(handle) != ownerSid) return;
                     if (eventTime is { } notified && (!GetProcessTimes(handle, out var created, out _, out _, out _) || created > notified))
                         throw new InvalidOperationException("Process identity changed.");
-                    var path = WindowsGameProcessObserver.ReadImagePath(handle);
+                    var path = WindowsProcessIdentity.ReadImagePath(handle);
                     if (new[] { "Axiom.exe", "Axiom.ServiceHost.exe", "Axiom.SessionAgent.exe", "Axiom.WinUI.exe" }.Contains(Path.GetFileName(path), StringComparer.OrdinalIgnoreCase)) return;
                     publish(new(at, kind, path));
                 }
