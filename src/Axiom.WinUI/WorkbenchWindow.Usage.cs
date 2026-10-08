@@ -86,7 +86,9 @@ public sealed partial class WorkbenchWindow
         {
             var card = Column(8); card.Children.Add(Text(suggestion.Title + (suggestion.Kind == "existing" ? " · 可审阅规则" : " · 证据不足"), 17, Ink, true));
             card.Children.Add(Text(string.Join(" → ", suggestion.ObjectIds.Select(id => LocalName(selected, id))), 14));
-            card.Children.Add(Text(suggestion.Evidence, 13)); card.Children.Add(Text(suggestion.Limitation, 12, Muted));
+            card.Children.Add(Text(suggestion.Evidence, 13));
+            if (suggestion.EvidenceSamples is { Length: > 0 } examples)
+                card.Children.Add(Text("代表片段：" + string.Join("；", examples.Select(e => $"开始后 {e.FromOffsetSeconds} 秒 → {e.ToOffsetSeconds} 秒")), 12, Muted)); card.Children.Add(Text(suggestion.Limitation, 12, Muted));
             if (suggestion.Kind == "existing")
             {
                 var accept = Action("确认意图并审阅规则…", true);

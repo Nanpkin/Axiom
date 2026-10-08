@@ -9,8 +9,9 @@ public sealed record UsageSession(string Id, DateTimeOffset StartedUtc, DateTime
     UsageOptions Options, UsageObject[] Objects, UsageEvent[] Events, string[] Gaps, DateTimeOffset? StoppedUtc = null);
 public sealed record UsageSnapshot(UsageSession[] Sessions, string? ActiveId, DateTimeOffset ReadAtUtc, UsageSession? Selected = null, int TotalEvents = 0, UsageSuggestion[]? Suggestions = null);
 public sealed record UsageRequest(string Operation, UsageOptions? Options = null, string? SessionId = null, string? Text = null, string? FeedbackId = null, int Offset = 0);
+public sealed record UsageEvidence(int FromOffsetSeconds, int ToOffsetSeconds);
 public sealed record UsageSuggestion(string Id, string Kind, string Title, string Evidence, string Limitation,
-    string[] ObjectIds, int Occurrences, int Opportunities);
+    string[] ObjectIds, int Occurrences, int Opportunities, string? EventKind = null, UsageEvidence[]? EvidenceSamples = null);
 
 public static class UsageValidation
 {

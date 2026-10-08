@@ -13,7 +13,7 @@ public sealed class UsageObservationTests
     private static UsageRecorder Recorder() => new(new(5, true, true, ["Private.exe"]), Now);
     private static AutomationSnapshot Catalog()
     {
-        var modules = new IAutomationPlugin[] { new ProgramPlugin(), new WindowPlugin() };
+        var modules = new IAutomationPlugin[] { new ProgramPlugin(), new WindowPlugin(), new SystemEventPlugin() };
         return new([], [.. modules.SelectMany(m => m.Detections.Select(d => d.Descriptor).Concat(m.Actions.Select(a => a.Descriptor)))],
             [.. modules.SelectMany(m => m.Combinations)], true, "ready", "", Now, []);
     }
@@ -27,6 +27,24 @@ public sealed class UsageObservationTests
         recorder.State("paused"); Assert.False(recorder.Add(new(Now.AddSeconds(2), "process-start", App("Other"))));
         recorder.State("recording"); Assert.False(recorder.Add(new(Now.AddMinutes(5), "foreground", App("Other"))));
         Assert.Equal("stopped", recorder.Session.State); Assert.Single(recorder.Session.Events); Assert.Single(recorder.Session.Objects);
+    }
+    [Fact]
+    public void RepeatedPostUnlockStartsHaveRepresentativeEvidenceAndOnlyOneCountPerOpportunity()
+    {
+        var recorder = new UsageRecorder(new(5, false, true, [], SystemEvents: true), Now);
+        for (var i = 0; i < 3; i++)
+        {
+            recorder.Add(new(Now.AddSeconds(i * 70), "system-unlocked"));
+            recorder.Add(new(Now.AddSeconds(i * 70 + 5), "process-start", App("Editor")));
+            recorder.Add(new(Now.AddSeconds(i * 70 + 6), "process-start", App("Editor")));
+        }
+        var suggestion = Assert.Single(UsageAnalysis.Analyze(recorder.Session));
+        Assert.Equal(3, suggestion.Occurrences); Assert.Equal(3, suggestion.Opportunities); Assert.Equal("unlocked", suggestion.EventKind);
+        Assert.Equal(new UsageEvidence(0, 5), suggestion.EvidenceSamples![0]);
+        var draft = UsageAnalysis.Draft(recorder.Session, suggestion, Catalog()); Assert.True(draft.Paused);
+        Assert.Equal(SystemEventCapabilities.Event, draft.Detection.CapabilityId); Assert.Equal("unlocked", draft.Detection.Parameters["event"]);
+        var missing = recorder.Session with { Events = [.. recorder.Session.Events.SelectMany(e => e.Kind == "system-unlocked" ? new[] { e, new UsageEvent(e.AtUtc, "gap", null, "unknown") } : new[] { e })] };
+        Assert.Empty(UsageAnalysis.Analyze(missing));
     }
     [Fact]
     public void ForegroundDwellMergesAcrossOtherEventsAndExclusionsBreakPatterns()
@@ -82,6 +100,20 @@ public sealed class UsageObservationTests
         Assert.Empty(UsageAnalysis.Analyze(controlled));
         var marked = recorder.Session with { Events = [new UsageEvent(Now, "axiom-action", recorder.Session.Objects[0].Id, "axiom"), .. recorder.Session.Events] };
         Assert.Empty(UsageAnalysis.Analyze(marked));
+    }
+    [Fact]
+    public void FullRegisteredCatalogFitsExportAndOversizedDescriptionsAreSummarized()
+    {
+        var modules = new IAutomationPlugin[] { new ProgramPlugin(), new WindowPlugin(), new SystemEventPlugin(), new AxiomStartupPlugin(), new KeyboardPlugin(), new TrayPlugin(), new OpenTargetPlugin() };
+        var catalog = Catalog() with { Capabilities = [.. modules.SelectMany(m => m.Detections.Select(d => d.Descriptor).Concat(m.Actions.Select(a => a.Descriptor))).DistinctBy(c => (c.Kind, c.Id))], Combinations = [.. modules.SelectMany(m => m.Combinations)] };
+        var recorder = Recorder(); recorder.Add(new(Now, "foreground", App("Editor")));
+        var normal = UsageAnalysis.Prompt + UsageAnalysis.Summary(recorder.Session, catalog);
+        Assert.True(System.Text.Encoding.UTF8.GetByteCount(normal) <= UsageValidation.MaximumExportBytes);
+        var large = catalog with { Capabilities = [.. catalog.Capabilities.Select(c => c with { Description = new string('说', 10000) })] };
+        var compact = UsageAnalysis.Summary(recorder.Session, large);
+        Assert.Contains("省略能力说明", compact);
+        Assert.True(System.Text.Encoding.UTF8.GetByteCount(UsageAnalysis.Prompt + compact) <= UsageValidation.MaximumExportBytes);
+        foreach (var capability in catalog.Capabilities) Assert.Contains(capability.Id, compact);
     }
     [Fact]
     public void SummaryUsesRandomLocalAliasesAndNeverExportsPathsOrExcludedNames()
