@@ -50,7 +50,7 @@ public static class UsageAnalysis
     {
         var automated = session.Events.Where(e => e.Kind == "axiom-action" && e.ObjectId is not null).Select(e => e.ObjectId).ToHashSet();
         var seen = new HashSet<string>(); UsageEvent? trigger = null;
-        foreach (var item in session.Events)
+        foreach (var item in session.Events.OrderBy(e => e.AtUtc))
         {
             if (item.Kind is "gap" or "axiom-action") { trigger = null; continue; }
             if (item.Kind.StartsWith("system-", StringComparison.Ordinal))
@@ -67,7 +67,7 @@ public static class UsageAnalysis
     {
         var automated = session.Events.Where(e => e.Kind == "axiom-action" && e.ObjectId is not null).Select(e => e.ObjectId).ToHashSet();
         UsageEvent? previous = null;
-        foreach (var item in session.Events)
+        foreach (var item in session.Events.OrderBy(e => e.AtUtc))
         {
             if (item.Kind is "gap" or "axiom-action" || item.Kind.StartsWith("system-", StringComparison.Ordinal)) { previous = null; continue; }
             if (item.ObjectId is not null && automated.Contains(item.ObjectId)) { previous = null; continue; }

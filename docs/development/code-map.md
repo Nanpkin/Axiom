@@ -61,3 +61,5 @@ Host 自身生命周期检测位于 Host：`AxiomStartupPlugin → PluginTaskRun
 系统会话/供电通知：`SystemEventCapabilities → SystemEventPlugin → SystemEventCapabilityProvider → WindowsSessionEvents`。同一共享订阅亦供主动观察使用，零消费者关闭隐藏消息窗口，无轮询；初始状态不补事件。测试 `SystemEventTests`。
 
 目录/网页动作：`OpenTargetCapabilities → OpenTargetPlugin → OpenTargetCapabilityProvider → WindowsOpenTarget`。仅目录或 http/https，Engine 延迟与取消，系统接受请求即返回明确回执；不能当页面加载确认。`OpenTargetTests` 验证协议/路径/编译。网络事件加入 `WindowsSessionEvents` 的按需 NetworkChange 订阅，不收集地址。
+
+前台应用：`ForegroundCapabilities → ForegroundPlugin → ForegroundCapabilityProvider → WindowsForegroundEvents/WindowsForegroundIdentity`。前台通知由规则与主动观察共享，规则事件唤醒后核验当前对象，Unknown 不当 false；先发布新的 true 再发布旧的 false，保持多选 Any 条件在组内切换时不误触发。`ForegroundTests` 和 Windows 共享租约回归覆盖对应边界。

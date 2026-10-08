@@ -7,6 +7,16 @@ namespace Axiom.Engine.Tests;
 public sealed class WindowsSessionEventTests
 {
     [Fact(Timeout = 15000)]
+    public async Task ForegroundRuleAndObservationLeasesShareInitialSnapshotAndReleaseIndependently()
+    {
+        using var rule = new WindowsForegroundEvents(); using var observation = new WindowsForegroundEvents();
+        Assert.Equal(2, WindowsForegroundEvents.ActiveConsumers);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+        Assert.NotNull(await rule.Events.ReadAsync(timeout.Token)); Assert.NotNull(await observation.Events.ReadAsync(timeout.Token));
+        observation.Dispose(); Assert.Equal(1, WindowsForegroundEvents.ActiveConsumers); Assert.False(rule.Events.Completion.IsCompleted);
+        rule.Dispose(); Assert.Equal(0, WindowsForegroundEvents.ActiveConsumers);
+    }
+    [Fact(Timeout = 15000)]
     public async Task ConcurrentLeaseAcquisitionAndReleaseKeepsSurvivorAlive()
     {
         using var survivor = new WindowsSessionEvents();
