@@ -18,6 +18,41 @@ public sealed class UsageObservationTests
             [.. modules.SelectMany(m => m.Combinations)], true, "ready", "", Now, []);
     }
     [Fact]
+    public void RepeatedExitPairsOfferOnlyReviewedGracefulCleanupAndIgnoreAutomationOrMissingEvidence()
+    {
+        var recorder = new UsageRecorder(new(5, false, false, [], ProcessExits: true), Now);
+        for (var i = 0; i < 3; i++)
+        {
+            recorder.Add(new(Now.AddSeconds(i * 60), "process-exit", App("Editor")));
+            recorder.Add(new(Now.AddSeconds(i * 60 + 5), "process-exit", App("Companion")));
+        }
+        var suggestion = Assert.Single(UsageAnalysis.Analyze(recorder.Session)); Assert.Equal(3, suggestion.Occurrences); Assert.Equal(3, suggestion.Opportunities);
+        var draft = UsageAnalysis.Draft(recorder.Session, suggestion, Catalog()); Assert.True(draft.Paused);
+        Assert.Equal("process.exited", draft.Detection.CapabilityId); Assert.Equal("program.close", draft.Action.CapabilityId);
+        Assert.Equal("graceful", draft.Action.Parameters["mode"]); Assert.Equal("latest", draft.Action.Parameters["instances"]);
+        var compiler = new AutomationTaskCompiler(); var module = new ProgramPlugin();
+        foreach (var d in module.Detections) compiler.Register(d); foreach (var a in module.Actions) compiler.Register(a);
+        Assert.NotNull(compiler.Compile(draft, "owner", ResourceScope.Session("owner", 1)));
+        var automated = recorder.Session with { Events = [new UsageEvent(Now, "axiom-action", recorder.Session.Objects[1].Id, "axiom"), .. recorder.Session.Events] };
+        Assert.Empty(UsageAnalysis.Analyze(automated));
+        var missing = recorder.Session with { Events = [.. recorder.Session.Events.SelectMany(e => new[] { e, new UsageEvent(e.AtUtc, "gap", null, "unknown") })] };
+        Assert.Empty(UsageAnalysis.Analyze(missing));
+    }
+
+    [Fact]
+    public void ExitObservationIsExplicitAndDoesNotInferManualClosure()
+    {
+        var at = DateTimeOffset.UtcNow; var options = new UsageOptions(5, false, false, [], ProcessExits: true);
+        UsageValidation.Options(options); var recorder = new UsageRecorder(options, at);
+        Assert.False(recorder.Add(new(at, "process-start", App("Editor"))));
+        Assert.True(recorder.Add(new(at.AddSeconds(5), "process-exit", App("Editor"))));
+        var exit = Assert.Single(recorder.Session.Events); Assert.Equal("unknown", exit.Origin); Assert.Null(exit.DwellSeconds);
+        Assert.Empty(UsageAnalysis.Analyze(recorder.Session));
+        Assert.False(Recorder().Add(new(Now, "process-exit", App("Editor"))));
+        Assert.Contains("ProcessExits", UsageAnalysis.Summary(recorder.Session, Catalog()));
+    }
+
+    [Fact]
     public void UnobservedForegroundClosesDwellWithoutRetainingAnObjectOrRepeatingGaps()
     {
         var at = DateTimeOffset.UtcNow; var recorder = new UsageRecorder(new(5, true, false, []), at);
@@ -79,6 +114,7 @@ public sealed class UsageObservationTests
     {
         var catalog = Catalog(); var json = UsageAnalysis.CapabilityCatalog(catalog, false); var readable = UsageAnalysis.CapabilityCatalog(catalog, true);
         foreach (var capability in catalog.Capabilities) { Assert.Contains(capability.Id, json); Assert.Contains(capability.Id, readable); }
+        Assert.Contains("network-up =", readable);
         var one = Recorder(); one.Add(new(Now, "foreground", App("Editor"))); var two = Recorder(); two.Add(new(Now, "foreground", App("Editor")));
         var first = new UsageSuggestion("switch:any", "insufficient", "", "", "", [one.Session.Objects[0].Id], 3, 3);
         var second = first with { ObjectIds = [two.Session.Objects[0].Id] };
@@ -117,7 +153,7 @@ public sealed class UsageObservationTests
     [Fact]
     public void FullRegisteredCatalogFitsExportAndOversizedDescriptionsAreSummarized()
     {
-        var modules = new IAutomationPlugin[] { new ProgramPlugin(), new WindowPlugin(), new SystemEventPlugin(), new AxiomStartupPlugin(), new KeyboardPlugin(), new TrayPlugin(), new OpenTargetPlugin() };
+        var modules = new IAutomationPlugin[] { new ProgramPlugin(), new WindowPlugin(), new SystemEventPlugin(), new AxiomStartupPlugin(), new KeyboardPlugin(), new TrayPlugin(), new OpenTargetPlugin(), new ForegroundPlugin(), new WindowPresencePlugin() };
         var catalog = Catalog() with { Capabilities = [.. modules.SelectMany(m => m.Detections.Select(d => d.Descriptor).Concat(m.Actions.Select(a => a.Descriptor))).DistinctBy(c => (c.Kind, c.Id))], Combinations = [.. modules.SelectMany(m => m.Combinations)] };
         var recorder = Recorder(); recorder.Add(new(Now, "foreground", App("Editor")));
         var normal = UsageAnalysis.Prompt + UsageAnalysis.Summary(recorder.Session, catalog);

@@ -65,3 +65,5 @@ Host 自身生命周期检测位于 Host：`AxiomStartupPlugin → PluginTaskRun
 前台应用：`ForegroundCapabilities → ForegroundPlugin → ForegroundCapabilityProvider → WindowsForegroundEvents/WindowsForegroundIdentity`。前台通知由规则与主动观察共享，规则事件唤醒后核验当前对象，Unknown 不当 false；先发布新的 true 再发布旧的 false，保持多选 Any 条件在组内切换时不误触发。`ForegroundTests` 和 Windows 共享租约回归覆盖对应边界。
 
 - 窗口出现检测：`WindowPresenceCapabilities` / `WindowPresencePlugin` / `WindowPresenceCapabilityProvider`；`WindowsWindowPresence` 初始枚举后接共享 `WindowsWindowEvents`，`WindowPresenceState` 有界聚合。`WindowsProcessIdentity` 复用进程路径/SID核验；纯逻辑 `WindowPresenceTests`，原生回归 `WindowActionTests`。
+
+- 使用观察的进程退出：`WindowsUsageObservation` 核验新进程后交 `ObservedProcessExitTracker` 持有有界等待句柄；暂停/退出全释放。`UsageOptions.ProcessExits` 显式范围，`UsageAnalysis` 退出对生成正常关闭暂停草稿；`ObservedProcessExitTests`、`UsageObservationTests` 验证边界。
