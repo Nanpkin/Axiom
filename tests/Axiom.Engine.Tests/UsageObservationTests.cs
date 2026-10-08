@@ -43,6 +43,39 @@ public sealed class UsageObservationTests
     }
 
     [Fact]
+    public void RepeatedHiddenWindowCleanupKeepsEvidenceLimitsAndCompilesOnlyPausedGracefulDraft()
+    {
+        var recorder = new UsageRecorder(new(5, false, false, [], ProcessExits: true, WindowStates: true), Now);
+        for (var i = 0; i < 3; i++)
+        {
+            recorder.Add(new(Now.AddSeconds(i * 60), "window-hidden", App("Editor")));
+            recorder.Add(new(Now.AddSeconds(i * 60 + 5), "process-exit", App("Companion")));
+            recorder.Add(new(Now.AddSeconds(i * 60 + 6), "process-exit", App("Companion")));
+        }
+        var suggestion = Assert.Single(UsageAnalysis.Analyze(recorder.Session));
+        Assert.Equal(3, suggestion.Occurrences); Assert.Equal(3, suggestion.Opportunities);
+        Assert.Contains("不能从一个窗口消失", suggestion.Limitation);
+        var draft = UsageAnalysis.Draft(recorder.Session, suggestion, Catalog()); Assert.True(draft.Paused);
+        Assert.Equal(WindowPresenceCapabilities.Absent, draft.Detection.CapabilityId);
+        Assert.Equal("program.close", draft.Action.CapabilityId); Assert.Equal("graceful", draft.Action.Parameters["mode"]); Assert.Equal("latest", draft.Action.Parameters["instances"]);
+        var compiler = new AutomationTaskCompiler();
+        foreach (var module in new IAutomationPlugin[] { new ProgramPlugin(), new WindowPresencePlugin() })
+        { foreach (var d in module.Detections) compiler.Register(d); foreach (var a in module.Actions) compiler.Register(a); }
+        Assert.NotNull(compiler.Compile(draft, "owner", ResourceScope.Session("owner", 1)));
+        Assert.Contains("window-exit:", UsageAnalysis.Summary(recorder.Session, Catalog()));
+        foreach (var boundary in new[] { "gap", "window-shown", "axiom-action" })
+        {
+            var interrupted = recorder.Session with { Events = [.. recorder.Session.Events.SelectMany(e => e.Kind == "window-hidden"
+                ? new[] { e, new UsageEvent(e.AtUtc.AddSeconds(1), boundary, e.ObjectId, boundary == "axiom-action" ? "axiom" : "unknown") } : new[] { e })] };
+            Assert.Empty(UsageAnalysis.Analyze(interrupted));
+        }
+        var automated = recorder.Session with { Events = [new UsageEvent(Now, "axiom-action", recorder.Session.Objects[1].Id, "axiom"), .. recorder.Session.Events] };
+        Assert.Empty(UsageAnalysis.Analyze(automated));
+        var sameApp = recorder.Session with { Events = [.. recorder.Session.Events.Select(e => e with { ObjectId = recorder.Session.Objects[0].Id })] };
+        Assert.Empty(UsageAnalysis.Analyze(sameApp));
+    }
+
+    [Fact]
     public void RepeatedExitPairsOfferOnlyReviewedGracefulCleanupAndIgnoreAutomationOrMissingEvidence()
     {
         var recorder = new UsageRecorder(new(5, false, false, [], ProcessExits: true), Now);

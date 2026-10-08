@@ -39,6 +39,11 @@ public static class UsageAnalysis
                 $"{g.Count()} 次在 30 秒内相继退出；前一个程序有 {session.Events.Count(e => e.Kind == "process-exit" && e.ObjectId == g.Key.Item1)} 次已观察退出机会。",
                 "退出原因未知，可能是自动退出或崩溃，不证明手动收尾。只覆盖观察期间新核验的进程。候选在检测程序的最后实例退出时，请求正常关闭配套程序最近启动的一个实例；不强制结束、不自动重开。多实例退出次数不等同规则触发次数；未保存内容可能需要确认。Axiom 动作目标和记录缺口不参与序列。",
                 [g.Key.Item1!, g.Key.Item2!], g.Count(), session.Events.Count(e => e.Kind == "process-exit" && e.ObjectId == g.Key.Item1), EvidenceSamples: Evidence(session, g)));
+        var windowCleanup = WindowExitPairs(session).GroupBy(p => (p.First.ObjectId, p.Second.ObjectId)).Where(g => g.Count() >= 3).Select(g => new UsageSuggestion(
+            "window-exit:" + g.Key.Item1 + ":" + g.Key.Item2, "existing", "窗口消失后反复退出配套程序",
+            $"{g.Count()} 次在一个应用窗口隐藏或销毁后30秒内观察到另一个程序退出；前者共出现 {session.Events.Count(e => e.Kind == "window-hidden" && e.ObjectId == g.Key.Item1)} 次窗口消失机会。",
+            "来源未知，不证明手动收尾，也不能从一个窗口消失判断该应用的所有窗口均已消失。候选仅在所选应用全部没有可见主窗口时，请求正常关闭配套程序最近启动的一个实例；最小化不触发，检测程序可能仍在后台。退出观察只覆盖本次新核验的进程。请确认目标及多窗口差异；不强杀、不自动重开，未保存内容可能需要确认。数据缺口、重新显示及Axiom动作中断序列，已知动作目标不参与。",
+            [g.Key.Item1!, g.Key.Item2!], g.Count(), session.Events.Count(e => e.Kind == "window-hidden" && e.ObjectId == g.Key.Item1), EvidenceSamples: Evidence(session, g)));
         var windows = WindowPairs(session).GroupBy(p => (p.Second.Kind, p.Second.ObjectId)).Where(g => g.Count() >= 3).Select(g => new UsageSuggestion(
             "window:" + g.Key.Kind + ":" + g.Key.ObjectId, "existing", "窗口显示后反复调整状态",
             $"{g.Count()} 次在窗口显示后 30 秒内观察到同一应用{WindowKindName(g.Key.Kind)}；该应用有 {session.Events.Count(e => e.Kind == "window-shown" && e.ObjectId == g.Key.ObjectId)} 次已观察显示机会。",
@@ -50,9 +55,23 @@ public static class UsageAnalysis
             $"{g.Count()} 次在 {SystemName(g.Key.Kind)} 后一分钟内启动；此事件共出现 {session.Events.Count(e => e.Kind == g.Key.Kind)} 次。",
             "来源未知，不证明是手动操作或因果。先确认这是你希望自动完成的步骤。候选只启动一次，已运行则跳过；之后不自动关闭。缺口或 Axiom 动作会中断序列，已知动作目标不参加分析。",
             [g.Key.ObjectId!], g.Count(), session.Events.Count(e => e.Kind == g.Key.Kind), g.Key.Kind[7..], Evidence(session, g)));
-        return [.. afterEvents.Concat(starts).Concat(exits).Concat(windows).Concat(switches).OrderByDescending(s => s.Occurrences).Take(12).Select(s =>
+        return [.. afterEvents.Concat(starts).Concat(exits).Concat(windowCleanup).Concat(windows).Concat(switches).OrderByDescending(s => s.Occurrences).Take(12).Select(s =>
             s.Kind == "existing" && !s.ObjectIds.All(id => CanUse(session.Objects.Single(o => o.Id == id).Executable))
                 ? s with { Kind = "insufficient", Limitation = s.Limitation + "此对象不符合当前程序动作的安全范围，不能生成规则。" } : s)];
+    }
+    private static IEnumerable<(UsageEvent First, UsageEvent Second)> WindowExitPairs(UsageSession session)
+    {
+        var automated = session.Events.Where(e => e.Kind == "axiom-action" && e.ObjectId is not null).Select(e => e.ObjectId).ToHashSet();
+        UsageEvent? hidden = null; var seen = new HashSet<string>();
+        foreach (var item in session.Events.OrderBy(e => e.AtUtc))
+        {
+            if (item.Kind is "gap" or "axiom-action" || item.Kind.StartsWith("system-", StringComparison.Ordinal)) { hidden = null; continue; }
+            if (item.ObjectId is null || automated.Contains(item.ObjectId)) continue;
+            if (item.Kind == "window-hidden") { hidden = item; seen.Clear(); continue; }
+            if (hidden is null) continue;
+            if (item.Kind == "window-shown" && item.ObjectId == hidden.ObjectId || item.AtUtc - hidden.AtUtc > TimeSpan.FromSeconds(30)) { hidden = null; continue; }
+            if (item.Kind == "process-exit" && item.ObjectId != hidden.ObjectId && seen.Add(item.ObjectId)) yield return (hidden, item);
+        }
     }
     private static string WindowKindName(string kind) => kind switch { "window-minimized" => "最小化", "window-maximized" => "最大化", "window-left" => "摆到近似左半屏", "window-right" => "摆到近似右半屏", "window-center" => "摆到近似中央（80%）", _ => "改变状态" };
     private static string WindowCommand(string kind) => kind switch { "window-minimized" => "minimize", "window-maximized" => "maximize", _ => kind[7..] };
@@ -108,8 +127,9 @@ public static class UsageAnalysis
     public static AutomationTask Draft(UsageSession session, UsageSuggestion suggestion, AutomationSnapshot catalog)
     {
         if (suggestion.Kind != "existing" || suggestion.ObjectIds.Length != (suggestion.EventKind is null && suggestion.WindowState is null ? 2 : 1)) throw new ArgumentException("此建议尚不足以生成规则。");
-        var closing = suggestion.Id.StartsWith("exit:", StringComparison.Ordinal);
-        var detection = catalog.Capabilities.Single(c => c.Id == (suggestion.WindowState is not null ? WindowPresenceCapabilities.Visible : suggestion.EventKind is null ? closing ? "process.exited" : "process.running" : SystemEventCapabilities.Event) && c.Kind == TaskCapabilityKind.Detection);
+        var windowClosing = suggestion.Id.StartsWith("window-exit:", StringComparison.Ordinal);
+        var closing = windowClosing || suggestion.Id.StartsWith("exit:", StringComparison.Ordinal);
+        var detection = catalog.Capabilities.Single(c => c.Id == (suggestion.WindowState is not null ? WindowPresenceCapabilities.Visible : windowClosing ? WindowPresenceCapabilities.Absent : suggestion.EventKind is null ? closing ? "process.exited" : "process.running" : SystemEventCapabilities.Event) && c.Kind == TaskCapabilityKind.Detection);
         var action = catalog.Capabilities.Single(c => c.Id == (suggestion.WindowState is not null ? WindowCapabilities.State : closing ? "program.close" : "program.start") && c.Kind == TaskCapabilityKind.Action);
         TaskInvocation Make(TaskCapability capability, string field, string alias) => new(capability.Id, capability.SchemaVersion,
             capability.Fields.Where(f => f.DefaultValue is not null).ToImmutableDictionary(f => f.Id, f => f.DefaultValue!).SetItem(field, alias));
