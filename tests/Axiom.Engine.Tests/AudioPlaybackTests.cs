@@ -114,6 +114,23 @@ public sealed class AudioPlaybackTests
         finally { release.Set(); await exiting.Task.WaitAsync(TimeSpan.FromSeconds(3)); }
         Assert.True(canceled);
     }
+    [Fact(Timeout = 10000)]
+    public async Task CanceledShellRequestRetainsNativeAdmissionUntilWorkerActuallyReturns()
+    {
+        var commands = new BoundedNativeCommand("打开目标", TimeSpan.FromSeconds(8));
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var release = new ManualResetEventSlim(); using var cancellation = new CancellationTokenSource();
+        var request = commands.RunAsync(_ => { entered.SetResult(); release.Wait(); return (true, "already dispatched"); }, cancellation.Token);
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(3)); cancellation.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => request);
+            Assert.False(commands.DrainAsync().IsCompleted);
+            Assert.False((await commands.RunAsync(_ => throw new InvalidOperationException("must not dispatch"), default)).Success);
+        }
+        finally { release.Set(); await commands.DrainAsync().WaitAsync(TimeSpan.FromSeconds(3)); }
+        Assert.True((await commands.RunAsync(_ => (true, "next explicit request"), default)).Success);
+    }
     private sealed class Endpoint : IAudioPlaybackEndpoint
     {
         internal float Volume = .7f; internal bool Muted = true; internal int VolumeWrites, MuteWrites; internal bool OverrideReadback; internal Action? AfterWrite;

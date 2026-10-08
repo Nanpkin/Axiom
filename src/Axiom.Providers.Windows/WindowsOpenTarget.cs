@@ -7,7 +7,10 @@ namespace Axiom.Providers.Windows;
 [SupportedOSPlatform("windows")]
 public static class WindowsOpenTarget
 {
-    public static ProgramControlResult Open(string kind, string target, CancellationToken token)
+    private static readonly BoundedNativeCommand Commands = new("打开目标", TimeSpan.FromSeconds(8));
+    public static Task<(bool Success, string Reason)> OpenAsync(string kind, string target, CancellationToken token) =>
+        Commands.RunAsync(cancellation => { var result = Open(kind, target, cancellation); return (result.Success, result.Reason); }, token);
+    private static ProgramControlResult Open(string kind, string target, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
         if (kind is "folder" or "document")
