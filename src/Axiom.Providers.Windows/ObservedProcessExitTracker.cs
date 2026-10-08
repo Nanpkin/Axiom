@@ -1,3 +1,5 @@
+using Microsoft.Win32.SafeHandles;
+
 namespace Axiom.Providers.Windows;
 
 // Owns only handles captured during an explicit observation, never enumerates existing processes.
@@ -9,6 +11,12 @@ public sealed class ObservedProcessExitTracker(Action<DateTimeOffset, string> pu
     private readonly TaskCompletionSource failure = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private bool disposed;
     private sealed class Entry { internal Task Task = Task.CompletedTask; }
+    private sealed class RegistrationHandle : WaitHandle
+    {
+        // The owning handle stays alive until unregister completion. This wrapper must
+        // not delay or duplicate its CloseHandle when the CLR releases its wait-array ref.
+        internal RegistrationHandle(WaitHandle owner) => SafeWaitHandle = new SafeWaitHandle(owner.SafeWaitHandle.DangerousGetHandle(), ownsHandle: false);
+    }
     public Task Failure => failure.Task;
     public int Count { get { lock (gate) return entries.Count; } }
     // Takes ownership even on rejection, so limits and cancellation cannot leak process handles.
@@ -28,7 +36,8 @@ public sealed class ObservedProcessExitTracker(Action<DateTimeOffset, string> pu
         {
             var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             using var cancel = lifetime.Token.Register(() => completion.TrySetCanceled(lifetime.Token));
-            var wait = ThreadPool.RegisterWaitForSingleObject(handle, (_, _) => completion.TrySetResult(), null, Timeout.Infinite, executeOnlyOnce: true);
+            using var registrationHandle = new RegistrationHandle(handle);
+            var wait = ThreadPool.RegisterWaitForSingleObject(registrationHandle, (_, _) => completion.TrySetResult(), null, Timeout.Infinite, executeOnlyOnce: true);
             try { await completion.Task.ConfigureAwait(false); }
             finally
             {

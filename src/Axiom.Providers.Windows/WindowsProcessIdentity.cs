@@ -41,3 +41,9 @@ internal static class WindowsProcessIdentity
 
     [DllImport("kernel32.dll")] private static extern bool CloseHandle(IntPtr handle);
 }
+
+// Construct a waitable wrapper without first allocating an unrelated kernel event.
+internal sealed class OwnedProcessWaitHandle : WaitHandle
+{
+    internal OwnedProcessWaitHandle(nint handle) => SafeWaitHandle = new Microsoft.Win32.SafeHandles.SafeWaitHandle(handle, ownsHandle: true);
+}

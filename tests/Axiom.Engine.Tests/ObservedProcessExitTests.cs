@@ -14,7 +14,9 @@ public sealed class ObservedProcessExitTests
         tracker.Track(42, 200, two, () => throw new InvalidOperationException("new instance has not exited"), "Other.exe");
         one.Set(); Assert.Equal((at, "Example.exe"), await result.Task);
         await tracker.DisposeAsync(); Assert.Equal(0, tracker.Count);
-        Assert.True(one.SafeWaitHandle.IsClosed); Assert.True(two.SafeWaitHandle.IsClosed); Assert.False(tracker.Failure.IsCompleted);
+        Assert.True(one.SafeWaitHandle.IsClosed, "Signaled process handle must be closed before disposal completes.");
+        Assert.True(two.SafeWaitHandle.IsClosed, "Cancelled process handle must be closed before disposal completes.");
+        Assert.False(tracker.Failure.IsCompleted);
     }
     [Fact(Timeout = 10000)]
     public async Task CapacityAndDuplicateRejectionDisposeHandlesAndDoNotLeakWaitingTasks()
