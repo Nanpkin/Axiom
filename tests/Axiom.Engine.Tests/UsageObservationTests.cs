@@ -13,7 +13,7 @@ public sealed class UsageObservationTests
     private static UsageRecorder Recorder() => new(new(5, true, true, ["Private.exe"]), Now);
     private static AutomationSnapshot Catalog()
     {
-        var modules = new IAutomationPlugin[] { new ProgramPlugin(), new WindowPlugin(), new SystemEventPlugin(), new IntervalPlugin(), new DailyTimePlugin(), new FileArrivalPlugin(), new AudioPlaybackPlugin(), new MicrophonePlugin(), new OnceTimePlugin(), new AudioPlugin(), new WindowPresencePlugin() };
+        var modules = BuiltInAutomationPlugins.Create();
         return new([], [.. modules.SelectMany(m => m.Detections.Select(d => d.Descriptor).Concat(m.Actions.Select(a => a.Descriptor)))],
             [.. modules.SelectMany(m => m.Combinations)], true, "ready", "", Now, []);
     }
@@ -255,6 +255,49 @@ public sealed class UsageObservationTests
         Assert.Equal(Now.AddSeconds(20), recorder.Session.StoppedUtc);
         var summary = UsageAnalysis.Summary(recorder.Session, Catalog()); Assert.Contains("stoppedAfterSeconds", summary); Assert.Contains("plannedMinutes", summary);
     }
+    [Fact]
+    public void FullProductionCatalogAndMaximumObjectDictionaryFitExportWithoutDeviceIdentityOrLostParameters()
+    {
+        var recorder = new UsageRecorder(new(120, false, true, [], new string('界', 500), SystemEvents: true, WindowStates: true), Now);
+        for (var i = 0; i < 128; i++) recorder.Add(new(Now.AddSeconds(i), "process-start", App("Synthetic" + i)));
+        for (var repeat = 0; repeat < 3; repeat++)
+            for (var i = 0; i < 24; i++) recorder.Add(new(Now.AddSeconds(200 + repeat * 70 + i * 2), "process-start", App("Synthetic" + i)));
+        var kinds = new[] { "system-unlocked", "system-resumed", "system-usb-arrived", "system-display-changed" };
+        for (var repeat = 0; repeat < 3; repeat++)
+            for (var i = 0; i < kinds.Length; i++)
+            {
+                recorder.Add(new(Now.AddSeconds(500 + repeat * 100 + i * 20), kinds[i]));
+                recorder.Add(new(Now.AddSeconds(505 + repeat * 100 + i * 20), "window-left", App("Synthetic" + (100 + i))));
+            }
+        Assert.Equal(128, recorder.Session.Objects.Length); Assert.Equal(12, UsageAnalysis.Analyze(recorder.Session).Length);
+        var hdr = new HdrTaskAction().Descriptor;
+        hdr = hdr with { Fields = [.. hdr.Fields.Select(field => field.Kind == TaskFieldKind.Resource
+            ? field with { DefaultValue = "synthetic-private-display", Choices = [new("synthetic-private-display", "synthetic-private-label")] } : field)] };
+        var catalog = Catalog(); catalog = catalog with { Capabilities = catalog.Capabilities.Add(hdr), Combinations = catalog.Combinations.Add(new("process.running", "display.hdr")) };
+        var summary = UsageAnalysis.Summary(recorder.Session, catalog);
+        Assert.True(System.Text.Encoding.UTF8.GetByteCount(UsageAnalysis.Prompt + summary) <= UsageValidation.MaximumExportBytes);
+        Assert.DoesNotContain("synthetic-private", summary); Assert.DoesNotContain(App("Synthetic0"), summary);
+        using var document = JsonDocument.Parse(summary);
+        var capabilities = document.RootElement.GetProperty("capabilities").EnumerateArray().ToDictionary(c => c.GetProperty("Id").GetString()!);
+        Assert.Equal(catalog.Capabilities.Length, capabilities.Count);
+        foreach (var capability in catalog.Capabilities)
+        {
+            Assert.Equal(capability.SchemaVersion, capabilities[capability.Id].GetProperty("SchemaVersion").GetInt32());
+            Assert.Equal(capability.Fields.Length, capabilities[capability.Id].GetProperty("Fields").GetArrayLength());
+            var exported = capabilities[capability.Id].Deserialize<TaskCapability>()!;
+            foreach (var field in capability.Fields)
+            {
+                var actual = exported.Fields.Single(f => f.Id == field.Id);
+                Assert.Equal(field.Kind, actual.Kind); Assert.Equal(field.Required, actual.Required); Assert.Equal(field.MaximumLength, actual.MaximumLength);
+                Assert.Equal(field.Minimum, actual.Minimum); Assert.Equal(field.Maximum, actual.Maximum);
+                if (field.Kind is TaskFieldKind.Resource or TaskFieldKind.FilePath or TaskFieldKind.DirectoryPath or TaskFieldKind.ProcessSelection or TaskFieldKind.ExecutableSelection or TaskFieldKind.TraySelection) { Assert.Null(actual.DefaultValue); Assert.Empty(actual.Choices); }
+                else { Assert.Equal(field.DefaultValue, actual.DefaultValue); Assert.Equal(field.Choices.Select(c => c.Value), actual.Choices.Select(c => c.Value)); }
+            }
+        }
+        Assert.Equal(catalog.Combinations.Length, document.RootElement.GetProperty("combinations").GetArrayLength());
+        Assert.DoesNotContain("synthetic-private", UsageAnalysis.CapabilityCatalog(catalog, false));
+    }
+
     [Fact]
     public void CapabilityExportsShareLiveRegistrationAndFeedbackStaysLocalAcrossSessions()
     {
