@@ -20,6 +20,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
@@ -27,6 +29,7 @@ jobs:
         shell: pwsh
         env:
           AXIOM_RELEASE_VERSION: ${{ inputs.version }}
+          AXIOM_SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
         run: ./tools/publish-package.ps1 -Version $env:AXIOM_RELEASE_VERSION
       - uses: actions/upload-artifact@v7
         with:
