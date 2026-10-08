@@ -11,7 +11,7 @@ public static class WindowsWindowActions
 {
     public static async Task<ProgramControlResult> CloseAsync(string path, string title, TimeSpan wait, CancellationToken token, string? state = null)
     {
-        if (state is not (null or "minimize" or "maximize" or "restore" or "left" or "right" or "center")) throw new ArgumentException("窗口状态无效。");
+        if (state is not (null or "minimize" or "maximize" or "restore" or "left" or "right" or "center" or "topmost" or "notopmost")) throw new ArgumentException("窗口状态无效。");
         if (wait < TimeSpan.FromSeconds(1) || wait > TimeSpan.FromSeconds(30)) throw new ArgumentOutOfRangeException(nameof(wait));
         if (!File.Exists(path)) return new(false, "目标程序不存在，请重新选择路径。");
         token.ThrowIfCancellationRequested();
@@ -58,9 +58,12 @@ public static class WindowsWindowActions
             if (state is "left" or "right" or "center") return await WindowsWindowLayout.ApplyAsync(target, pid, path, state, events, token);
             if (state is not null)
             {
-                bool Confirmed() => Visible(target, pid) && (state == "minimize" ? IsIconic(target) : state == "maximize" ? IsZoomed(target) : !IsIconic(target) && !IsZoomed(target));
+                bool Confirmed() => Visible(target, pid) && (state == "minimize" ? IsIconic(target) : state == "maximize" ? IsZoomed(target) : state is "topmost" or "notopmost" ? Topmost(target) == (state == "topmost") : !IsIconic(target) && !IsZoomed(target));
                 if (Confirmed()) return new(true, "窗口已处于所选状态；未重复操作。");
-                if (!ShowWindowAsync(target, state == "minimize" ? 6 : state == "maximize" ? 3 : 9)) return new(false, "无法更改窗口状态。");
+                var accepted = state is "topmost" or "notopmost"
+                    ? SetWindowPos(target, state == "topmost" ? -1 : -2, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010 | 0x4000)
+                    : ShowWindowAsync(target, state == "minimize" ? 6 : state == "maximize" ? 3 : 9);
+                if (!accepted) return new(false, "无法更改窗口状态。");
                 using var stateDeadline = CancellationTokenSource.CreateLinkedTokenSource(token); stateDeadline.CancelAfter(TimeSpan.FromSeconds(3));
                 try { while (!Confirmed()) await events.Events.Reader.ReadAsync(stateDeadline.Token); }
                 catch (OperationCanceledException) when (!token.IsCancellationRequested)
@@ -80,6 +83,15 @@ public static class WindowsWindowActions
         }
         finally { foreach (var process in current) process.Dispose(); }
     }
+    private static bool Topmost(nint window)
+    {
+        Marshal.SetLastPInvokeError(0);
+        var style = GetWindowLongPtr(window, -20);
+        if (style == 0 && Marshal.GetLastPInvokeError() != 0) throw new Win32Exception(Marshal.GetLastPInvokeError());
+        return (style.ToInt64() & 0x0008) != 0;
+    }
+    [DllImport("user32.dll", EntryPoint="GetWindowLongPtrW", SetLastError=true)] private static extern nint GetWindowLongPtr(nint window, int index);
+    [DllImport("user32.dll", SetLastError=true)] private static extern bool SetWindowPos(nint window,nint after,int x,int y,int width,int height,uint flags);
     private static bool Candidate(nint window,string title)
     {
         if (!IsWindow(window) || !IsWindowVisible(window) || GetAncestor(window,2) != window || GetWindow(window,4) != 0) return false;

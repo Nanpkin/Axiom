@@ -17,9 +17,9 @@ public static class WindowCapabilities
         "关闭效果与点击 × 相同，由目标程序决定是否留在托盘。不强制结束进程，不处理确认对话框。");
     public const string State = "window.state";
     public static TaskCapability StateDescriptor { get; } = new(State, 1, TaskCapabilityKind.Action, "窗口", "整理窗口状态",
-        "为选定程序最小化、最大化、还原，或摆到当前显示器的左半屏、右半屏和中央。一次执行，之后用户可自由调整。",
+        "为选定程序最小化、最大化、还原，摆到当前显示器的左半屏、右半屏和中央，或置顶/取消置顶。一次执行，之后用户可自由调整。",
         [.. Descriptor.Fields, new("state", "窗口状态", TaskFieldKind.Choice, true, "不会关闭程序，不自动恢复之前的状态。", "maximize", 16,
-            [new("minimize", "最小化"), new("maximize", "最大化"), new("restore", "还原"), new("left", "当前显示器左半屏"), new("right", "当前显示器右半屏"), new("center", "当前显示器中央（80%）")])],
+            [new("minimize", "最小化"), new("maximize", "最大化"), new("restore", "还原"), new("left", "当前显示器左半屏"), new("right", "当前显示器右半屏"), new("center", "当前显示器中央（80%）"), new("topmost", "置顶"), new("notopmost", "取消置顶")])],
         "等待目标窗口出现后执行一次，结果读回确认。暂停会取消尚未执行的等待。",
         "这是一次性窗口操作；不持续锁定、不抢回手动调整、不在条件结束后写回旧状态。");
     public static string Value(TaskInvocation config, string field) => config.Parameters.GetValueOrDefault(field)
@@ -38,7 +38,7 @@ public static class WindowCapabilities
             if (field.Kind == TaskFieldKind.Number && (!decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out var n) || n < field.Minimum || n > field.Maximum))
                 throw new ArgumentException(field.Label + "超出范围。");
         }
-        if (config.CapabilityId == State && Value(config, "state") is not ("minimize" or "maximize" or "restore" or "left" or "right" or "center")) throw new ArgumentException("窗口状态无效。");
+        if (config.CapabilityId == State && Value(config, "state") is not ("minimize" or "maximize" or "restore" or "left" or "right" or "center" or "topmost" or "notopmost")) throw new ArgumentException("窗口状态无效。");
         return ExecutablePaths.Parse(Value(config, "executable"));
     }
 }
