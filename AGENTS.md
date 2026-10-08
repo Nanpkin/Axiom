@@ -32,6 +32,8 @@ Axiom 是实用、灵活、可扩展的 Windows 后台自动检测与任务执�
 
 ## 不可破坏的边界
 
+- 用户于 2026-10-09 要求充分使用 Git 并及时 push：开工核对工作区及远端，功能开发使用 `codex/` 分支；每个有意义且完成相关验证的改动及时提交并推送，不把成果长期只留本机或云端工作区。提交前检查个人信息与产物排除，保留通用项目作者身份；不擅自强推、重写共享历史或合并未获授权的 PR。推送失败明确记录，不当已同步。
+
 - Windows 11 x64、本地优先、C# / .NET 10；确定性规则，AI 不参与运行时。
 - CPU-first：系统通知、按需共享订阅、去重/合并、相关规则索引、最近必要期限；无理由轮询禁止。例外须有 API 不适用证据、间隔、启停条件、成本预期和 ADR。开发期不每轮测量；[性能政策](docs/development/performance.md) 是唯一数值验收来源，未测不得称接近零 CPU 已达标。
 - Service / Session Agent / WinUI 三角色，Named Pipes、SQLite；Domain/Engine 不依赖 UI、Win32、SQLite 或具体 Provider。UI 不绕过 Engine。
