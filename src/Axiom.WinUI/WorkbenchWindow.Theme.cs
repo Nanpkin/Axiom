@@ -1,0 +1,93 @@
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
+
+namespace Axiom.WinUI;
+
+public sealed partial class WorkbenchWindow
+{
+    private ElementTheme themePreference;
+    private ContentDialog? activeDialog;
+
+    private void InitializeTheme()
+    {
+        try { themePreference = UiThemePreference.Load(); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        { ShowNotice("无法读取外观设置，暂时跟随系统。可在设置中重新选择。"); }
+        shell.ActualThemeChanged += (_, _) => UpdateThemeColors();
+        shell.Loaded += (_, _) => UpdateThemeColors();
+        shell.RequestedTheme = themePreference;
+        UpdateThemeColors();
+    }
+
+    private void UpdateThemeColors()
+    {
+        var dark = shell.ActualTheme == ElementTheme.Dark;
+        void Set(SolidColorBrush brush, byte r, byte g, byte b) => brush.Color = Windows.UI.Color.FromArgb(255, r, g, b);
+        // Mutate shared brushes so existing inputs and open dialogs keep their contents.
+        if (dark)
+        {
+            Set(Canvas, 22, 26, 30); Set(Surface, 31, 37, 42);
+            Set(Ink, 234, 239, 243); Set(Muted, 165, 177, 188); Set(Line, 57, 67, 76);
+            Set(Accent, 139, 212, 178); Set(Primary, 43, 111, 88); Set(Soft, 32, 54, 46);
+            Set(Amber, 239, 194, 116); Set(PaleAmber, 60, 46, 28);
+        }
+        else
+        {
+            Set(Canvas, 246, 247, 249); Set(Surface, 255, 255, 255);
+            Set(Ink, 30, 38, 47); Set(Muted, 99, 110, 122); Set(Line, 226, 230, 234);
+            Set(Accent, 36, 99, 83); Set(Primary, 36, 99, 83); Set(Soft, 233, 243, 238);
+            Set(Amber, 139, 89, 20); Set(PaleAmber, 255, 246, 227);
+        }
+        var title = AppWindow.TitleBar;
+        title.ButtonForegroundColor = Ink.Color;
+        title.ButtonInactiveForegroundColor = Muted.Color;
+        title.ButtonHoverForegroundColor = Ink.Color;
+        title.ButtonHoverBackgroundColor = Line.Color;
+        title.ButtonPressedForegroundColor = Ink.Color;
+        title.ButtonPressedBackgroundColor = Soft.Color;
+        if (activeDialog is not null) activeDialog.RequestedTheme = shell.ActualTheme;
+    }
+
+    private void BuildThemeSettings()
+    {
+        var body = Column(12);
+        body.Children.Add(Text("外观", 20, Ink, true));
+        var picker = new ComboBox
+        {
+            Header = "主题", ItemsSource = new[] { "跟随系统", "浅色", "深色" },
+            SelectedIndex = (int)themePreference, MinWidth = 200,
+            HorizontalAlignment = HorizontalAlignment.Left
+        };
+        AutomationProperties.SetName(picker, "主题");
+        picker.SelectionChanged += (_, _) =>
+        {
+            var next = (ElementTheme)picker.SelectedIndex;
+            if (next == themePreference || picker.SelectedIndex < 0) return;
+            try
+            {
+                UiThemePreference.Save(next);
+                themePreference = next;
+                shell.RequestedTheme = next;
+                UpdateThemeColors();
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+                picker.SelectedIndex = (int)themePreference;
+                ShowNotice("未能保存外观设置，请重试。原设置已保留。");
+            }
+        };
+        body.Children.Add(picker);
+        body.Children.Add(Text("立即生效并自动保存。跟随系统时，随 Windows 的应用颜色模式切换。", 13, Muted));
+        content.Children.Add(Card(body));
+    }
+
+    private async Task<ContentDialogResult> ShowDialogAsync(ContentDialog dialog)
+    {
+        dialog.RequestedTheme = shell.ActualTheme;
+        activeDialog = dialog;
+        try { return await dialog.ShowAsync(); }
+        finally { activeDialog = null; }
+    }
+}

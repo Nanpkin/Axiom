@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <AssemblyName>Axiom</AssemblyName>
+    <ApplicationIcon>../../assets/Axiom.ico</ApplicationIcon>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <PublishAot Condition="'$(AxiomDistribution)' == 'true'">true</PublishAot>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Axiom.Contracts/Axiom.Contracts.csproj" />
+  </ItemGroup>
+</Project>

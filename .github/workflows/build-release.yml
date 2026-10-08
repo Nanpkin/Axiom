@@ -1,0 +1,31 @@
+name: Build Windows packages
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（如 0.1.0-preview.1 或 1.0.0）'
+        required: true
+        default: '0.1.0-preview.1'
+permissions:
+  contents: read
+jobs:
+  packages:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+      - name: Build portable and installer
+        shell: pwsh
+        env:
+          AXIOM_RELEASE_VERSION: ${{ inputs.version }}
+        run: ./tools/publish-package.ps1 -Version $env:AXIOM_RELEASE_VERSION
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Axiom-windows-packages
+          path: artifacts/release/*
+          compression-level: 0
+          retention-days: 14
+          if-no-files-found: error

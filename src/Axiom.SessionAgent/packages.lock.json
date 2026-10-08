@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net10.0-windows10.0.26100": {
+      "System.CodeDom": {
+        "type": "Transitive",
+        "resolved": "9.0.5",
+        "contentHash": "cuzLM2MWutf9ZBEMPYYfd0DXwYdvntp7VCT6a/wvbKCa2ZuvGmW74xi+YBa2mrfEieAXqM4TNKlMmSnfAfpUoQ=="
+      },
+      "System.Management": {
+        "type": "Transitive",
+        "resolved": "9.0.5",
+        "contentHash": "n6o9PZm9p25+zAzC3/48K0oHnaPKTInRrxqFq1fi/5TPbMLjuoCm/h//mS3cUmSy+9AO1Z+qsC/Ilt/ZFatv5Q==",
+        "dependencies": {
+          "System.CodeDom": "9.0.5"
+        }
+      },
+      "axiom.contracts": {
+        "type": "Project",
+        "dependencies": {
+          "Axiom.Domain": "[1.0.0, )"
+        }
+      },
+      "axiom.domain": {
+        "type": "Project"
+      },
+      "axiom.providers.windows": {
+        "type": "Project",
+        "dependencies": {
+          "System.Management": "[9.0.5, )"
+        }
+      }
+    }
+  }
+}

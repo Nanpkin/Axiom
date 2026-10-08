@@ -1,0 +1,38 @@
+# Build / editor / local-only outputs
+**/bin/
+**/obj/
+.vs/
+TestResults/
+BenchmarkDotNet.Artifacts/
+artifacts/
+*.user
+*.suo
+# Local runtime data / secrets; intentional test fixtures need explicit tracking
+*.db
+*.db-shm
+*.db-wal
+.env
+.env.*
+!.env.example
+# Owner-only handbook is not part of the distributable source.
+docs/OWNER-CODEX-HANDBOOK.md
+# Personal acceptance history stays on the original machine.
+docs/exec-plans/completed/000*.md
+docs/exec-plans/completed/001*.md
+docs/exec-plans/completed/002[0-8]-*.md
+docs/exec-plans/archived/0004-service-status-observer.md
+docs/exec-plans/archived/0008-game-hdr-automation.md
+docs/development/performance-baseline-0001.md
+docs/development/foundation-check.md
+docs/development/decision-status.md
+.codex/
+.agents/
+.dotnet/
+*.pfx
+*.p12
+*.pem
+*.key
+*.log
+*.trx
+*.dmp
+*.etl

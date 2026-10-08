@@ -1,0 +1,20 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Axiom.Domain/Axiom.Domain.csproj" />
+    <Project Path="src/Axiom.Contracts/Axiom.Contracts.csproj" />
+    <Project Path="src/Axiom.Engine/Axiom.Engine.csproj" />
+    <Project Path="src/Axiom.Infrastructure/Axiom.Infrastructure.csproj" />
+    <Project Path="src/Axiom.Providers.Windows/Axiom.Providers.Windows.csproj" />
+    <Project Path="src/Axiom.ServiceHost/Axiom.ServiceHost.csproj" />
+    <Project Path="src/Axiom.SessionAgent/Axiom.SessionAgent.csproj" />
+    <Project Path="src/Axiom.WinUI/Axiom.WinUI.csproj" />
+    <Project Path="src/Axiom.Launcher/Axiom.Launcher.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Axiom.Domain.Tests/Axiom.Domain.Tests.csproj" />
+    <Project Path="tests/Axiom.Engine.Tests/Axiom.Engine.Tests.csproj" />
+  </Folder>
+  <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/Axiom.Engine.Benchmarks/Axiom.Engine.Benchmarks.csproj" />
+  </Folder>
+</Solution>

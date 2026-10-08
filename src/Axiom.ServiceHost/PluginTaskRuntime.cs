@@ -1,0 +1,313 @@
+using System.Collections.Immutable;
+using System.Diagnostics;
+using System.IO.Pipes;
+using System.Text.Json;
+using Axiom.Contracts;
+using Axiom.Domain;
+using Axiom.Engine;
+using Axiom.Infrastructure;
+
+namespace Axiom.ServiceHost;
+
+// Shared runtime for explicitly registered plugins: no per-capability storage or pipe branches.
+[System.Runtime.Versioning.SupportedOSPlatform("windows")]
+internal sealed class PluginTaskRuntime : IAutomationTaskBackend, ICapabilityExecutor, IAuthorizationPolicy, ICommandIdSource, IAutomationRuntimeLifetime, IAsyncDisposable
+{
+    private readonly EngineHost engine;
+    private readonly DeadlineScheduler scheduler;
+    private readonly SqliteAutomationTaskStore database;
+    private readonly EngineHost activity;
+    private readonly string sid;
+    private readonly ResourceScope scope;
+    private readonly AutomationTaskCompiler compiler = new();
+    private readonly SemaphoreSlim gate = new(1, 1);
+    private readonly ImmutableDictionary<string, CapabilityBinding> bindings;
+    private readonly Func<uint>? bootIdentity;
+    private ImmutableDictionary<string, long> startupTasks = ImmutableDictionary<string, long>.Empty;
+    private readonly HashSet<string> firedStartupTasks = [];
+    private bool startupDispatched;
+    private bool? firstBoot;
+    private AutomationTask[] tasks = [];
+    private CancellationTokenSource? watchCancel;
+    private Task? watcher;
+    private ResourceKey[] watching = [];
+    private string? lastWatchError;
+    private readonly Dictionary<ResourceKey, string> observationReasons = [];
+    private volatile bool connected;
+    private volatile bool stopping;
+    private readonly object statusGate = new();
+    private string state = "等待条件", reason = "程序任务等待下一次状态变化。";
+    private DateTimeOffset at = DateTimeOffset.MinValue;
+    public ImmutableArray<TaskCombination> Combinations { get; }
+    public PluginTaskRuntime(IEnumerable<IAutomationPlugin> plugins, SqliteAutomationTaskStore database, string sid, EngineHost activity, Func<uint>? bootIdentity = null)
+    {
+        this.database = database; this.sid = sid; this.activity = activity; this.bootIdentity = bootIdentity;
+        scope = ResourceScope.Session(sid, Process.GetCurrentProcess().SessionId);
+        var modules = plugins.ToArray();
+        if (modules.Select(p => p.Id).Distinct().Count() != modules.Length) throw new ArgumentException("插件重复注册。");
+        foreach (var detection in modules.SelectMany(p => p.Detections).DistinctBy(d => d.Descriptor.Id)) compiler.Register(detection);
+        foreach (var action in modules.SelectMany(p => p.Actions)) compiler.Register(action);
+        Combinations = [.. modules.SelectMany(p => p.Combinations)];
+        bindings = modules.SelectMany(p => p.Bindings).DistinctBy(b => b.Descriptor.Id).ToImmutableDictionary(b => b.Descriptor.Id);
+        if (Combinations.Distinct().Count() != Combinations.Length || bindings.Values.Any(b => b.Descriptor.DesiredState ||
+            b.Descriptor.Command && (b.Descriptor.Parameters != TaskInvocationCommands.Schema || b.ParametersKind != ScalarKind.Text)))
+            throw new ArgumentException("插件组合重复，或未采用当前会话命令 contract；Desired State 需独立生命周期适配器。");
+        var clock = new RuntimeClock(TimeProvider.System); scheduler = new(clock); engine = new(clock, scheduler, this); engine.Start();
+        engine.ConfigureAutomation(this, this);
+        foreach (var binding in bindings.Values) engine.RegisterCapability(binding);
+    }
+    public async Task InitializeAsync()
+    {
+        tasks = await database.ListAsync();
+        foreach (var task in tasks)
+        {
+            try { engine.SetRule(compiler.Compile(task, sid, scope)); }
+            catch (ArgumentException error) { Record("任务暂不可用", task.Title + "：" + error.Message, ActivityLevel.Warning); }
+        }
+        startupTasks = tasks.Where(t => !t.Paused && t.Detection.CapabilityId == AxiomStartupPlugin.CapabilityId).ToImmutableDictionary(t => t.Id, t => t.Version);
+        if (bindings.ContainsKey(AxiomStartupPlugin.CapabilityId))
+        {
+            try { firstBoot = await database.ClaimBootStartAsync((bootIdentity ?? WindowsBootIdentity.Read)()); }
+            catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or System.Security.SecurityException or Microsoft.Data.Sqlite.SqliteException)
+            { Record("首次启动状态未确认", error.Message + " 首次启动任务不会执行；每次启动任务仍可执行。", ActivityLevel.Warning); }
+        }
+        // Every supported rule can await independently: an async worker owns no waiting thread.
+        // Match the persisted task limit, while retaining resource/capability single-flight fences.
+        engine.StartExecution(new(concurrency: AutomationTaskLimits.MaximumTasks, maximumAttempts: 1));
+        startupDispatched = engine.GetObservationPlan().References.Count == 0;
+        await RefreshObservationAsync();
+    }
+    public AuthorizationDecision Authorize(string principal, ResourceKey key, CapabilityOperation operation) => new(
+        principal == sid && key.Scope == scope && bindings.TryGetValue(key.CapabilityId, out var b) &&
+        (operation == CapabilityOperation.Observe && b.Descriptor.Observe || operation == CapabilityOperation.ExecuteCommand && b.Descriptor.Command),
+        "same-user-session registered plugin");
+    public Guid NextId() => Guid.NewGuid();
+    public ValueTask<Outcome> ApplyDesiredAsync(DesiredState desired, CancellationToken token) =>
+        ValueTask.FromResult(new Outcome(OutcomeStatus.Rejected, "当前插件运行时只接受命令动作。", Guid.NewGuid()));
+    public async ValueTask<Outcome> ExecuteCommandAsync(Command command, CancellationToken token)
+    {
+        try
+        {
+            if (stopping || !Authorize(command.Principal, command.Key, CapabilityOperation.ExecuteCommand).Allowed || command.Arguments.Text is null)
+                return new(OutcomeStatus.Rejected, "程序命令权限不匹配。", command.CommandId);
+            var invocation = JsonSerializer.Deserialize<TaskInvocation>(command.Arguments.Text) ?? throw new InvalidDataException("能力参数无效。");
+            var compiled = compiler.Catalog.Single(c => c.Kind == TaskCapabilityKind.Action && c.Id == invocation.CapabilityId);
+            AutomationTaskCompiler.ValidateInvocation(invocation, compiled);
+            if (invocation.CapabilityId != command.Key.CapabilityId) throw new InvalidDataException("能力参数与命令不匹配。");
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token); timeout.CancelAfter(command.Deadline - DateTimeOffset.UtcNow);
+            using var pipe = Client(); await pipe.ConnectForUserAsync(2000, timeout.Token);
+            var id = Guid.NewGuid().ToString("N");
+            await ProviderProtocol.WriteAsync(pipe, new(1, "invoke", id, command.Deadline, Invocation: invocation, CommandId: command.CommandId), timeout.Token);
+            var response = await ProviderProtocol.ReadAsync(pipe, timeout.Token);
+            if (response.Version != 1 || response.Type != "result" || response.RequestId != id || response.CommandId != command.CommandId ||
+                response.Status is not (OutcomeStatus.Succeeded or OutcomeStatus.Failed or OutcomeStatus.Rejected) || string.IsNullOrWhiteSpace(response.Reason))
+                throw new InvalidDataException("Provider 回执无效。");
+            Record(response.Status == OutcomeStatus.Succeeded ? "程序动作已完成" : "程序动作未完成", response.Reason,
+                response.Status == OutcomeStatus.Succeeded ? ActivityLevel.Success : ActivityLevel.Error);
+            return new(response.Status.Value, response.Reason, command.CommandId);
+        }
+        catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
+        {
+            var message = error is OperationCanceledException ? "动作已取消或通信超时；无法确认程序是否已执行，不会自动重试。" : error.Message;
+            Record("程序动作未确认", message, ActivityLevel.Warning);
+            return new(OutcomeStatus.Unknown, message, command.CommandId);
+        }
+    }
+    public async Task<AutomationTask> SaveAsync(AutomationTask task, CancellationToken token)
+    {
+        if (!Combinations.Contains(new(task.Detection.CapabilityId, task.Action.CapabilityId))) throw new ArgumentException("插件不支持此任务组合。");
+        _ = compiler.Compile(task, sid, scope);
+        await gate.WaitAsync(token);
+        try
+        {
+            if (stopping) throw new InvalidOperationException("后台正在停止，请重新打开 Axiom。");
+            var candidate = tasks.Where(t => t.Id != task.Id).Append(task).Where(t => !t.Paused && Combinations.Contains(new(t.Detection.CapabilityId,t.Action.CapabilityId)))
+                .SelectMany(t => compiler.Compile(t, sid, scope).Condition.Dependencies).Distinct().Count();
+            if (candidate > 128) throw new ArgumentException("启用的插件任务最多检测 128 个资源。");
+            var saved = await database.SaveAsync(task, token);
+            lock (statusGate)
+            { engine.SetRule(compiler.Compile(saved, sid, scope)); tasks = tasks.Where(t => t.Id != saved.Id).Append(saved).ToArray(); }
+            await RefreshObservationAsync();
+            Record(saved.Paused ? "任务已暂停" : "任务已保存", saved.Title + (saved.Paused ? "：尚未执行的动作已取消。" : "：等待下一次条件成立。"), ActivityLevel.Success);
+            return saved;
+        }
+        finally { gate.Release(); }
+    }
+    public async Task DeleteAsync(string id, long expectedVersion, CancellationToken token)
+    {
+        await gate.WaitAsync(token);
+        try
+        {
+            await database.DeleteAsync(id, expectedVersion, token);
+            lock (statusGate) { engine.RemoveRule(id); tasks = tasks.Where(t => t.Id != id).ToArray(); }
+            await RefreshObservationAsync(); Record("任务已删除", "尚未执行的程序动作已取消。", ActivityLevel.Success);
+        }
+        finally { gate.Release(); }
+    }
+    public async Task<AutomationSnapshot> ReadAsync(CancellationToken token)
+    {
+        await gate.WaitAsync(token);
+        try
+        {
+            lock (statusGate) return new([.. tasks], compiler.Catalog, Combinations, watching.Length == 0 || connected &&
+                (firstBoot is not null || !tasks.Any(t => !t.Paused && t.Detection.CapabilityId == AxiomStartupPlugin.CapabilityId && t.Detection.Parameters["frequency"] == "firstBoot")), state, reason, at,
+                [.. engine.ReadSnapshot().States.Where(p => watching.Contains(p.Key)).Select(p => new TaskObservation(
+                    p.Key.CapabilityId == AxiomStartupPlugin.CapabilityId ? tasks.SingleOrDefault(t => t.Id == p.Key.ResourceId)?.Title ?? "Axiom 启动" : p.Key.ResourceId,
+                    p.Value.Observation.Quality != StateQuality.Known ? observationReasons.GetValueOrDefault(p.Key, "状态未知") : p.Key.CapabilityId == HotkeyCapabilities.Pressed
+                        ? "等待快捷键" : p.Key.CapabilityId == AxiomStartupPlugin.CapabilityId
+                        ? p.Value.Observation.Value?.Boolean == true ? "已触发启动条件" : "等待下次启动"
+                        : p.Value.Observation.Value?.Boolean == true ? "正在运行" : "未运行"))]);
+        }
+        finally { gate.Release(); }
+    }
+    private async Task RefreshObservationAsync()
+    {
+        var plan = engine.GetObservationPlan(); var resources = plan.References.Keys.ToArray();
+        if (watching.ToHashSet().SetEquals(resources))
+        {
+            if (connected || resources.Length == 0) engine.AcknowledgeObservationPlan(plan.Version, resources, guarantees: plan.Requirements);
+            return;
+        }
+        if (watchCancel is not null)
+        {
+            watchCancel.Cancel(); if (watcher is not null) await watcher; watchCancel.Dispose();
+            watchCancel = null; watcher = null;
+        }
+        watching = resources; connected = false;
+        lock (statusGate) foreach (var key in observationReasons.Keys.Where(k => !resources.Contains(k)).ToArray()) observationReasons.Remove(key);
+        if (resources.Length == 0) { engine.AcknowledgeObservationPlan(plan.Version, [], guarantees: plan.Requirements); return; }
+        watchCancel = new(); watcher = WatchAsync(resources, watchCancel.Token);
+    }
+    private NamedPipeClientStream Client() => LocalUserPipe.Create(ProviderProtocol.PipeName(sid));
+    private async Task WatchAsync(ResourceKey[] held, CancellationToken token)
+    {
+        var keys = held.Where(k => bindings[k.CapabilityId].Descriptor.Observe && bindings[k.CapabilityId].Descriptor.Location == ExecutionLocation.SessionAgent).ToArray();
+        var local = held.Where(k => k.CapabilityId == AxiomStartupPlugin.CapabilityId).ToArray();
+        var wire = keys.Select(k => new ProviderResource(k.CapabilityId, k.ResourceId)).ToArray();
+        var mapping = wire.Zip(keys).ToDictionary(p => p.First, p => p.Second);
+        while (!token.IsCancellationRequested)
+        {
+            var source = keys.Length == 0 ? null : engine.RegisterSource("session-plugin-observation", keys);
+            var startupSource = local.Length == 0 ? null : engine.RegisterSource("host-startup", local);
+            long startupSequence = 0, expected = 0;
+            try
+            {
+                if (startupSource is not null)
+                    lock (statusGate) engine.ApplySnapshot(startupSource, startupSequence++, local.Select(StartupBaseline).ToArray());
+                using var pipe = Client(); await pipe.ConnectForUserAsync(2000, token);
+                var id = Guid.NewGuid().ToString("N");
+                await ProviderProtocol.WriteAsync(pipe, new(1, "observe", id, DateTimeOffset.UtcNow.AddSeconds(5), Resources: wire,
+                    RequiredCapabilities: held.Where(k => bindings[k.CapabilityId].Descriptor.Location == ExecutionLocation.SessionAgent).Select(k => k.CapabilityId).Distinct().ToArray()), token);
+                while (!token.IsCancellationRequested)
+                {
+                    var response = await ProviderProtocol.ReadAsync(pipe, token);
+                    if (response.Type == "result") throw new InvalidDataException(response.Reason ?? "Provider 订阅失败。");
+                    if (response.Version != 1 || response.RequestId != id || response.Sequence != expected++ || response.Samples is not { } samples ||
+                        response.Type is not ("snapshot" or "update")) throw new InvalidDataException("Provider 检测流中断或缺失事件。");
+                    if (samples.Any(s => !mapping.ContainsKey(s.Resource)) || samples.Select(s => s.Resource).Distinct().Count() != samples.Length)
+                        throw new InvalidDataException("Provider 返回未请求的检测资源。");
+                    lock (statusGate)
+                        foreach (var sample in samples)
+                        {
+                            var key = mapping[sample.Resource];
+                            if (sample.Reason is { Length: > 300 }) throw new InvalidDataException("检测原因过长。");
+                            if (sample.Quality != StateQuality.Known && !string.IsNullOrWhiteSpace(sample.Reason))
+                            {
+                                if (observationReasons.GetValueOrDefault(key) != sample.Reason) Record("检测暂不可用", key.ResourceId + "：" + sample.Reason, ActivityLevel.Warning);
+                                observationReasons[key] = sample.Reason;
+                            }
+                            else observationReasons.Remove(key);
+                        }
+                    var observations = samples.Select(s => new Observation(mapping[s.Resource], s.Quality,
+                        s.Quality == StateQuality.Known ? s.Boolean is { } b ? StateValue.From(new(s.SchemaId, s.SchemaVersion), b) :
+                            s.Number is { } n ? StateValue.From(new(s.SchemaId, s.SchemaVersion), n) :
+                            s.Text is { } t ? StateValue.From(new(s.SchemaId, s.SchemaVersion), t) : throw new InvalidDataException("检测值无效。") : null, DateTimeOffset.UtcNow)).ToArray();
+                    if (response.Type == "snapshot")
+                    {
+                        if (observations.Length != keys.Length) throw new InvalidDataException("Provider 快照不完整。");
+                        if (source is not null) engine.ApplySnapshot(source, response.Sequence, observations);
+                        // A live subscription can legitimately contain an unavailable individual resource.
+                        // Keep unrelated rules working; Engine retains Unknown for that resource.
+                        connected = true;
+                        lastWatchError = null;
+                        var plan = engine.GetObservationPlan();
+                        if (engine.AcknowledgeObservationPlan(plan.Version, held, guarantees: plan.Requirements))
+                        {
+                            token.ThrowIfCancellationRequested();
+                            lock (statusGate)
+                            {
+                                if (!startupDispatched)
+                                {
+                                    startupDispatched = true;
+                                    foreach (var key in local)
+                                    {
+                                        var task = tasks.SingleOrDefault(t => t.Id == key.ResourceId);
+                                        if (task is null || task.Paused || !startupTasks.TryGetValue(task.Id, out var version) || version != task.Version) continue;
+                                        if (task.Detection.Parameters["frequency"] == "firstBoot" && firstBoot != true)
+                                        {
+                                            if (firstBoot == false) Record("首次启动已跳过", task.Title + "：本次开机已启动过 Axiom 后台，等待下次开机。", ActivityLevel.Information);
+                                            continue;
+                                        }
+                                        firedStartupTasks.Add(task.Id);
+                                        engine.Update(startupSource!, startupSequence++, new(key, StateQuality.Known, StateValue.From(new("axiom.bool", 1), true), DateTimeOffset.UtcNow));
+                                        Record("启动条件已触发", task.Title + "：" + (task.Detection.Parameters["frequency"] == "firstBoot" ? "本次开机首次启动" : "Axiom 后台启动") + "，按已保存参数执行动作。", ActivityLevel.Information);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        if (!connected || observations.Length != 1) throw new InvalidDataException("检测事件无效。");
+                        engine.Update(source!, response.Sequence, observations[0]);
+                        if (observations[0].Key.CapabilityId == HotkeyCapabilities.Pressed && observations[0].Quality == StateQuality.Known)
+                            Record("快捷键已按下", (samples[0].Reason ?? observations[0].Key.ResourceId) + "：已交给规则判断。", ActivityLevel.Information);
+                    }
+                }
+            }
+            catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
+            {
+                if (!token.IsCancellationRequested && (connected || lastWatchError != error.Message))
+                { lastWatchError = error.Message; Record("程序检测中断", error.Message + " 尚未执行的动作已取消，后台会尝试重新连接。", ActivityLevel.Warning); }
+            }
+            finally { connected = false; if (source is not null) engine.ReleaseSource(source); if (startupSource is not null) engine.ReleaseSource(startupSource); }
+            try { await Task.Delay(TimeSpan.FromSeconds(5), token); } catch (OperationCanceledException) { break; }
+        }
+    }
+    private Observation StartupBaseline(ResourceKey key)
+    {
+        var task = tasks.Single(t => t.Id == key.ResourceId);
+        var unknown = task.Detection.Parameters["frequency"] == "firstBoot" && firstBoot is null;
+        return new(key, unknown ? StateQuality.Unknown : StateQuality.Known,
+            unknown ? null : StateValue.From(new("axiom.bool", 1), firedStartupTasks.Contains(task.Id)), DateTimeOffset.UtcNow);
+    }
+    private void Record(string title, string detail, ActivityLevel level)
+    {
+        var now = DateTimeOffset.UtcNow; lock (statusGate) { state = title; reason = detail; at = now; }
+        activity.RecordActivity(new(now, "程序任务", title, detail, level));
+    }
+    public async Task EnsureSafeToStopAsync(CancellationToken token)
+    {
+        await gate.WaitAsync(token);
+        try
+        {
+            stopping = true;
+            foreach (var task in tasks) engine.RemoveRule(task.Id);
+            watchCancel?.Cancel(); if (watcher is not null) await watcher.WaitAsync(token);
+            await engine.WaitForIdleAsync(token);
+        }
+        finally { gate.Release(); }
+    }
+    public async ValueTask DisposeAsync()
+    {
+        watchCancel?.Cancel(); if (watcher is not null) await watcher;
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5)); await engine.StopAndWaitAsync(deadline.Token);
+        engine.Dispose(); scheduler.Dispose(); watchCancel?.Dispose(); gate.Dispose();
+    }
+}
+
+internal sealed class AutomationRuntimeLifetime(params IAutomationRuntimeLifetime[] runtimes) : IAutomationRuntimeLifetime
+{
+    public async Task EnsureSafeToStopAsync(CancellationToken token)
+    { foreach (var runtime in runtimes) await runtime.EnsureSafeToStopAsync(token); }
+}

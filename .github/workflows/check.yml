@@ -1,0 +1,38 @@
+name: Check source
+on:
+  push:
+    branches: [main, 'codex/**']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  core:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+      - name: Check source privacy
+        shell: pwsh
+        run: ./tools/check-source-privacy.ps1
+      - name: Core behavior and architecture
+        shell: pwsh
+        run: ./tools/test-core.ps1
+      - name: Build Windows application
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          dotnet restore Axiom.slnx --locked-mode -p:NuGetAudit=false
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet build Axiom.slnx -c Release --no-restore /m:1 /nr:false
+          exit $LASTEXITCODE

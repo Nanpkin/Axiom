@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <Compile Include="../../src/Axiom.Launcher/LoginTaskCleanup.cs" Link="LoginTaskCleanup.cs" />
+    <Compile Include="../../src/Axiom.SessionAgent/HotkeyRegistrationHub.cs" Link="HotkeyRegistrationHub.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsTrayEvents.cs" Link="WindowsTrayEvents.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsTrayActions.cs" Link="WindowsTrayActions.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsProgramBatch.cs" Link="WindowsProgramBatch.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsWindowEvents.cs" Link="WindowsWindowEvents.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsWindowActions.cs" Link="WindowsWindowActions.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsProgramControl.cs" Link="WindowsProgramControl.cs" />
+    <Compile Include="../../src/Axiom.ServiceHost/PluginTaskRuntime.cs" Link="PluginTaskRuntime.cs" />
+    <Compile Include="../../src/Axiom.ServiceHost/WindowsBootIdentity.cs" Link="WindowsBootIdentity.cs" />
+    <Compile Include="../../src/Axiom.SessionAgent/ShortcutActionRegistry.cs" Link="ShortcutActionRegistry.cs" />
+    <Compile Include="../../src/Axiom.ServiceHost/ShortcutCoordinator.cs" Link="ShortcutCoordinator.cs" />
+    <Compile Include="../../src/Axiom.ServiceHost/LoginStartupRegistration.cs" Link="LoginStartupRegistration.cs" />
+    <Compile Include="../../src/Axiom.ServiceHost/LocalPipeFactory.cs" Link="LocalPipeFactory.cs" />
+    <Compile Include="../../src/Axiom.WinUI/WorkbenchPresentation.cs" Link="WorkbenchPresentation.cs" />
+    <Compile Include="../../src/Axiom.WinUI/TaskEditorState.cs" Link="TaskEditorState.cs" />
+    <Compile Include="../../src/Axiom.WinUI/ProcessSelectionState.cs" Link="ProcessSelectionState.cs" />
+    <ProjectReference Include="../../src/Axiom.Engine/Axiom.Engine.csproj" />
+    <ProjectReference Include="../../src/Axiom.Infrastructure/Axiom.Infrastructure.csproj" />
+    <ProjectReference Include="../../src/Axiom.Contracts/Axiom.Contracts.csproj" />
+  </ItemGroup>
+</Project>
