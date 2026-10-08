@@ -50,11 +50,13 @@ public static class UsageAnalysis
             "来源未知，可能是应用自己调整，不证明手动操作。多窗口情况下不能确认是同一个窗口；候选仅在应用从无主窗口到有主窗口时整理一个匹配窗口，不会逐个处理后续窗口。请审阅目标和标题筛选。布局只分类当前显示器工作区的近似左右半屏/中央，不保存坐标或显示器标识；动作在触发时的显示器执行，不保证复原旧布局。一次操作，之后手动改变不干预，结束不恢复。Axiom 动作目标和数据缺口排除。",
             [g.Key.ObjectId!], g.Count(), session.Events.Count(e => e.Kind == "window-shown" && e.ObjectId == g.Key.ObjectId), EvidenceSamples: Evidence(session, g),
             WindowState: WindowCommand(g.Key.Kind)));
-        var environmentWindows = DisplayLayoutPairs(session).GroupBy(p => (p.Second.Kind, p.Second.ObjectId)).Where(g => g.Count() >= 3).Select(g => new UsageSuggestion(
-            "display-layout:" + g.Key.Kind + ":" + g.Key.ObjectId, "existing", "显示模式变化后反复整理窗口",
-            $"{g.Count()} 次在显示模式变化后一分钟内观察到同一应用{WindowKindName(g.Key.Kind)}；共观察到 {session.Events.Count(e => e.Kind == "system-display-changed")} 次显示变化机会。",
-            "来源未知，可能是应用或系统自行布局，不证明手动重复劳动。只记录显示变化类别，没有保存分辨率或显示器标识，不能识别特定屏幕组合；并非所有插拔都会通知。候选每次通知后整理一个匹配窗口，按执行时该窗口所在显示器工作区处理，不恢复原布局、不持续压制手动调整。多窗口时可能不是同一个窗口。缺口、其他系统边界和Axiom动作会中断序列。",
-            [g.Key.ObjectId!], g.Count(), session.Events.Count(e => e.Kind == "system-display-changed"), EventKind: "display-changed", EvidenceSamples: Evidence(session, g), WindowState: WindowCommand(g.Key.Kind)));
+        var environmentWindows = EnvironmentLayoutPairs(session).GroupBy(p => (Event: p.First.Kind, State: p.Second.Kind, p.Second.ObjectId)).Where(g => g.Count() >= 3).Select(g => new UsageSuggestion(
+            (g.Key.Event == "system-display-changed" ? "display-layout:" : "environment-layout:") + g.Key.Event + ":" + g.Key.State + ":" + g.Key.ObjectId,
+            "existing", SystemName(g.Key.Event) + "后反复整理窗口",
+            $"{g.Count()} 次在{SystemName(g.Key.Event)}后一分钟内观察到同一应用{WindowKindName(g.Key.State)}；共观察到 {session.Events.Count(e => e.Kind == g.Key.Event)} 次此事件机会。",
+            "来源未知，可能是应用或系统自行布局，不证明手动重复劳动。候选每次事件后整理一个匹配窗口，按执行时该窗口所在显示器工作区处理，不恢复原布局、不持续压制手动调整。多窗口时可能不是同一个窗口。缺口、其他环境事件和Axiom动作会中断序列。" + EnvironmentLayoutLimits(g.Key.Event),
+            [g.Key.ObjectId!], g.Count(), session.Events.Count(e => e.Kind == g.Key.Event), EventKind: g.Key.Event.StartsWith("audio-", StringComparison.Ordinal) ? g.Key.Event : g.Key.Event[7..],
+            EvidenceSamples: Evidence(session, g), WindowState: WindowCommand(g.Key.State)));
         var afterEvents = SystemPairs(session).GroupBy(p => (p.First.Kind, p.Second.ObjectId)).Where(g => g.Count() >= 3).Select(g => new UsageSuggestion(
             "event:" + g.Key.Kind + ":" + g.Key.ObjectId, "existing", "环境事件后反复打开同一程序",
             $"{g.Count()} 次在 {SystemName(g.Key.Kind)} 后一分钟内启动；此事件共出现 {session.Events.Count(e => e.Kind == g.Key.Kind)} 次。",
@@ -64,13 +66,22 @@ public static class UsageAnalysis
             s.Kind == "existing" && !s.ObjectIds.All(id => CanUse(session.Objects.Single(o => o.Id == id).Executable))
                 ? s with { Kind = "insufficient", Limitation = s.Limitation + "此对象不符合当前程序动作的安全范围，不能生成规则。" } : s)];
     }
-    private static IEnumerable<(UsageEvent First, UsageEvent Second)> DisplayLayoutPairs(UsageSession session)
+    private static string EnvironmentLayoutLimits(string kind) => kind switch
+    {
+        "system-display-changed" => "只记录显示变化类别，没有保存分辨率或显示器标识，不能识别特定屏幕组合；并非所有插拔都会通知。",
+        "system-usb-arrived" => "范围是任意USB接口，不能筛选特定设备；复合设备或系统重枚举可能多次通知。",
+        "audio-output" or "audio-input" => "只识别Windows默认音频角色变化，不能筛选具体设备；应用自身音频路由可能不同。",
+        "system-resumed" => "睡眠恢复不等于桌面已经解锁；请确认动作延迟和窗口是否就绪。",
+        _ => "解锁事件不证明已经开始工作，请确认希望每次解锁均整理窗口。"
+    };
+    private static IEnumerable<(UsageEvent First, UsageEvent Second)> EnvironmentLayoutPairs(UsageSession session)
     {
         var automated = session.Events.Where(e => e.Kind == "axiom-action" && e.ObjectId is not null).Select(e => e.ObjectId).ToHashSet();
         UsageEvent? changed = null; var seen = new HashSet<string>();
         foreach (var item in session.Events.OrderBy(e => e.AtUtc))
         {
-            if (item.Kind == "system-display-changed") { changed = item; seen.Clear(); continue; }
+            if (item.Origin == "axiom") { changed = null; continue; }
+            if (item.Kind is "system-display-changed" or "system-unlocked" or "system-resumed" or "system-usb-arrived" or "audio-output" or "audio-input") { changed = item; seen.Clear(); continue; }
             if (item.Kind is "gap" or "axiom-action" || IsEnvironmentEvent(item.Kind)) { changed = null; continue; }
             if (changed is null || item.ObjectId is null || automated.Contains(item.ObjectId)) continue;
             if (item.AtUtc - changed.AtUtc > TimeSpan.FromMinutes(1)) { changed = null; continue; }
@@ -109,7 +120,7 @@ public static class UsageAnalysis
     }
     private static bool IsEnvironmentEvent(string kind) => kind.StartsWith("system-", StringComparison.Ordinal) || kind.StartsWith("audio-", StringComparison.Ordinal);
     private static bool CanUse(string path) { try { ExecutablePaths.ValidatePath(path); return true; } catch (ArgumentException) { return false; } }
-    private static string SystemName(string kind) => kind switch { "system-unlocked" => "解锁", "system-resumed" => "唤醒", "system-ac" => "接通交流电", "system-battery" => "切换电池", "system-network-up" => "网络可用", "system-usb-arrived" => "USB接入通知", "audio-output" => "默认播放设备变化", "audio-input" => "默认通信麦克风变化", "system-battery-low20" => "电量降至20%或以下", "system-battery-low10" => "电量降至10%或以下", _ => "系统变化" };
+    private static string SystemName(string kind) => kind switch { "system-display-changed" => "显示模式变化", "system-unlocked" => "解锁", "system-resumed" => "唤醒", "system-ac" => "接通交流电", "system-battery" => "切换电池", "system-network-up" => "网络可用", "system-usb-arrived" => "USB接入通知", "audio-output" => "默认播放设备变化", "audio-input" => "默认通信麦克风变化", "system-battery-low20" => "电量降至20%或以下", "system-battery-low10" => "电量降至10%或以下", _ => "系统变化" };
     private static UsageEvidence[] Evidence(UsageSession session, IEnumerable<(UsageEvent First, UsageEvent Second)> pairs) =>
         [.. pairs.Take(3).Select(p => new UsageEvidence((int)(p.First.AtUtc - session.StartedUtc).TotalSeconds, (int)(p.Second.AtUtc - session.StartedUtc).TotalSeconds))];
     private static IEnumerable<(UsageEvent First, UsageEvent Second)> SystemPairs(UsageSession session)

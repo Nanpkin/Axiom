@@ -91,3 +91,5 @@ USB类别通知：`WindowsSessionEvents` 注册USB接口GUID、处理接入/移�
 播放音量：`AudioPlaybackCapabilities` 参数/边界，`AudioPlaybackPlugin` 共用默认播放资源仲裁，`AudioPlaybackCapabilityProvider` 调用 `WindowsAudioPlayback` 的Core Audio COM适配。`AudioPlaybackOperation` 只写所选字段并读回；`BoundedAudioCommand` 以单个准入保护原生阻塞，调用者超时不提前释放准入。`AudioPlaybackTests` 为合成端点逻辑，不替代真实设备验收。
 
 通信麦克风：`MicrophoneCapabilities`/`MicrophonePlugin`/`MicrophoneCapabilityProvider`，资源与播放分开，沿用 `WindowsAudioPlayback.SetMicrophoneAsync` 的单个原生入口、eCapture/eCommunications默认角色及立即静音读回；不改输入音量。合成逻辑与导入验证位于 `AudioPlaybackTests`/`UsageObservationTests`。
+
+环境布局证据由 `UsageAnalysis.EnvironmentLayoutPairs` 按六类通知与目标/布局分组，处理边界与首个布局去重；草稿继续走实际系统/音频检测和窗口动作。`UsageObservationTests.RepeatedEnvironmentPreparationOffersWindowLayoutWithSeparateEventEvidence` 覆盖分类、混合不足、Axiom来源与边界中断。
