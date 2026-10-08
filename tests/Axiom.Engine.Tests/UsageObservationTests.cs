@@ -313,6 +313,7 @@ public sealed class UsageObservationTests
         var catalog = Catalog(); catalog = catalog with { Capabilities = catalog.Capabilities.Add(hdr), Combinations = catalog.Combinations.Add(new("process.running", "display.hdr")) };
         var summary = UsageAnalysis.Summary(recorder.Session, catalog);
         Assert.True(System.Text.Encoding.UTF8.GetByteCount(UsageAnalysis.Prompt + summary) <= UsageValidation.MaximumExportBytes);
+        Assert.True(System.Text.Encoding.UTF8.GetByteCount(UsageAnalysis.Prompt + summary.Replace("\r\n", "\n").Replace("\n", "\r\n")) <= UsageValidation.MaximumExportBytes);
         Assert.DoesNotContain("synthetic-private", summary); Assert.DoesNotContain(App("Synthetic0"), summary);
         using var document = JsonDocument.Parse(summary);
         Assert.Equal(nameof(TaskFieldKind.DirectoryPath), document.RootElement.GetProperty("fieldKinds").GetProperty(((int)TaskFieldKind.DirectoryPath).ToString()).GetString());

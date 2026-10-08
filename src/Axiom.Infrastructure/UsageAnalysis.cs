@@ -14,6 +14,7 @@ public sealed record UsageImport(int Version, string SessionId, string Kind, str
 public static class UsageAnalysis
 {
     private static readonly JsonSerializerOptions Json = new() { UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow, WriteIndented = true, MaxDepth = 16, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.Create(System.Text.Unicode.UnicodeRanges.All) };
+    private static readonly JsonSerializerOptions CompactJson = new(Json) { WriteIndented = false };
     public static UsageSuggestion[] Analyze(UsageSession session)
     {
         var events = session.Events.Where(e => e.Kind == "foreground" && e.ObjectId is not null && e.Origin != "axiom").ToArray();
@@ -254,13 +255,18 @@ public static class UsageAnalysis
         var budget = UsageValidation.MaximumExportBytes - Encoding.UTF8.GetByteCount(Prompt);
         if (Encoding.UTF8.GetByteCount(result) > budget)
         {
+            body = body with { omissions = body.omissions + "为满足大小上限已去除JSON排版空白，数据字段保留。" };
+            result = JsonSerializer.Serialize(body, CompactJson);
+        }
+        if (Encoding.UTF8.GetByteCount(result) > budget)
+        {
             body = body with
             {
                 patterns = suggestions.Take(6).ToArray(), evidence = body.evidence.Take(3),
                 capabilities = body.capabilities.Select(c => c with { Description = "", Behavior = "", EditWarning = "", Fields = [.. c.Fields.Select(f => f with { Hint = "" })] }).ToArray(),
                 omissions = body.omissions + "为满足大小上限，仅保留出现次数最高的 6 个模式、3 条代表事件；省略能力说明和字段提示，保留完整能力 ID、版本、参数类型、范围、选项及组合。"
             };
-            result = JsonSerializer.Serialize(body, Json);
+            result = JsonSerializer.Serialize(body, CompactJson);
         }
         if (Encoding.UTF8.GetByteCount(result) > budget) throw new InvalidOperationException("必要能力参数超出 64 KiB，无法安全生成本版摘要；未复制或上传。");
         return result;
