@@ -20,6 +20,27 @@ public sealed class AudioPlaybackTests
             Assert.Throws<ArgumentException>(() => compiler.Compile(Invocation() with { Parameters = Invocation().Parameters.SetItem(field, value) }, scope));
         Assert.Contains(new AudioPlaybackPlugin().Combinations, c => c.DetectionId == SystemEventCapabilities.Event && c.ActionId == AudioPlaybackCapabilities.Set);
     }
+    [Fact]
+    public void MicrophoneActionsHaveSeparateResourceAndRejectVolumeOrToggleRequests()
+    {
+        var invocation = new TaskInvocation(MicrophoneCapabilities.Set, 1,
+            new Dictionary<string, string> { ["operation"] = "mute", ["delaySeconds"] = "0" }.ToImmutableDictionary());
+        var compiler = new MicrophoneTaskAction(); var scope = ResourceScope.Session("owner", 1);
+        Assert.Equal("default-communications-input", compiler.Compile(invocation, scope).Key.ResourceId);
+        Assert.NotEqual(new AudioPlaybackTaskAction().Compile(Invocation(), scope).Key, compiler.Compile(invocation, scope).Key);
+        foreach (var operation in new[] { "volume", "toggle", "input-id" })
+            Assert.Throws<ArgumentException>(() => compiler.Compile(invocation with { Parameters = invocation.Parameters.SetItem("operation", operation) }, scope));
+        Assert.Throws<ArgumentException>(() => MicrophoneCapabilities.Validate(invocation with { Parameters = invocation.Parameters.Add("percent", "50") }));
+    }
+    [Theory]
+    [InlineData("mute", true)]
+    [InlineData("unmute", false)]
+    public void MicrophoneMuteReadbackNeverWritesInputGainAndNamesTheLimitedTarget(string operation, bool expected)
+    {
+        var endpoint = new Endpoint(); var result = AudioPlaybackOperation.Apply(endpoint, operation, 0, default, "默认通信麦克风");
+        Assert.True(result.Success); Assert.Contains("默认通信麦克风", result.Reason);
+        Assert.Equal(expected, endpoint.Muted); Assert.Equal(1, endpoint.MuteWrites); Assert.Equal(0, endpoint.VolumeWrites); Assert.Equal(.7f, endpoint.Volume);
+    }
     [Theory]
     [InlineData("volume", 1, 0)]
     [InlineData("mute", 0, 1)]
@@ -74,10 +95,11 @@ public sealed class AudioPlaybackTests
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var exiting = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var release = new ManualResetEventSlim();
+        var canceled = false;
         var first = commands.RunAsync(token =>
         {
             entered.SetResult(); release.Wait();
-            try { Assert.True(token.IsCancellationRequested); return (true, "late synthetic result"); }
+            try { canceled = token.IsCancellationRequested; return (true, "late synthetic result"); }
             finally { exiting.SetResult(); }
         }, default, time);
         try
@@ -89,6 +111,7 @@ public sealed class AudioPlaybackTests
             Assert.False(busy.Success); Assert.Contains("本次未执行", busy.Reason);
         }
         finally { release.Set(); await exiting.Task.WaitAsync(TimeSpan.FromSeconds(3)); }
+        Assert.True(canceled);
     }
     private sealed class Endpoint : IAudioPlaybackEndpoint
     {

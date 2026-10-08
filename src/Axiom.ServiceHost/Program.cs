@@ -62,7 +62,7 @@ internal static class Program
         var pluginDatabase = Path.Combine(Path.GetDirectoryName(ruleDatabase)!, "tasks.db");
         using var pluginStore = new SqliteAutomationTaskStore(pluginDatabase);
         RuleDraftDataPath.ProtectFile(pluginDatabase, sid);
-        await using var plugins = new PluginTaskRuntime([new ProgramPlugin(), new AxiomStartupPlugin(), new WindowPlugin(), new TrayPlugin(), new KeyboardPlugin(), new SystemEventPlugin(), new IntervalPlugin(), new DailyTimePlugin(), new AudioPlaybackPlugin(), new OnceTimePlugin(), new AudioPlugin(), new OpenTargetPlugin(), new ForegroundPlugin(), new WindowPresencePlugin()], pluginStore, sid, engine, WindowsBootIdentity.Read);
+        await using var plugins = new PluginTaskRuntime([new ProgramPlugin(), new AxiomStartupPlugin(), new WindowPlugin(), new TrayPlugin(), new KeyboardPlugin(), new SystemEventPlugin(), new IntervalPlugin(), new DailyTimePlugin(), new AudioPlaybackPlugin(), new MicrophonePlugin(), new OnceTimePlugin(), new AudioPlugin(), new OpenTargetPlugin(), new ForegroundPlugin(), new WindowPresencePlugin()], pluginStore, sid, engine, WindowsBootIdentity.Read);
         await plugins.InitializeAsync();
         var key = new ResourceKey("windows.service.status", ServiceStatusProtocol.ServiceName, ResourceScope.Machine);
         engine.ConfigureDisplayObservation(key);

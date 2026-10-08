@@ -25,7 +25,7 @@ internal sealed class GameHdrAgent : IAsyncDisposable
     internal GameHdrAgent(string sid)
     {
         this.sid = sid; shortcuts = new(sid);
-        providers = new(sid, [new ProgramCapabilityProvider(), new WindowCapabilityProvider(), new TrayCapabilityProvider(), new KeyboardCapabilityProvider(shortcuts), new SystemEventCapabilityProvider(), new IntervalCapabilityProvider(), new DailyTimeCapabilityProvider(), new OnceTimeCapabilityProvider(), new AudioCapabilityProvider(), new AudioPlaybackCapabilityProvider(), new OpenTargetCapabilityProvider(), new ForegroundCapabilityProvider(), new WindowPresenceCapabilityProvider()]);
+        providers = new(sid, [new ProgramCapabilityProvider(), new WindowCapabilityProvider(), new TrayCapabilityProvider(), new KeyboardCapabilityProvider(shortcuts), new SystemEventCapabilityProvider(), new IntervalCapabilityProvider(), new DailyTimeCapabilityProvider(), new OnceTimeCapabilityProvider(), new AudioCapabilityProvider(), new AudioPlaybackCapabilityProvider(), new MicrophoneCapabilityProvider(), new OpenTargetCapabilityProvider(), new ForegroundCapabilityProvider(), new WindowPresenceCapabilityProvider()]);
     }
 
     public async Task RunAsync()
