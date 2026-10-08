@@ -57,6 +57,16 @@ public sealed partial class WorkbenchWindow
             var stop = Action("结束"); stop.Click += async (_, _) => await UsageCommandAsync("stop"); actions.Children.Add(stop);
         }
         content.Children.Add(actions);
+        var catalogButtons = Row(8);
+        foreach (var item in new[] { (Operation: "catalog", Label: "导出能力 JSON…"), (Operation: "catalog-readable", Label: "查看能力开发资料…") })
+        {
+            var button = Action(item.Label); button.Click += async (_, _) =>
+            {
+                try { var result = await UsageAsync(new(item.Operation)); await PreviewUsageTextAsync("当前能力目录", result.ExportText!); }
+                catch (Exception error) { ShowNotice(error.Message); }
+            }; catalogButtons.Children.Add(button);
+        }
+        content.Children.Add(catalogButtons);
         if (usageSnapshot is null) { content.Children.Add(Text("尚未读取观察状态。", 13, Muted)); return; }
         content.Children.Add(Text($"状态读取于 {usageSnapshot.ReadAtUtc.ToLocalTime():HH:mm:ss}，无定时轮询。", 12, Muted));
         var sessions = new ComboBox { Header = "本地观察记录", HorizontalAlignment = HorizontalAlignment.Stretch, ItemsSource = usageSnapshot.Sessions.Select(s => $"{s.StartedUtc.ToLocalTime():MM-dd HH:mm} · {StateName(s.State)}").ToArray() };
@@ -94,7 +104,7 @@ public sealed partial class WorkbenchWindow
         }
         if (usageSnapshot.Suggestions is not { Length: > 0 }) content.Children.Add(Text("目前没有足够重复证据，或建议已处理。可使用摘要与 AI 分析，不会自动配置规则。", 13, Muted));
         var records = Column(4); records.Children.Add(Text($"记录 {usageOffset + (selected.Events.Length > 0 ? 1 : 0)}–{usageOffset + selected.Events.Length} / {usageSnapshot.TotalEvents}", 15, Ink, true));
-        foreach (var e in selected.Events) records.Children.Add(Text($"{e.AtUtc.ToLocalTime():HH:mm:ss} · {EventName(e.Kind)} · {LocalName(selected, e.ObjectId)} · {(e.Origin == "axiom" ? "Axiom" : "来源未知")}", 12, Muted));
+        foreach (var e in selected.Events) records.Children.Add(Text($"{e.AtUtc.ToLocalTime():HH:mm:ss} · {EventName(e.Kind)} · {LocalName(selected, e.ObjectId)} · {(e.Origin == "axiom" ? "Axiom" : "来源未知")}{(e.DwellSeconds is { } dwell ? $" · 前台停留约 {dwell:0} 秒" : "")}", 12, Muted));
         content.Children.Add(Card(records));
         var pages = Row(8); var before = Action("上一页"); before.IsEnabled = usageOffset > 0; before.Click += async (_, _) => { usageOffset = Math.Max(0, usageOffset - 64); await UsageCommandAsync("read"); }; pages.Children.Add(before);
         var next = Action("下一页"); next.IsEnabled = usageOffset + 64 < usageSnapshot.TotalEvents; next.Click += async (_, _) => { usageOffset += 64; await UsageCommandAsync("read"); }; pages.Children.Add(next); content.Children.Add(pages);

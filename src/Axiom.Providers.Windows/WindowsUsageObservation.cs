@@ -57,7 +57,7 @@ public static class WindowsUsageObservation
                     if (eventTime is { } notified && (!GetProcessTimes(handle, out var created, out _, out _, out _) || created > notified))
                         throw new InvalidOperationException("Process identity changed.");
                     var path = WindowsGameProcessObserver.ReadImagePath(handle);
-                    if (Path.GetFileName(path).StartsWith("Axiom", StringComparison.OrdinalIgnoreCase)) return;
+                    if (new[] { "Axiom.exe", "Axiom.ServiceHost.exe", "Axiom.SessionAgent.exe", "Axiom.WinUI.exe" }.Contains(Path.GetFileName(path), StringComparer.OrdinalIgnoreCase)) return;
                     publish(new(at, kind, path));
                 }
                 finally { CloseHandle(handle); }

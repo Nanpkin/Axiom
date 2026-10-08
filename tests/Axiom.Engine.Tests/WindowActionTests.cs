@@ -84,6 +84,29 @@ public sealed class WindowActionTests
         Assert.True((await WindowsWindowActions.CloseAsync(Environment.ProcessPath!, first.Title, TimeSpan.FromSeconds(1), default)).Success);
     }
 
+    [Theory(Timeout = 10000)]
+    [InlineData("minimize")]
+    [InlineData("maximize")]
+    [InlineData("restore")]
+    public async Task WindowStateCommandsReadBackNativeStateAndLeaveLaterUserChangesAlone(string state)
+    {
+        using var target = new TrayWindow(); target.Show();
+        target.SetState(state == "restore" ? 3 : 9);
+        var result = await WindowsWindowActions.CloseAsync(Environment.ProcessPath!, target.Title, TimeSpan.FromSeconds(2), default, state);
+        Assert.True(result.Success, result.Reason);
+        Assert.True(state == "minimize" ? target.Minimized : state == "maximize" ? target.Maximized : !target.Minimized && !target.Maximized);
+        target.SetState(9); Assert.False(target.Minimized); Assert.False(target.Maximized);
+        Assert.Equal(0, target.CloseCount);
+    }
+    [Fact(Timeout = 10000)]
+    public async Task CancelledStateWaitDoesNotChangeALaterWindow()
+    {
+        using var target = new TrayWindow(); using var cancellation = new CancellationTokenSource();
+        var pending = WindowsWindowActions.CloseAsync(Environment.ProcessPath!, target.Title, TimeSpan.FromSeconds(3), cancellation.Token, "maximize");
+        cancellation.Cancel(); await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending);
+        target.Show(); Assert.False(target.Maximized); Assert.Equal(0, target.CloseCount);
+    }
+
     // Native fixture deliberately implements × as hide-to-tray, retaining its process.
     private sealed class TrayWindow : IDisposable
     {
@@ -95,6 +118,9 @@ public sealed class WindowActionTests
         private nint handle;
         public string Title { get; } = "Axiom window fixture " + Guid.NewGuid();
         public int CloseCount => Volatile.Read(ref count);
+        public bool Minimized => IsIconic(handle);
+        public bool Maximized => IsZoomed(handle);
+        public void SetState(int state) => SendMessage(handle, 0x8003, state, 0);
         public bool Visible => IsWindowVisible(handle);
         public TrayWindow(bool ignoreClose = false)
         {
@@ -115,6 +141,7 @@ public sealed class WindowActionTests
         private nint Handle(nint window,uint message,nint w,nint l)
         {
             if (message == 0x0010) { Interlocked.Increment(ref count); if (!ignoreClose) ShowWindow(window, 0); return 0; }
+            if (message == 0x8003) { ShowWindow(window, (int)w); return 0; }
             if (message == 0x8001) { DestroyWindow(window); return 0; }
             if (message == 0x0002) { PostQuitMessage(0); return 0; }
             return DefWindowProc(window,message,w,l);
@@ -132,6 +159,8 @@ public sealed class WindowActionTests
         [DllImport("user32.dll")] private static extern bool TranslateMessage(ref Message message);
         [DllImport("user32.dll")] private static extern nint DispatchMessage(ref Message message);
         [DllImport("user32.dll")] private static extern bool ShowWindow(nint window,int state);
+        [DllImport("user32.dll")] private static extern bool IsIconic(nint window);
+        [DllImport("user32.dll")] private static extern bool IsZoomed(nint window);
         [DllImport("user32.dll")] private static extern bool IsWindowVisible(nint window);
         [DllImport("user32.dll")] private static extern bool DestroyWindow(nint window);
         [DllImport("user32.dll")] private static extern void PostQuitMessage(int code);

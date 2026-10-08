@@ -86,7 +86,7 @@ internal static class Program
         if (File.Exists(usageDatabase)) RuleDraftDataPath.ProtectFile(usageDatabase, sid);
         using var usageJournal = new UsageJournal(usageDatabase);
         RuleDraftDataPath.ProtectFile(usageDatabase, sid);
-        await using var usage = new UsageObservationController(usageJournal, sid);
+        await using var usage = new UsageObservationController(usageJournal, new AgentUsageObservationSource(sid));
         var taskServer = new AutomationPipeServer([new GameHdrTaskBackend(game, sid,
             ResourceScope.Session(sid, System.Diagnostics.Process.GetCurrentProcess().SessionId)), plugins], new AutomationRuntimeLifetime(game, plugins), sid, exit,
             loginStartup,

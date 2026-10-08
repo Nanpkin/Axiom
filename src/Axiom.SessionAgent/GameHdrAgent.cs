@@ -100,6 +100,7 @@ internal sealed class GameHdrAgent : IAsyncDisposable
                     reply = new(1, "stopping", request.RequestId);
                 else
                 {
+                    UsageObservationStream.MarkAction();
                     var result = WindowsHdrDisplayProbe.Apply(request.DisplayPath!, request.Enabled!.Value,
                         request.ExpectedEnabled!.Value);
                     reply = new(1, "applied", request.RequestId, Displays: ReadDisplays(),
