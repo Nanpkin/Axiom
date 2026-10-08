@@ -40,7 +40,7 @@ public static class UsageAnalysis
         UsageEvent? previous = null;
         foreach (var item in session.Events)
         {
-            if (item.Kind is "gap" or "axiom-action") { previous = null; continue; }
+            if (item.Kind is "gap" or "axiom-action" || item.Kind.StartsWith("system-", StringComparison.Ordinal)) { previous = null; continue; }
             if (item.Kind != kind || item.ObjectId is null) continue;
             if (previous is not null && previous.ObjectId != item.ObjectId && item.AtUtc >= previous.AtUtc && item.AtUtc - previous.AtUtc <= maximum)
                 yield return (previous, item);
@@ -64,7 +64,7 @@ public static class UsageAnalysis
         var body = new
         {
             version = 1, sessionId = session.Id, environment = new { platform = "Windows 11 x64", source = "user-enabled-metadata-observation" },
-            coverage = new { minutes = (session.EndsUtc - session.StartedUtc).TotalMinutes, session.State, events = session.Events.Length, session.Options.Foreground, session.Options.ProcessStarts, gaps = session.Gaps },
+            coverage = new { minutes = (session.EndsUtc - session.StartedUtc).TotalMinutes, session.State, events = session.Events.Length, session.Options.Foreground, session.Options.ProcessStarts, session.Options.SystemEvents, gaps = session.Gaps },
             objects = session.Objects.Select(o => new { id = o.Id, kind = "application" }),
             patterns = suggestions,
             evidence = session.Events.Where(e => e.Kind != "gap").Take(12).Select(e => new { offsetSeconds = (int)(e.AtUtc - session.StartedUtc).TotalSeconds, e.Kind, e.ObjectId, e.Origin }),
@@ -121,6 +121,7 @@ public static class UsageAnalysis
             var resolved = invocation with { Parameters = parameters.ToImmutable() };
             AutomationTaskCompiler.ValidateInvocation(resolved, capability);
             // Provider-specific constraints are also checked before offering the draft.
+            if (resolved.CapabilityId == SystemEventCapabilities.Event) SystemEventCapabilities.Validate(resolved);
             if (resolved.CapabilityId is WindowCapabilities.Close or WindowCapabilities.State) WindowCapabilities.ValidateTargets(resolved);
             if (resolved.CapabilityId is "program.start" or "program.close") ProgramCapabilities.ValidateTargets(resolved);
             if (resolved.CapabilityId is HotkeyCapabilities.Pressed or HotkeyCapabilities.Send) HotkeyCapabilities.Validate(resolved);

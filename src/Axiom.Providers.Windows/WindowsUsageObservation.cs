@@ -12,7 +12,7 @@ public sealed record NativeUsageSample(DateTimeOffset AtUtc, string Kind, string
 [SupportedOSPlatform("windows")]
 public static class WindowsUsageObservation
 {
-    public static async Task RunAsync(bool foreground, bool starts, Action<NativeUsageSample> publish, CancellationToken token)
+    public static async Task RunAsync(bool foreground, bool starts, bool systemEvents, Action<NativeUsageSample> publish, CancellationToken token)
     {
         using var currentProcess = Process.GetCurrentProcess();
         using var identity = WindowsIdentity.GetCurrent();
@@ -21,11 +21,17 @@ public static class WindowsUsageObservation
         var jobs = new List<Task>();
         using var source = starts ? new WindowsProcessStartEvents([], observeAll: true) : null;
         using var window = foreground ? new ForegroundSource() : null;
+        using var system = systemEvents ? new WindowsSessionEvents() : null;
+        if (system is not null) jobs.Add(System());
         if (source is not null) jobs.Add(Starts());
         if (window is not null) jobs.Add(Windows());
         try { await await Task.WhenAny(jobs); }
         finally { lifetime.Cancel(); try { await Task.WhenAll(jobs); } catch (OperationCanceledException) { } }
 
+        async Task System()
+        {
+            await foreach (var kind in system!.Events.ReadAllAsync(lifetime.Token)) publish(new(DateTimeOffset.UtcNow, "system-" + kind, null));
+        }
         async Task Starts()
         {
             await foreach (var hint in source!.Events.ReadAllAsync(lifetime.Token))

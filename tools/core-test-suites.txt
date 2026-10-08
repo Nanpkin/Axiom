@@ -20,3 +20,5 @@ AutomationRegressionTests
 WindowStateTests
 
 UsageObservationTests
+
+SystemEventTests

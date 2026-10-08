@@ -15,7 +15,7 @@ internal static class UsageObservationStream
         void Publish(UsageSample sample) { if (!queue.Writer.TryWrite(sample)) queue.Writer.TryComplete(new IOException("观察队列溢出，记录已停止。")); }
         void Action() => Publish(new(DateTimeOffset.UtcNow, "axiom-action", Origin: "axiom"));
         ActionStarted += Action;
-        var native = WindowsUsageObservation.RunAsync(request.UsageOptions!.Foreground, request.UsageOptions.ProcessStarts,
+        var native = WindowsUsageObservation.RunAsync(request.UsageOptions!.Foreground, request.UsageOptions.ProcessStarts, request.UsageOptions.SystemEvents,
             sample => Publish(new(sample.AtUtc, sample.Kind, sample.Executable)), lifetime.Token);
         var disconnected = ProviderProtocol.ReadAsync(pipe, lifetime.Token);
         try

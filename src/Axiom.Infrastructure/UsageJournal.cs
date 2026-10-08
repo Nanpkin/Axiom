@@ -10,7 +10,7 @@ public sealed class UsageJournal : IDisposable
     private readonly SqliteConnection connection;
     public UsageJournal(string path)
     {
-        connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path }.ToString()); connection.Open();
+        connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path, Pooling = false }.ToString()); connection.Open();
         using var command = connection.CreateCommand();
         command.CommandText = "PRAGMA journal_mode=DELETE; PRAGMA secure_delete=ON; CREATE TABLE IF NOT EXISTS usage_sessions(id TEXT PRIMARY KEY, started TEXT NOT NULL, body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS usage_feedback(session TEXT NOT NULL, id TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY(session,id));";
         command.ExecuteNonQuery();
@@ -73,9 +73,10 @@ public sealed class UsageRecorder
     {
         if (Session.State != "recording") return false;
         if (sample.AtUtc >= Session.EndsUtc) { State("stopped"); return false; }
-        if (sample.AtUtc < Session.StartedUtc || sample.Kind is not ("foreground" or "process-start" or "axiom-action" or "gap") || sample.Origin is not ("unknown" or "axiom")) throw new ArgumentException("观察事件无效。");
+        if (sample.AtUtc < Session.StartedUtc || sample.Kind is not ("foreground" or "process-start" or "axiom-action" or "gap" or "system-locked" or "system-unlocked" or "system-resumed" or "system-ac" or "system-battery") || sample.Origin is not ("unknown" or "axiom")) throw new ArgumentException("观察事件无效。");
         if (sample.Kind == "gap") { State(Session.Events.Length >= UsageValidation.MaximumEvents - 1 ? "stopped" : "recording", "事件无法识别或队列溢出；这一段数据不完整。"); return true; }
         if (sample.Kind == "foreground" && !Session.Options.Foreground || sample.Kind == "process-start" && !Session.Options.ProcessStarts) return false;
+        if (sample.Kind.StartsWith("system-", StringComparison.Ordinal) && !Session.Options.SystemEvents) return false;
         string? id = null;
         if (sample.Executable is { } path)
         {
