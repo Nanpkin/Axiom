@@ -293,6 +293,26 @@ public sealed class UsageObservationTests
         var summary = UsageAnalysis.Summary(recorder.Session, Catalog()); Assert.Contains("stoppedAfterSeconds", summary); Assert.Contains("plannedMinutes", summary);
     }
     [Fact]
+    public void FrequentUnexplainedSwitchesCannotCrowdOutAnActionablePreparationPattern()
+    {
+        var recorder = new UsageRecorder(new(120, true, true, []), Now);
+        for (var repeat = 0; repeat < 10; repeat++)
+            for (var app = 0; app < 14; app++) recorder.Add(new(Now.AddSeconds((repeat * 14 + app) * 2), "foreground", App("SyntheticSwitch" + app)));
+        for (var repeat = 0; repeat < 3; repeat++)
+        {
+            recorder.Add(new(Now.AddSeconds(300 + repeat * 60), "process-start", App("SyntheticWork")));
+            recorder.Add(new(Now.AddSeconds(304 + repeat * 60), "process-start", App("SyntheticCompanion")));
+        }
+        var suggestions = UsageAnalysis.Analyze(recorder.Session);
+        Assert.Equal(12, suggestions.Length); Assert.Equal("existing", suggestions[0].Kind); Assert.Equal(3, suggestions[0].Occurrences);
+        Assert.StartsWith("launch:", suggestions[0].Id); Assert.True(suggestions[1].Occurrences > suggestions[0].Occurrences);
+        using var summary = JsonDocument.Parse(UsageAnalysis.Summary(recorder.Session, Catalog()));
+        Assert.Equal(suggestions[0].Id, summary.RootElement.GetProperty("patterns")[0].GetProperty("Id").GetString());
+        var unsafeObjects = recorder.Session with { Objects = [.. recorder.Session.Objects.Select(o => o.Id == suggestions[0].ObjectIds[0] ? o with { Executable = App("Axiom") } : o)] };
+        Assert.DoesNotContain(UsageAnalysis.Analyze(unsafeObjects), s => s.Kind == "existing");
+    }
+
+    [Fact]
     public void FullProductionCatalogAndMaximumObjectDictionaryFitExportWithoutDeviceIdentityOrLostParameters()
     {
         var recorder = new UsageRecorder(new(120, false, true, [], new string('界', 500), SystemEvents: true, WindowStates: true), Now);
