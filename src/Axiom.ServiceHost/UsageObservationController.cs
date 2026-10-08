@@ -19,6 +19,7 @@ internal sealed class UsageObservationController(UsageJournal journal, IUsageObs
     private Task worker = Task.CompletedTask;
     private CancellationTokenSource? sessionLifetime;
     private Task expiry = Task.CompletedTask;
+    private TaskCompletionSource ended = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public async Task<AutomationMessage> HandleAsync(AutomationMessage message, AutomationSnapshot catalog, CancellationToken token)
     {
@@ -30,6 +31,7 @@ internal sealed class UsageObservationController(UsageJournal journal, IUsageObs
             {
                 lock (gate) if (current is not null && current.Session.State is "recording" or "paused") throw new InvalidOperationException("请先结束当前观察。");
                 await StopWorkerAsync(); sessionLifetime?.Cancel();
+                ended = new(TaskCreationOptions.RunContinuationsAsynchronously);
                 current = new(request.Options!, clock.GetUtcNow()); lock (gate) journal.Save(current.Session);
                 sessionLifetime?.Dispose(); sessionLifetime = new();
                 expiry = ExpireAsync(current.Session.Id, current.Session.EndsUtc, sessionLifetime.Token);
@@ -43,7 +45,7 @@ internal sealed class UsageObservationController(UsageJournal journal, IUsageObs
                     current.State(request.Operation == "pause" && current.Session.State != "stopped" ? "paused" : "stopped", request.Operation == "pause" ? "用户暂停，期间未记录。" : null, clock.GetUtcNow());
                     journal.Save(current.Session);
                 }
-                if (request.Operation == "stop") sessionLifetime?.Cancel();
+                if (request.Operation == "stop") { sessionLifetime?.Cancel(); ended.TrySetResult(); }
             }
             else if (request.Operation == "resume")
             {
@@ -56,7 +58,7 @@ internal sealed class UsageObservationController(UsageJournal journal, IUsageObs
             }
             else if (request.Operation is "delete" or "clear")
             {
-                if (request.Operation == "clear" || current?.Session.Id == request.SessionId) { await StopWorkerAsync(); sessionLifetime?.Cancel(); current = null; }
+                if (request.Operation == "clear" || current?.Session.Id == request.SessionId) { await StopWorkerAsync(); sessionLifetime?.Cancel(); ended.TrySetResult(); current = null; }
                 lock (gate) journal.Delete(request.Operation == "clear" ? null : request.SessionId);
             }
             lock (gate)
@@ -102,6 +104,10 @@ internal sealed class UsageObservationController(UsageJournal journal, IUsageObs
         }
         finally { operations.Release(); }
     }
+    public Task WaitForEndAsync(string id, CancellationToken token)
+    {
+        lock (gate) return current?.Session.Id != id || current.Session.State == "stopped" ? Task.CompletedTask : ended.Task.WaitAsync(token);
+    }
     public async Task EndLeaseAsync(string id)
     {
         await operations.WaitAsync();
@@ -109,7 +115,7 @@ internal sealed class UsageObservationController(UsageJournal journal, IUsageObs
         {
             if (current?.Session.Id != id) return;
             await StopWorkerAsync(); sessionLifetime?.Cancel();
-            lock (gate) { current.State("stopped", atUtc: clock.GetUtcNow()); journal.Save(current.Session); }
+            lock (gate) { current.State("stopped", atUtc: clock.GetUtcNow()); journal.Save(current.Session); ended.TrySetResult(); }
         }
         finally { operations.Release(); }
     }
@@ -139,7 +145,7 @@ internal sealed class UsageObservationController(UsageJournal journal, IUsageObs
                 lock (gate)
                 {
                     current!.Add(sample); journal.Save(current.Session);
-                    if (current.Session.State == "stopped") recording!.Cancel();
+                    if (current.Session.State == "stopped") { ended.TrySetResult(); recording!.Cancel(); }
                 }
             }, token);
             if (!token.IsCancellationRequested) throw new IOException("观察源意外结束。");
@@ -148,13 +154,13 @@ internal sealed class UsageObservationController(UsageJournal journal, IUsageObs
         catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
         {
             initialized.TrySetException(new IOException("无法开启或维持观察；请确认会话后台可用。", error));
-            lock (gate) { current!.State("stopped", "观察中断或权限不足，后续未记录；可重新开始观察。"); journal.Save(current.Session); }
+            lock (gate) { current!.State("stopped", "观察中断或权限不足，后续未记录；可重新开始观察。"); journal.Save(current.Session); ended.TrySetResult(); }
         }
     }
     public async ValueTask DisposeAsync()
     {
         sessionLifetime?.Cancel(); await StopWorkerAsync(); await expiry;
-        lock (gate) if (current is not null) { current.State("stopped", atUtc: clock.GetUtcNow()); journal.Save(current.Session); }
+        lock (gate) if (current is not null) { current.State("stopped", atUtc: clock.GetUtcNow()); journal.Save(current.Session); ended.TrySetResult(); }
         recording?.Dispose(); sessionLifetime?.Dispose(); operations.Dispose();
     }
 }

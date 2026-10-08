@@ -84,7 +84,7 @@ public sealed class UsageRecorder
     {
         if (Session.State != "recording") return false;
         if (sample.AtUtc >= Session.EndsUtc) { State("stopped", atUtc: Session.EndsUtc); return false; }
-        if (sample.AtUtc < Session.StartedUtc || sample.Kind is not ("foreground" or "process-start" or "axiom-action" or "gap" or "system-locked" or "system-unlocked" or "system-resumed" or "system-ac" or "system-battery") || sample.Origin is not ("unknown" or "axiom")) throw new ArgumentException("观察事件无效。");
+        if (sample.AtUtc < Session.StartedUtc || sample.Kind is not ("foreground" or "process-start" or "axiom-action" or "gap" or "system-locked" or "system-unlocked" or "system-resumed" or "system-ac" or "system-battery" or "system-network-up" or "system-network-down") || sample.Origin is not ("unknown" or "axiom")) throw new ArgumentException("观察事件无效。");
         if (sample.Kind == "gap") { State(Session.Events.Length >= UsageValidation.MaximumEvents - 1 ? "stopped" : "recording", "事件无法识别或队列溢出；这一段数据不完整。", sample.AtUtc); return true; }
         if (sample.Kind == "foreground" && !Session.Options.Foreground || sample.Kind == "process-start" && !Session.Options.ProcessStarts) return false;
         if (sample.Kind.StartsWith("system-", StringComparison.Ordinal) && !Session.Options.SystemEvents) return false;

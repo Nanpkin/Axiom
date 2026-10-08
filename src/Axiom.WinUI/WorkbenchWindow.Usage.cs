@@ -17,7 +17,6 @@ public sealed partial class WorkbenchWindow
     private int usageOffset;
     private readonly Button usageStop = Action("结束使用观察");
     private readonly TextBlock usageIndicator = Text("", 12, Amber);
-    private CancellationTokenSource? usageExpiry;
 
     private async Task<AutomationMessage> UsageAsync(UsageRequest request)
     {
@@ -38,14 +37,14 @@ public sealed partial class WorkbenchWindow
         try
         {
             await UsageAsync(new(operation, SessionId: id ?? usageSelection, Text: text, FeedbackId: feedback, Offset: usageOffset));
-            if (operation is "stop" or "clear" || operation == "delete" && usageSnapshot?.ActiveId is null) { usageLease?.Dispose(); usageLease = null; usageExpiry?.Cancel(); }
+            if (operation is "stop" or "clear" || operation == "delete" && usageSnapshot?.ActiveId is null) { usageLease?.Dispose(); usageLease = null; }
         }
         catch (Exception error) { ShowNotice(error.Message); }
         finally { SetBusy(false); Render(); }
     }
     private void BuildUsage()
     {
-        content.Children.Add(Text("仅在你开启后记录应用元数据；不采集窗口标题、正文、按键、剪贴板、截图或命令行。关闭此窗口立即结束观察；自动化规则继续工作。", 14, Muted));
+        content.Children.Add(Text("仅在你开启后记录选定的应用、会话、供电及网络可用性元数据；不采集窗口标题、正文、按键、剪贴板、截图或命令行。关闭此窗口立即结束观察；自动化规则继续工作。", 14, Muted));
         content.Children.Add(Text("最多 120 分钟、4096 条事件、128 个应用；本地最多保留 12 次、7 天。未知来源不能当作手动操作。", 12, Muted));
         var actions = Row(8);
         var start = Action("开始观察", true); start.IsEnabled = reachable && usageSnapshot?.ActiveId is null; start.Click += async (_, _) => await StartUsageAsync(); actions.Children.Add(start);
@@ -75,6 +74,8 @@ public sealed partial class WorkbenchWindow
         sessions.SelectionChanged += async (_, _) => { if (sessions.SelectedIndex < 0 || busy) return; usageSelection = usageSnapshot.Sessions[sessions.SelectedIndex].Id; usageOffset = 0; await UsageCommandAsync("read"); };
         content.Children.Add(sessions);
         if (selected is null) { content.Children.Add(Text("没有观察记录。先开启一次你愿意记录的使用过程。", 14, Muted)); return; }
+        content.Children.Add(Text("本次范围：" + string.Join("、", new[] { selected.Options.Foreground ? "前台应用" : null, selected.Options.ProcessStarts ? "程序启动" : null, selected.Options.SystemEvents ? "会话/供电/网络可用性" : null }.Where(x => x is not null)), 13, Muted));
+        content.Children.Add(Text("排除应用：" + (selected.Options.ExcludedApplications.Length == 0 ? "无" : string.Join("、", selected.Options.ExcludedApplications)), 12, Muted));
         content.Children.Add(Text("本次目的：" + (selected.Options.Purpose.Length == 0 ? "未填写" : selected.Options.Purpose), 13, Muted));
         foreach (var gap in selected.Gaps) content.Children.Add(Text(gap, 12, Amber));
         var tools = Row(8);
@@ -112,14 +113,14 @@ public sealed partial class WorkbenchWindow
         var clear = Action("清空记录"); clear.Click += async (_, _) => { if (await ConfirmAsync("清空使用观察？", "全部观察与相关反馈将被删除；现有规则保留。", "清空")) { usageOffset = 0; usageSelection = null; await UsageCommandAsync("clear"); } }; removal.Children.Add(clear); content.Children.Add(removal);
     }
     private static string StateName(string state) => state switch { "recording" => "观察中", "paused" => "已暂停", _ => "已结束" };
-    private static string EventName(string kind) => kind switch { "foreground" => "前台切换", "process-start" => "程序启动", "axiom-action" => "Axiom 发起动作", "system-locked" => "锁屏", "system-unlocked" => "解锁", "system-resumed" => "睡眠恢复", "system-ac" => "交流电供电", "system-battery" => "电池供电", _ => "记录间断" };
+    private static string EventName(string kind) => kind switch { "foreground" => "前台切换", "process-start" => "程序启动", "axiom-action" => "Axiom 发起动作", "system-locked" => "锁屏", "system-unlocked" => "解锁", "system-resumed" => "睡眠恢复", "system-ac" => "交流电供电", "system-battery" => "电池供电", "system-network-up" => "网络可用", "system-network-down" => "网络不可用", _ => "记录间断" };
     private static string LocalName(UsageSession session, string? id) => session.Objects.FirstOrDefault(o => o.Id == id) is { } item ? Path.GetFileName(item.Executable) : "—";
 
     private async Task StartUsageAsync()
     {
         if (busy || activeDialog is not null) return;
         var body = Column(12); var foreground = new CheckBox { Content = "前台应用切换（不含窗口标题）", IsChecked = true }; var starts = new CheckBox { Content = "程序启动（不含命令行）", IsChecked = true };
-        var system = new CheckBox { Content = "锁屏、解锁、唤醒及供电变化", IsChecked = true };
+        var system = new CheckBox { Content = "锁屏、解锁、唤醒、供电及网络可用性（不含地址）", IsChecked = true };
         var duration = new ComboBox { Header = "持续时间", ItemsSource = new[] { "5 分钟", "15 分钟", "30 分钟", "60 分钟", "120 分钟" }, SelectedIndex = 1 };
         var exclusions = new TextBox { Header = "排除应用：每行一个 exe 文件名", AcceptsReturn = true, Height = 80, MaxLength = 17000 };
         var purpose = new TextBox { Header = "我准备做什么（选填，会进入导出预览）", MaxLength = 500 };
@@ -141,15 +142,26 @@ public sealed partial class WorkbenchWindow
             var response = await AutomationProtocol.ReadAsync(lease, timeout.Token);
             if (response.RequestId != id || response.Version != 1 || response.Type != "usage" || response.UsageSnapshot is null) throw new InvalidOperationException(response.Error ?? "开启结果未确认。");
             usageSnapshot = response.UsageSnapshot; usageSelection = usageSnapshot.ActiveId; usageOffset = 0; UpdateUsageIndicator();
-            usageExpiry?.Cancel(); usageExpiry?.Dispose(); usageExpiry = new(); _ = RefreshAtUsageDeadlineAsync(TimeSpan.FromMinutes(options.Minutes), usageExpiry.Token);
+            _ = WatchUsageLeaseAsync(lease, id);
         }
         catch (Exception error) { usageLease?.Dispose(); usageLease = null; ShowNotice(error.Message); }
         finally { SetBusy(false); Render(); }
     }
-    private async Task RefreshAtUsageDeadlineAsync(TimeSpan delay, CancellationToken token)
+    private async Task WatchUsageLeaseAsync(NamedPipeClientStream lease, string id)
     {
-        try { await Task.Delay(delay, token); DispatcherQueue.TryEnqueue(async () => { if (!closed) await UsageCommandAsync("read"); }); }
-        catch (OperationCanceledException) { }
+        try
+        {
+            var response = await AutomationProtocol.ReadAsync(lease, default);
+            if (response.Version != 1 || response.RequestId != id || response.Type != "usage-ended") throw new InvalidDataException("观察连接状态未确认。");
+        }
+        catch (Exception error) when (error is IOException or ObjectDisposedException or InvalidDataException) { }
+        DispatcherQueue.TryEnqueue(async () =>
+        {
+            if (closed || !ReferenceEquals(usageLease, lease)) return;
+            lease.Dispose(); usageLease = null;
+            try { await ReadUsageAsync(); Render(); }
+            catch (Exception error) { usageIndicator.Text = "观察连接已断开；记录状态未确认。"; ShowNotice(error.Message); }
+        });
     }
     private async Task PreviewUsageExportAsync(string id)
     {

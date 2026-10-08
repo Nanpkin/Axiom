@@ -34,12 +34,12 @@ public sealed class UsageLifecycleTests
             using var journal = new UsageJournal(path); var source = new Source();
             await using var controller = new UsageObservationController(journal, source);
             var started = (await Send(controller, "start", new(5, true, true, []))).UsageSnapshot!;
-            Assert.Equal(1, source.Active); var id = started.ActiveId!; var deadline = started.Selected!.EndsUtc;
+            Assert.Equal(1, source.Active); var id = started.ActiveId!; var endSignal = controller.WaitForEndAsync(id, default); Assert.False(endSignal.IsCompleted); var deadline = started.Selected!.EndsUtc;
             await Assert.ThrowsAsync<InvalidOperationException>(() => Send(controller, "start", new(5, true, false, [])));
             source.Publish!(new(DateTimeOffset.UtcNow, "foreground", Path.Combine(Path.GetTempPath(), "Example.exe")));
             var paused = (await Send(controller, "pause")).UsageSnapshot!; Assert.Equal(0, source.Active); Assert.Equal("paused", paused.Selected!.State);
             var resumed = (await Send(controller, "resume")).UsageSnapshot!; Assert.Equal(1, source.Active); Assert.Equal(deadline, resumed.Selected!.EndsUtc);
-            await controller.EndLeaseAsync(id); Assert.Equal(0, source.Active);
+            await controller.EndLeaseAsync(id); await endSignal; Assert.Equal(0, source.Active);
             Assert.Null((await Send(controller, "read")).UsageSnapshot!.ActiveId);
             Assert.Equal("stopped", Assert.Single(journal.Read(DateTimeOffset.UtcNow)).State);
         }
