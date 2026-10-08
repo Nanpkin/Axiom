@@ -77,3 +77,5 @@ Host 自身生命周期检测位于 Host：`AxiomStartupPlugin → PluginTaskRun
 窗口消失：`WindowAbsenceTaskDetection` 将用户的“全部消失”配置编译为现有 `window.visible` 资源的全否条件，不另开原生订阅；`WindowPresenceTests` 覆盖多选/未知及真实Engine的首次、重连、暂停、恢复边沿。
 
 周期计时：`IntervalCapabilities` 参数与整数校验，`IntervalPlugin` 事件编译和组合，`IntervalCapabilityProvider` 首快照零计数与会话事件，`IntervalEventSource` 单调时钟/最近到期单计时器/过期合并/取消；`IntervalTests` 用可控时钟验证共享、跳时及释放。计时检测不是动作延迟，后者仍由Engine负责。
+
+显示模式变化：共享 `WindowsSessionEvents` 接收 `WM_DISPLAYCHANGE` 但不保留载荷，复用系统事件能力和主动范围；`UsageAnalysis.DisplayLayoutPairs` 提取每次事件后同应用首个近似布局，`Draft` 将系统事件与窗口状态组合；合成原生通知与证据/暂停草稿回归分开验证。

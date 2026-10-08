@@ -109,6 +109,7 @@ public sealed class WindowsSessionEvents : IDisposable
         }
         private nint Handle(nint window, uint message, nint w, nint l)
         {
+            if (message == 0x007E) { Publish("display-changed"); return 0; } // WM_DISPLAYCHANGE; do not retain resolution/depth payload
             if (message == 0x02B1)
             {
                 if (w == 7) Publish("locked"); else if (w == 8) Publish("unlocked");
