@@ -1,0 +1,87 @@
+using System.Buffers.Binary;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using Axiom.Domain;
+
+namespace Axiom.Contracts;
+
+public sealed record AutomationMessage(int Version, string Type, string RequestId,
+    DateTimeOffset? DeadlineUtc = null, AutomationTask? Task = null, string? Id = null,
+    long? ExpectedVersion = null, AutomationSnapshot? Snapshot = null, string? Error = null,
+    bool? StartupEnabled = null, LoginStartupStatus? Startup = null,
+    ShortcutBinding? Shortcut = null, ShortcutSnapshot? Shortcuts = null, ShortcutBinding[]? Bindings = null,
+    long? ActivityBeforeId = null, int? ActivityPageSize = null, ActivityPage? Activity = null, ActivityCleanupResult? ActivityCleanup = null,
+    ProcessGroup? Group = null, ProcessGroup[]? Groups = null, bool? RefreshSteam = null,
+    int? SteamOffset = null, string? SteamScanId = null, SteamCatalogPage? Steam = null,
+    SteamToolSettings? SteamSettings = null, SteamToolSnapshot? SteamTool = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TrayCatalog? Tray = null);
+
+public sealed record LoginStartupStatus(bool Registered, bool CurrentLocation, bool LauncherAvailable, string? Error = null);
+
+public static class AutomationProtocol
+{
+    public const int MaximumFrame = 262144;
+    public static string PipeName(string sid) => "axiom-tasks-v1-" + sid.Replace('-', '_');
+    private static readonly JsonSerializerOptions Options = new() { UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow };
+    public static void ValidateRequest(AutomationMessage request, DateTimeOffset now, bool shortcutAgent = false)
+    {
+        if (request.Version != 1 || string.IsNullOrWhiteSpace(request.RequestId) || request.RequestId.Length > 64 ||
+            request.DeadlineUtc is not { } deadline || deadline <= now || deadline > now.AddSeconds(15) ||
+            request.Snapshot is not null || request.Error is not null || request.Startup is not null || request.Shortcuts is not null ||
+            request.Activity is not null || request.ActivityCleanup is not null || request.Groups is not null || request.Steam is not null || request.SteamTool is not null || request.Tray is not null ||
+            request.ActivityBeforeId is <= 0 || request.ActivityPageSize is < 1 or > 64) throw new InvalidDataException("请求格式无效。");
+        if (request.Group is not null && request.Type != "save-group" ||
+            request.SteamSettings is not null && request.Type != "save-steam-settings" ||
+            request.RefreshSteam is not null && request.Type != "scan-steam" ||
+            (request.SteamOffset is not null || request.SteamScanId is not null) && request.Type is not ("scan-steam" or "read-steam-tool") ||
+            request.SteamOffset is < 0 or > 4096 || request.SteamScanId is not null && !Guid.TryParseExact(request.SteamScanId, "N", out _) ||
+            request.SteamOffset is > 0 && (request.SteamScanId is null || request.RefreshSteam == true))
+            throw new InvalidDataException("组或工具箱请求字段无效。");
+        if (shortcutAgent)
+        {
+            if (request.SteamSettings is not null || request.Group is not null || request.RefreshSteam is not null || request.SteamOffset is not null || request.SteamScanId is not null ||
+                request.ActivityBeforeId is not null || request.ActivityPageSize is not null || request.Task is not null || request.Id is not null || request.ExpectedVersion is not null || request.StartupEnabled is not null || request.Shortcut is not null ||
+                !(request.Type == "read-shortcuts" && request.Bindings is null || request.Type is "apply-shortcuts" or "restore-shortcuts" && request.Bindings is not null))
+                throw new InvalidDataException("快捷键请求操作或字段无效。");
+            if (request.Bindings is not null) KeyboardShortcuts.ValidateSet(request.Bindings);
+            return;
+        }
+        if (request.Bindings is not null || request.Shortcut is not null && request.Type != "save-shortcut" ||
+            request.ActivityBeforeId is not null && request.Type != "read-activity" || request.ActivityPageSize is not null && request.Type != "read-activity")
+            throw new InvalidDataException("请求字段无效。");
+        var valid = request.Type switch
+        {
+            "read-tray" or "read-steam-tool" or "refresh-steam-tool" => request.Task is null && request.Id is null && request.ExpectedVersion is null && request.StartupEnabled is null && request.Shortcut is null,
+            "save-steam-settings" => request.SteamSettings is not null && request.Task is null && request.Id is null && request.ExpectedVersion is null && request.StartupEnabled is null && request.Shortcut is null,
+            "read-groups" or "scan-steam" => request.Task is null && request.Id is null && request.ExpectedVersion is null && request.StartupEnabled is null,
+            "save-group" => request.Group is not null && request.Task is null && request.Id is null && request.ExpectedVersion is null && request.StartupEnabled is null,
+            "delete-group" => request.Task is null && Guid.TryParseExact(request.Id, "D", out _) && request.ExpectedVersion > 0 && request.StartupEnabled is null,
+            "read-activity" => request.Task is null && request.Id is null && request.ExpectedVersion is null && request.StartupEnabled is null && request.Shortcut is null,
+            "clear-old-activity" => request.Task is null && request.Id is null && request.ExpectedVersion is null && request.StartupEnabled is null && request.Shortcut is null && request.ActivityBeforeId is null && request.ActivityPageSize is null,
+            "read-shortcuts" or "restore-shortcuts" => request.Task is null && request.Id is null && request.ExpectedVersion is null && request.StartupEnabled is null,
+            "save-shortcut" => request.Shortcut is not null && request.Task is null && request.Id is null && request.ExpectedVersion is null && request.StartupEnabled is null,
+            "delete-shortcut" => request.Task is null && Guid.TryParseExact(request.Id, "D", out _) && request.ExpectedVersion > 0 && request.StartupEnabled is null,
+            "read" or "shutdown" or "read-startup" => request.Task is null && request.Id is null && request.ExpectedVersion is null && request.StartupEnabled is null,
+            "set-startup" => request.Task is null && request.Id is null && request.ExpectedVersion is null && request.StartupEnabled is not null,
+            "save" => request.Task is not null && request.Id is null && request.ExpectedVersion is null && request.StartupEnabled is null,
+            "delete" => request.Task is null && Guid.TryParseExact(request.Id, "D", out _) && request.ExpectedVersion > 0 && request.StartupEnabled is null,
+            _ => false
+        };
+        if (!valid) throw new InvalidDataException("请求操作或字段无效。");
+    }
+    public static async Task WriteAsync(Stream stream, AutomationMessage message, CancellationToken token)
+    {
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(message, Options);
+        if (bytes.Length > MaximumFrame) throw new InvalidDataException("请求过大。");
+        var header = new byte[4]; BinaryPrimitives.WriteInt32LittleEndian(header, bytes.Length);
+        await stream.WriteAsync(header, token); await stream.WriteAsync(bytes, token); await stream.FlushAsync(token);
+    }
+    public static async Task<AutomationMessage> ReadAsync(Stream stream, CancellationToken token)
+    {
+        var header = new byte[4]; await stream.ReadExactlyAsync(header, token);
+        var length = BinaryPrimitives.ReadInt32LittleEndian(header);
+        if (length is < 1 or > MaximumFrame) throw new InvalidDataException("请求过大。");
+        var bytes = new byte[length]; await stream.ReadExactlyAsync(bytes, token);
+        return JsonSerializer.Deserialize<AutomationMessage>(bytes, Options) ?? throw new InvalidDataException("空请求。");
+    }
+}
