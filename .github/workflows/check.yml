@@ -8,7 +8,8 @@ permissions:
   contents: read
 concurrency:
   group: check-${{ github.ref }}
-  cancel-in-progress: true
+  # Let a verified milestone finish packaging while newer pushes replace the pending run.
+  cancel-in-progress: false
 jobs:
   core:
     strategy:
