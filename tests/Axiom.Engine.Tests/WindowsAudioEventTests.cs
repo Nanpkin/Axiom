@@ -10,8 +10,10 @@ namespace Axiom.Engine.Tests;
 public sealed class WindowsAudioEventTests
 {
     [Fact(Timeout = 20000)]
-    public void NativeAudioCallbackRegistrationIsSharedAndReleasesOnlyItsOwnLease()
+    public async Task NativeAudioCallbackRegistrationIsSharedAndReleasesOnlyItsOwnLease()
     {
+        await Task.Run(() =>
+        {
         Assert.Equal(0, WindowsAudioEvents.ActiveConsumers);
         using (var one = new WindowsAudioEvents())
         {
@@ -21,6 +23,7 @@ public sealed class WindowsAudioEventTests
         Assert.Equal(0, WindowsAudioEvents.ActiveConsumers);
         using (var again = new WindowsAudioEvents()) Assert.Equal(1, WindowsAudioEvents.ActiveConsumers);
         Assert.Equal(0, WindowsAudioEvents.ActiveConsumers);
+        });
     }
     [Fact(Timeout = 10000)]
     public async Task UnavailableAudioBecomesUnknownWithoutEndingTheSharedProviderStream()
