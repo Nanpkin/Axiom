@@ -50,6 +50,11 @@ public static class UsageAnalysis
             "来源未知，可能是应用自己调整，不证明手动操作。多窗口情况下不能确认是同一个窗口；候选仅在应用从无主窗口到有主窗口时整理一个匹配窗口，不会逐个处理后续窗口。请审阅目标和标题筛选。布局只分类当前显示器工作区的近似左右半屏/中央，不保存坐标或显示器标识；动作在触发时的显示器执行，不保证复原旧布局。一次操作，之后手动改变不干预，结束不恢复。Axiom 动作目标和数据缺口排除。",
             [g.Key.ObjectId!], g.Count(), session.Events.Count(e => e.Kind == "window-shown" && e.ObjectId == g.Key.ObjectId), EvidenceSamples: Evidence(session, g),
             WindowState: WindowCommand(g.Key.Kind)));
+        var focusWindows = ForegroundLayoutPairs(session).GroupBy(p => (p.Second.Kind, p.Second.ObjectId)).Where(g => g.Count() >= 3).Select(g => new UsageSuggestion(
+            "focus-layout:" + g.Key.Kind + ":" + g.Key.ObjectId, "existing", "切回应用后反复整理窗口",
+            $"{g.Count()} 次在应用进入前台后30秒内观察到同一应用{WindowKindName(g.Key.Kind)}；该应用有 {events.Count(e => e.ObjectId == g.Key.ObjectId)} 次前台机会，平均间隔 {(int)g.Average(p => (p.Second.AtUtc - p.First.AtUtc).TotalSeconds)} 秒。",
+            "来源未知，可能由应用或系统自行调整，不证明手动重复劳动。只统计每次前台机会的首个布局或最大化变化，切换前台、隐藏/退出、缺口、环境变化及Axiom来源会中断；本次Axiom动作目标排除。候选仅在应用进入前台时整理一个匹配窗口，不保证是观察到的同一个窗口。动作按当时显示器工作区执行，不复原精确坐标、不持续控制、结束不恢复。请确认是否希望每次切回都执行。",
+            [g.Key.ObjectId!], g.Count(), events.Count(e => e.ObjectId == g.Key.ObjectId), EvidenceSamples: Evidence(session, g), WindowState: WindowCommand(g.Key.Kind)));
         var environmentWindows = EnvironmentLayoutPairs(session).GroupBy(p => (Event: p.First.Kind, State: p.Second.Kind, p.Second.ObjectId)).Where(g => g.Count() >= 3).Select(g => new UsageSuggestion(
             (g.Key.Event == "system-display-changed" ? "display-layout:" : "environment-layout:") + g.Key.Event + ":" + g.Key.State + ":" + g.Key.ObjectId,
             "existing", SystemName(g.Key.Event) + "后反复整理窗口",
@@ -62,9 +67,25 @@ public static class UsageAnalysis
             $"{g.Count()} 次在 {SystemName(g.Key.Kind)} 后一分钟内启动；此事件共出现 {session.Events.Count(e => e.Kind == g.Key.Kind)} 次。",
             "来源未知，不证明是手动操作或因果。先确认这是你希望自动完成的步骤。候选只启动一次，已运行则跳过；之后不自动关闭。缺口或 Axiom 动作会中断序列，已知动作目标不参加分析。" + (g.Key.Kind == "system-usb-arrived" ? "触发范围是任意USB设备接入通知，不能筛选某个设备；复合设备或系统重枚举可能产生多次。" : g.Key.Kind.StartsWith("audio-", StringComparison.Ordinal) ? "触发范围是Windows默认音频角色变化，不能筛选具体设备；应用自己的音频选择可能不受影响。" : ""),
             [g.Key.ObjectId!], g.Count(), session.Events.Count(e => e.Kind == g.Key.Kind), g.Key.Kind.StartsWith("audio-", StringComparison.Ordinal) ? g.Key.Kind : g.Key.Kind[7..], Evidence(session, g)));
-        return [.. environmentWindows.Concat(afterEvents).Concat(starts).Concat(exits).Concat(windowCleanup).Concat(windows).Concat(switches).OrderByDescending(s => s.Occurrences).Take(12).Select(s =>
+        return [.. environmentWindows.Concat(focusWindows).Concat(afterEvents).Concat(starts).Concat(exits).Concat(windowCleanup).Concat(windows).Concat(switches).OrderByDescending(s => s.Occurrences).Take(12).Select(s =>
             s.Kind == "existing" && !s.ObjectIds.All(id => CanUse(session.Objects.Single(o => o.Id == id).Executable))
                 ? s with { Kind = "insufficient", Limitation = s.Limitation + "此对象不符合当前程序动作的安全范围，不能生成规则。" } : s)];
+    }
+    private static IEnumerable<(UsageEvent First, UsageEvent Second)> ForegroundLayoutPairs(UsageSession session)
+    {
+        var automated = session.Events.Where(e => (e.Kind == "axiom-action" || e.Origin == "axiom") && e.ObjectId is not null).Select(e => e.ObjectId).ToHashSet();
+        UsageEvent? focused = null;
+        foreach (var item in session.Events.OrderBy(e => e.AtUtc))
+        {
+            if (item.Origin == "axiom" || item.Kind is "gap" or "axiom-action" || IsEnvironmentEvent(item.Kind)) { focused = null; continue; }
+            if (item.Kind == "foreground") { focused = item.ObjectId is not null && !automated.Contains(item.ObjectId) ? item : null; continue; }
+            if (focused is null) continue;
+            if (item.AtUtc - focused.AtUtc > TimeSpan.FromSeconds(30)) { focused = null; continue; }
+            if (item.ObjectId != focused.ObjectId) continue;
+            if (item.Kind is "window-hidden" or "process-exit") { focused = null; continue; }
+            if (item.Kind is "window-left" or "window-right" or "window-center" or "window-maximized")
+            { var first = focused; focused = null; yield return (first, item); }
+        }
     }
     private static string EnvironmentLayoutLimits(string kind) => kind switch
     {
@@ -76,13 +97,13 @@ public static class UsageAnalysis
     };
     private static IEnumerable<(UsageEvent First, UsageEvent Second)> EnvironmentLayoutPairs(UsageSession session)
     {
-        var automated = session.Events.Where(e => e.Kind == "axiom-action" && e.ObjectId is not null).Select(e => e.ObjectId).ToHashSet();
+        var automated = session.Events.Where(e => (e.Kind == "axiom-action" || e.Origin == "axiom") && e.ObjectId is not null).Select(e => e.ObjectId).ToHashSet();
         UsageEvent? changed = null; var seen = new HashSet<string>();
         foreach (var item in session.Events.OrderBy(e => e.AtUtc))
         {
             if (item.Origin == "axiom") { changed = null; continue; }
             if (item.Kind is "system-display-changed" or "system-unlocked" or "system-resumed" or "system-usb-arrived" or "audio-output" or "audio-input") { changed = item; seen.Clear(); continue; }
-            if (item.Kind is "gap" or "axiom-action" || IsEnvironmentEvent(item.Kind)) { changed = null; continue; }
+            if (item.Origin == "axiom" || item.Kind is "gap" or "axiom-action" || IsEnvironmentEvent(item.Kind)) { changed = null; continue; }
             if (changed is null || item.ObjectId is null || automated.Contains(item.ObjectId)) continue;
             if (item.AtUtc - changed.AtUtc > TimeSpan.FromMinutes(1)) { changed = null; continue; }
             if (item.Kind is "window-left" or "window-right" or "window-center" && seen.Add(item.ObjectId)) yield return (changed, item);
@@ -90,11 +111,11 @@ public static class UsageAnalysis
     }
     private static IEnumerable<(UsageEvent First, UsageEvent Second)> WindowExitPairs(UsageSession session)
     {
-        var automated = session.Events.Where(e => e.Kind == "axiom-action" && e.ObjectId is not null).Select(e => e.ObjectId).ToHashSet();
+        var automated = session.Events.Where(e => (e.Kind == "axiom-action" || e.Origin == "axiom") && e.ObjectId is not null).Select(e => e.ObjectId).ToHashSet();
         UsageEvent? hidden = null; var seen = new HashSet<string>();
         foreach (var item in session.Events.OrderBy(e => e.AtUtc))
         {
-            if (item.Kind is "gap" or "axiom-action" || IsEnvironmentEvent(item.Kind)) { hidden = null; continue; }
+            if (item.Origin == "axiom" || item.Kind is "gap" or "axiom-action" || IsEnvironmentEvent(item.Kind)) { hidden = null; continue; }
             if (item.ObjectId is null || automated.Contains(item.ObjectId)) continue;
             if (item.Kind == "window-hidden") { hidden = item; seen.Clear(); continue; }
             if (hidden is null) continue;
@@ -106,11 +127,11 @@ public static class UsageAnalysis
     private static string WindowCommand(string kind) => kind switch { "window-minimized" => "minimize", "window-maximized" => "maximize", _ => kind[7..] };
     private static IEnumerable<(UsageEvent First, UsageEvent Second)> WindowPairs(UsageSession session)
     {
-        var automated = session.Events.Where(e => e.Kind == "axiom-action" && e.ObjectId is not null).Select(e => e.ObjectId).ToHashSet();
+        var automated = session.Events.Where(e => (e.Kind == "axiom-action" || e.Origin == "axiom") && e.ObjectId is not null).Select(e => e.ObjectId).ToHashSet();
         var shown = new Dictionary<string, UsageEvent>();
         foreach (var item in session.Events.OrderBy(e => e.AtUtc))
         {
-            if (item.Kind is "gap" or "axiom-action" || IsEnvironmentEvent(item.Kind)) { shown.Clear(); continue; }
+            if (item.Origin == "axiom" || item.Kind is "gap" or "axiom-action" || IsEnvironmentEvent(item.Kind)) { shown.Clear(); continue; }
             if (item.ObjectId is null || automated.Contains(item.ObjectId)) continue;
             if (item.Kind == "window-shown") { shown[item.ObjectId] = item; continue; }
             if (item.Kind == "window-hidden") { shown.Remove(item.ObjectId); continue; }
@@ -125,11 +146,11 @@ public static class UsageAnalysis
         [.. pairs.Take(3).Select(p => new UsageEvidence((int)(p.First.AtUtc - session.StartedUtc).TotalSeconds, (int)(p.Second.AtUtc - session.StartedUtc).TotalSeconds))];
     private static IEnumerable<(UsageEvent First, UsageEvent Second)> SystemPairs(UsageSession session)
     {
-        var automated = session.Events.Where(e => e.Kind == "axiom-action" && e.ObjectId is not null).Select(e => e.ObjectId).ToHashSet();
+        var automated = session.Events.Where(e => (e.Kind == "axiom-action" || e.Origin == "axiom") && e.ObjectId is not null).Select(e => e.ObjectId).ToHashSet();
         var seen = new HashSet<string>(); UsageEvent? trigger = null;
         foreach (var item in session.Events.OrderBy(e => e.AtUtc))
         {
-            if (item.Kind is "gap" or "axiom-action") { trigger = null; continue; }
+            if (item.Origin == "axiom" || item.Kind is "gap" or "axiom-action") { trigger = null; continue; }
             if (IsEnvironmentEvent(item.Kind))
             {
                 trigger = item.Kind is "system-unlocked" or "system-resumed" or "system-ac" or "system-battery" or "system-network-up" or "system-battery-low20" or "system-battery-low10" or "system-usb-arrived" or "audio-output" or "audio-input" ? item : null;
@@ -142,11 +163,11 @@ public static class UsageAnalysis
     }
     private static IEnumerable<(UsageEvent First, UsageEvent Second)> Pairs(UsageSession session, string kind, TimeSpan maximum)
     {
-        var automated = session.Events.Where(e => e.Kind == "axiom-action" && e.ObjectId is not null).Select(e => e.ObjectId).ToHashSet();
+        var automated = session.Events.Where(e => (e.Kind == "axiom-action" || e.Origin == "axiom") && e.ObjectId is not null).Select(e => e.ObjectId).ToHashSet();
         UsageEvent? previous = null;
         foreach (var item in session.Events.OrderBy(e => e.AtUtc))
         {
-            if (item.Kind is "gap" or "axiom-action" || IsEnvironmentEvent(item.Kind)) { previous = null; continue; }
+            if (item.Origin == "axiom" || item.Kind is "gap" or "axiom-action" || IsEnvironmentEvent(item.Kind)) { previous = null; continue; }
             if (item.ObjectId is not null && automated.Contains(item.ObjectId)) { previous = null; continue; }
             if (item.Kind != kind || item.ObjectId is null) continue;
             if (previous is not null && previous.ObjectId != item.ObjectId && item.AtUtc >= previous.AtUtc && item.AtUtc - previous.AtUtc <= maximum)
@@ -157,17 +178,18 @@ public static class UsageAnalysis
     public static AutomationTask Draft(UsageSession session, UsageSuggestion suggestion, AutomationSnapshot catalog)
     {
         if (suggestion.Kind != "existing" || suggestion.ObjectIds.Length != (suggestion.EventKind is null && suggestion.WindowState is null ? 2 : 1)) throw new ArgumentException("此建议尚不足以生成规则。");
+        var focusLayout = suggestion.Id.StartsWith("focus-layout:", StringComparison.Ordinal);
         var audio = suggestion.EventKind?.StartsWith("audio-", StringComparison.Ordinal) == true;
         var windowClosing = suggestion.Id.StartsWith("window-exit:", StringComparison.Ordinal);
         var closing = windowClosing || suggestion.Id.StartsWith("exit:", StringComparison.Ordinal);
-        var detection = catalog.Capabilities.Single(c => c.Id == (audio ? AudioCapabilities.Changed : suggestion.EventKind is not null ? SystemEventCapabilities.Event : suggestion.WindowState is not null ? WindowPresenceCapabilities.Visible : windowClosing ? WindowPresenceCapabilities.Absent : closing ? "process.exited" : "process.running") && c.Kind == TaskCapabilityKind.Detection);
+        var detection = catalog.Capabilities.Single(c => c.Id == (focusLayout ? ForegroundCapabilities.Active : audio ? AudioCapabilities.Changed : suggestion.EventKind is not null ? SystemEventCapabilities.Event : suggestion.WindowState is not null ? WindowPresenceCapabilities.Visible : windowClosing ? WindowPresenceCapabilities.Absent : closing ? "process.exited" : "process.running") && c.Kind == TaskCapabilityKind.Detection);
         var action = catalog.Capabilities.Single(c => c.Id == (suggestion.WindowState is not null ? WindowCapabilities.State : closing ? "program.close" : "program.start") && c.Kind == TaskCapabilityKind.Action);
         TaskInvocation Make(TaskCapability capability, string field, string alias) => new(capability.Id, capability.SchemaVersion,
             capability.Fields.Where(f => f.DefaultValue is not null).ToImmutableDictionary(f => f.Id, f => f.DefaultValue!).SetItem(field, alias));
         var actionInvocation = Make(action, "executable", suggestion.ObjectIds[^1]);
         if (suggestion.WindowState is not null) actionInvocation = actionInvocation with { Parameters = actionInvocation.Parameters.SetItem("state", suggestion.WindowState) };
         if (closing) actionInvocation = actionInvocation with { Parameters = actionInvocation.Parameters.SetItem("mode", "graceful").SetItem("instances", "latest") };
-        var candidate = new UsageImport(1, session.Id, "existing", suggestion.WindowState is not null ? suggestion.EventKind is null ? "窗口出现后整理" : "系统变化后整理窗口" : closing ? "退出后关闭配套程序" : "启动配套程序", suggestion.Evidence,
+        var candidate = new UsageImport(1, session.Id, "existing", suggestion.WindowState is not null ? focusLayout ? "切回应用后整理窗口" : suggestion.EventKind is null ? "窗口出现后整理" : "系统变化后整理窗口" : closing ? "退出后关闭配套程序" : "启动配套程序", suggestion.Evidence,
             suggestion.EventKind is null ? Make(detection, detection.Fields.Single(f => f.Kind == TaskFieldKind.ProcessSelection).Id, suggestion.ObjectIds[0]) : Make(detection, audio ? "endpoint" : "event", audio ? suggestion.EventKind[6..] : suggestion.EventKind), actionInvocation);
         return Import(JsonSerializer.Serialize(candidate), session, catalog).Draft!;
     }

@@ -73,13 +73,13 @@ public sealed class AudioPlaybackTests
     public async Task BusyNativeCallRejectsNewWorkAndFailureReleasesAdmission()
     {
         var commands = new BoundedNativeCommand("音频", TimeSpan.FromSeconds(5)); var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var release = new ManualResetEventSlim(); var calls = 0;
-        var first = commands.RunAsync(_ => { Interlocked.Increment(ref calls); entered.SetResult(); release.Wait(); return (true, "synthetic"); }, default);
+        using var release = new ManualResetEventSlim(); var calls = 0; var workerUsedPool = true;
+        var first = commands.RunAsync(_ => { workerUsedPool = Thread.CurrentThread.IsThreadPoolThread; Interlocked.Increment(ref calls); entered.SetResult(); release.Wait(); return (true, "synthetic"); }, default);
         try
         {
             await entered.Task.WaitAsync(TimeSpan.FromSeconds(3));
             var busy = await commands.RunAsync(_ => { Interlocked.Increment(ref calls); return (true, "unexpected"); }, default);
-            Assert.False(busy.Success); Assert.Contains("本次未执行", busy.Reason); Assert.Equal(1, calls);
+            Assert.False(busy.Success); Assert.Contains("本次未执行", busy.Reason); Assert.Equal(1, calls); Assert.False(workerUsedPool);
         }
         finally { release.Set(); }
         Assert.True((await first).Success);
@@ -104,7 +104,8 @@ public sealed class AudioPlaybackTests
         }, default, time);
         try
         {
-            await entered.Task.WaitAsync(TimeSpan.FromSeconds(3)); await timerReady.Task.WaitAsync(TimeSpan.FromSeconds(3));
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(3));
+            await timerReady.Task.WaitAsync(TimeSpan.FromSeconds(3));
             time.Advance(TimeSpan.FromSeconds(5)); var result = await first;
             Assert.False(result.Success); Assert.Contains("结果未确认", result.Reason);
             var busy = await commands.RunAsync(_ => throw new InvalidOperationException("must not start"), default);
