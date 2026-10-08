@@ -79,6 +79,7 @@ public sealed partial class WorkbenchWindow
         content.Children.Add(Text("本次目的：" + (selected.Options.Purpose.Length == 0 ? "未填写" : selected.Options.Purpose), 13, Muted));
         foreach (var gap in selected.Gaps) content.Children.Add(Text(gap, 12, Amber));
         var tools = Row(8);
+        var annotate = Action("补充本次目的…"); annotate.Click += async (_, _) => await AnnotateUsageAsync(selected); tools.Children.Add(annotate);
         var export = Action("预览分析摘要…"); export.Click += async (_, _) => await PreviewUsageExportAsync(selected.Id); tools.Children.Add(export);
         var import = Action("导入 AI 建议…"); import.Click += async (_, _) => await ImportUsageAsync(selected.Id); tools.Children.Add(import);
         content.Children.Add(tools);
@@ -117,6 +118,16 @@ public sealed partial class WorkbenchWindow
     private static string StateName(string state) => state switch { "recording" => "观察中", "paused" => "已暂停", _ => "已结束" };
     private static string EventName(string kind) => kind switch { "foreground" => "前台切换", "process-start" => "程序启动", "axiom-action" => "Axiom 发起动作", "system-locked" => "锁屏", "system-unlocked" => "解锁", "system-resumed" => "睡眠恢复", "system-ac" => "交流电供电", "system-battery" => "电池供电", "system-network-up" => "网络可用", "system-network-down" => "网络不可用", _ => "记录间断" };
     private static string LocalName(UsageSession session, string? id) => session.Objects.FirstOrDefault(o => o.Id == id) is { } item ? Path.GetFileName(item.Executable) : "—";
+
+    private async Task AnnotateUsageAsync(UsageSession session)
+    {
+        if (busy || activeDialog is not null) return;
+        var body = Column(10);
+        var purpose = new TextBox { Header = "我刚才在做什么、希望减少什么操作", Text = session.Options.Purpose, MaxLength = 500, AcceptsReturn = true, Height = 120 };
+        body.Children.Add(purpose); body.Children.Add(Text("只补充你对这次观察的说明，不改动事件证据。这段文字会进入摘要预览，请避免填写账号、私人内容或完整路径。可清空。", 12, Muted));
+        var dialog = new ContentDialog { Title = "补充观察目的", Content = body, PrimaryButtonText = "保存", CloseButtonText = "取消", DefaultButton = ContentDialogButton.Close, XamlRoot = shell.XamlRoot };
+        if (await ShowDialogAsync(dialog) == ContentDialogResult.Primary) await UsageCommandAsync("annotate", session.Id, text: purpose.Text);
+    }
 
     private async Task StartUsageAsync()
     {

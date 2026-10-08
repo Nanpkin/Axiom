@@ -46,19 +46,20 @@ public static class WindowsUsageObservation
         {
             lifetime.Token.ThrowIfCancellationRequested();
             var at = eventTime is { } observed ? new DateTimeOffset(DateTime.FromFileTimeUtc(observed)) : DateTimeOffset.UtcNow;
+            void Boundary() { if (kind == "foreground") publish(new(at, "foreground-unobserved", null)); }
             try
             {
                 using var process = Process.GetProcessById(pid);
-                if (process.SessionId != sessionId) return;
+                if (process.SessionId != sessionId) { Boundary(); return; }
                 var handle = OpenProcess(0x1000, false, pid);
                 if (handle == 0) throw new Win32Exception(Marshal.GetLastWin32Error());
                 try
                 {
-                    if (WindowsProcessIdentity.ReadOwnerSid(handle) != ownerSid) return;
+                    if (WindowsProcessIdentity.ReadOwnerSid(handle) != ownerSid) { Boundary(); return; }
                     if (eventTime is { } notified && (!GetProcessTimes(handle, out var created, out _, out _, out _) || created > notified))
                         throw new InvalidOperationException("Process identity changed.");
                     var path = WindowsProcessIdentity.ReadImagePath(handle);
-                    if (new[] { "Axiom.exe", "Axiom.ServiceHost.exe", "Axiom.SessionAgent.exe", "Axiom.WinUI.exe" }.Contains(Path.GetFileName(path), StringComparer.OrdinalIgnoreCase)) return;
+                    if (new[] { "Axiom.exe", "Axiom.ServiceHost.exe", "Axiom.SessionAgent.exe", "Axiom.WinUI.exe" }.Contains(Path.GetFileName(path), StringComparer.OrdinalIgnoreCase)) { Boundary(); return; }
                     publish(new(at, kind, path));
                 }
                 finally { CloseHandle(handle); }
