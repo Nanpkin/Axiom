@@ -155,7 +155,7 @@ public sealed partial class WorkbenchWindow
         Control[] inputs = [foreground, starts, exits, windows, system, audio, duration, exclusions, purpose];
         var submitting = false;
         dialog.Closing += (_, args) => { if (submitting) args.Cancel = true; };
-        dialog.PrimaryButtonClick += async (_, args) =>
+        dialog.PrimaryButtonClick += async (sender, args) =>
         {
             var deferral = args.GetDeferral(); submitting = true;
             foreach (var input in inputs) input.IsEnabled = false;
