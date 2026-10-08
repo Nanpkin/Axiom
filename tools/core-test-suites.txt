@@ -26,3 +26,5 @@ SystemEventTests
 UsageLifecycleTests
 
 OpenTargetTests
+
+ForegroundTests
