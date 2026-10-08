@@ -10,9 +10,14 @@ public static class WindowsAudioPlayback
     public static Task<(bool Success, string Reason)> SetAsync(string operation, int percent, CancellationToken token)
     {
         if (operation is not ("volume" or "mute" or "unmute") || percent is < 0 or > 100) throw new ArgumentException("音量操作无效。");
-        return Commands.RunAsync(cancellation => Apply(operation, percent, cancellation), token);
+        return Commands.RunAsync(cancellation => Apply(operation, percent, false, cancellation), token);
     }
-    private static (bool Success, string Reason) Apply(string operation, int percent, CancellationToken token)
+    public static Task<(bool Success, string Reason)> SetMicrophoneAsync(string operation, CancellationToken token)
+    {
+        if (operation is not ("mute" or "unmute")) throw new ArgumentException("麦克风静音操作无效。");
+        return Commands.RunAsync(cancellation => Apply(operation, 0, true, cancellation), token);
+    }
+    private static (bool Success, string Reason) Apply(string operation, int percent, bool microphone, CancellationToken token)
     {
         IDeviceEnumerator? enumerator = null; IDevice? device = null; object? activated = null; var initialized = false;
         try
@@ -22,11 +27,11 @@ public static class WindowsAudioPlayback
             var cls = new Guid("BCDE0395-E52F-467C-8E3D-C4579291692E"); var iid = typeof(IDeviceEnumerator).GUID;
             Marshal.ThrowExceptionForHR(CoCreateInstance(ref cls, 0, 1, ref iid, out enumerator));
             token.ThrowIfCancellationRequested();
-            // eRender/eConsole: bind once, without reading a device ID or enumerating unrelated devices.
-            Marshal.ThrowExceptionForHR(enumerator.GetDefaultAudioEndpoint(0, 0, out device));
+            // Bind once: playback eRender/eConsole, microphone eCapture/eCommunications; no device IDs or enumeration.
+            Marshal.ThrowExceptionForHR(enumerator.GetDefaultAudioEndpoint(microphone ? 1 : 0, microphone ? 2 : 0, out device));
             token.ThrowIfCancellationRequested(); iid = typeof(IEndpointVolume).GUID;
             Marshal.ThrowExceptionForHR(device.Activate(ref iid, 23, 0, out activated));
-            return AudioPlaybackOperation.Apply(new Endpoint((IEndpointVolume)activated), operation, percent, token);
+            return AudioPlaybackOperation.Apply(new Endpoint((IEndpointVolume)activated), operation, percent, token, microphone ? "默认通信麦克风" : "默认播放设备");
         }
         finally
         {
