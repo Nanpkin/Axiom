@@ -154,7 +154,9 @@ internal sealed class UsageObservationController(UsageJournal journal, IUsageObs
             {
                 lock (gate)
                 {
-                    current!.Add(sample); journal.Save(current.Session);
+                    // Add can reject an event while changing expiry/gap state; compare the immutable snapshot, not its boolean result.
+                    var before = current!.Session; current.Add(sample);
+                    if (!ReferenceEquals(before, current.Session)) journal.Save(current.Session);
                     if (current.Session.State == "stopped") { ended.TrySetResult(); recording!.Cancel(); }
                 }
             }, token);

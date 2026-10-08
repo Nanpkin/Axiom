@@ -2,6 +2,7 @@ using Axiom.Contracts;
 using Axiom.Domain;
 using Axiom.Infrastructure;
 using Axiom.ServiceHost;
+using Microsoft.Data.Sqlite;
 
 namespace Axiom.Engine.Tests;
 
@@ -24,6 +25,35 @@ public sealed class UsageLifecycleTests
     }
     private static Task<AutomationMessage> Send(UsageObservationController controller, string operation, UsageOptions? options = null) =>
         controller.HandleAsync(new(1, "usage", "test", Usage: new(operation, options)), Catalog, default);
+
+    [Fact(Timeout = 10000)]
+    public async Task DuplicateAndOutOfScopeSamplesDoNotRewriteStorageButGapsAndExpiryStillPersist()
+    {
+        var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".db");
+        try
+        {
+            using var journal = new UsageJournal(path); var source = new Source();
+            await using var controller = new UsageObservationController(journal, source);
+            var started = (await Send(controller, "start", new(5, true, false, []))).UsageSnapshot!.Selected!;
+            using var probe = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path, Pooling = false }.ToString()); probe.Open();
+            using (var setup = probe.CreateCommand())
+            {
+                setup.CommandText = "CREATE TABLE write_probe(n INTEGER NOT NULL); INSERT INTO write_probe VALUES(0); CREATE TRIGGER count_observation_update AFTER UPDATE ON usage_sessions BEGIN UPDATE write_probe SET n=n+1; END;";
+                setup.ExecuteNonQuery();
+            }
+            long Writes() { using var read = probe.CreateCommand(); read.CommandText = "SELECT n FROM write_probe"; return (long)read.ExecuteScalar()!; }
+            var now = DateTimeOffset.UtcNow; var app = Path.Combine(Path.GetTempPath(), "Example.exe");
+            source.Publish!(new(now, "foreground", app)); var recorded = Writes(); Assert.Equal(1, recorded);
+            source.Publish!(new(now.AddSeconds(1), "foreground", app));
+            source.Publish!(new(now.AddSeconds(2), "process-start", app)); Assert.Equal(recorded, Writes());
+            source.Publish!(new(now.AddSeconds(3), "foreground-unobserved")); Assert.Equal(recorded + 1, Writes());
+            source.Publish!(new(now.AddSeconds(4), "foreground-unobserved")); Assert.Equal(recorded + 1, Writes());
+            source.Publish!(new(started.EndsUtc, "foreground", app)); Assert.Equal(recorded + 2, Writes());
+            var stopped = Assert.Single(journal.Read(DateTimeOffset.UtcNow)); Assert.Equal("stopped", stopped.State);
+            Assert.Equal(2, stopped.Events.Length); Assert.Contains(stopped.Events, e => e.Kind == "gap");
+        }
+        finally { File.Delete(path); }
+    }
 
     [Fact(Timeout = 10000)]
     public async Task PurposeCanBeAmendedAfterObservationWithoutChangingEvidenceOrRestartingCapture()
