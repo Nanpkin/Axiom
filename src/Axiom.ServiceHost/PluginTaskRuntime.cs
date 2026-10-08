@@ -152,8 +152,8 @@ internal sealed class PluginTaskRuntime : IAutomationTaskBackend, ICapabilityExe
             lock (statusGate) return new([.. tasks], compiler.Catalog, Combinations, watching.Length == 0 || connected &&
                 (firstBoot is not null || !tasks.Any(t => !t.Paused && t.Detection.CapabilityId == AxiomStartupPlugin.CapabilityId && t.Detection.Parameters["frequency"] == "firstBoot")), state, reason, at,
                 [.. engine.ReadSnapshot().States.Where(p => watching.Contains(p.Key)).Select(p => new TaskObservation(
-                    p.Key.CapabilityId == AxiomStartupPlugin.CapabilityId ? tasks.SingleOrDefault(t => t.Id == p.Key.ResourceId)?.Title ?? "Axiom 启动" : p.Key.CapabilityId == SystemEventCapabilities.Event ? SystemEventName(p.Key.ResourceId) : p.Key.CapabilityId == AudioCapabilities.Changed ? p.Key.ResourceId == "output" ? "默认播放设备变化" : "默认通信麦克风变化" : p.Key.CapabilityId == DailyTimeCapabilities.Due ? DailyTimeCapabilities.Label(p.Key.ResourceId) : p.Key.CapabilityId == IntervalCapabilities.Elapsed ? "每隔 " + p.Key.ResourceId + " 分钟" : p.Key.ResourceId,
-                    p.Value.Observation.Quality != StateQuality.Known ? observationReasons.GetValueOrDefault(p.Key, "状态未知") : p.Key.CapabilityId == HotkeyCapabilities.Pressed
+                    p.Key.CapabilityId == AxiomStartupPlugin.CapabilityId ? tasks.SingleOrDefault(t => t.Id == p.Key.ResourceId)?.Title ?? "Axiom 启动" : p.Key.CapabilityId == SystemEventCapabilities.Event ? SystemEventName(p.Key.ResourceId) : p.Key.CapabilityId == AudioCapabilities.Changed ? p.Key.ResourceId == "output" ? "默认播放设备变化" : "默认通信麦克风变化" : p.Key.CapabilityId == OnceTimeCapabilities.Due ? OnceTimeCapabilities.Label(p.Key.ResourceId) : p.Key.CapabilityId == DailyTimeCapabilities.Due ? DailyTimeCapabilities.Label(p.Key.ResourceId) : p.Key.CapabilityId == IntervalCapabilities.Elapsed ? "每隔 " + p.Key.ResourceId + " 分钟" : p.Key.ResourceId,
+                    p.Value.Observation.Quality != StateQuality.Known ? observationReasons.GetValueOrDefault(p.Key, "状态未知") : p.Key.CapabilityId == OnceTimeCapabilities.Due ? observationReasons.GetValueOrDefault(p.Key, "等待指定日期和时刻") : p.Key.CapabilityId == HotkeyCapabilities.Pressed
                         ? "等待快捷键" : p.Value.Observation.Value?.Number is not null ? "等待下一次事件" : p.Key.CapabilityId == AxiomStartupPlugin.CapabilityId
                         ? p.Value.Observation.Value?.Boolean == true ? "已触发启动条件" : "等待下次启动"
                         : p.Key.CapabilityId == WindowPresenceCapabilities.Visible ? p.Value.Observation.Value?.Boolean == true ? "窗口已显示" : "没有可见主窗口" : p.Key.CapabilityId == ForegroundCapabilities.Active ? p.Value.Observation.Value?.Boolean == true ? "正在前台" : "不在前台" : p.Value.Observation.Value?.Boolean == true ? "正在运行" : "未运行"))]);
@@ -216,6 +216,7 @@ internal sealed class PluginTaskRuntime : IAutomationTaskBackend, ICapabilityExe
                                 if (observationReasons.GetValueOrDefault(key) != sample.Reason) Record("检测暂不可用", key.ResourceId + "：" + sample.Reason, ActivityLevel.Warning);
                                 observationReasons[key] = sample.Reason;
                             }
+                            else if (key.CapabilityId == OnceTimeCapabilities.Due && !string.IsNullOrWhiteSpace(sample.Reason)) observationReasons[key] = sample.Reason;
                             else observationReasons.Remove(key);
                         }
                     var observations = samples.Select(s => new Observation(mapping[s.Resource], s.Quality,
