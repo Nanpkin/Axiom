@@ -62,3 +62,5 @@ GitHub Actions 的 Check source 在 Ubuntu/Windows 运行明确的核心套件�
 目标确认后，可以自行实现、检查、修复及提出 PR。默认不合并主分支、不公开仓库、不发布 Release、不新增付费服务、不引入外部插件市场或任意命令执行能力。目标范围变更和真实设备验证需要所有者决定。云端产物不能直接覆盖正在使用的本机版本。
 
 公开流程依据：[Codex Cloud 环境](https://learn.chatgpt.com/docs/environments/cloud-environments)、[长期目标](https://learn.chatgpt.com/docs/long-running-work)。环境必须在账户侧实际创建并验证，仓库包含脚本不等于已经连入云端。
+
+私有 CI 在 main 推送及 PR 更新时执行完整检查；功能分支请保持草稿 PR。避免同一 codex 分支推送与 PR 同时创建两套 Windows 作业。Windows 原生回归紧接核心检查运行，随后完整应用构建与私有打包；检查集合不减少，失败更早反馈。

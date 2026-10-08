@@ -92,6 +92,7 @@ public sealed class WindowActionTests
     {
         using var target = new TrayWindow(); target.Show();
         target.SetState(state == "restore" ? 3 : 9);
+        if (state == "restore") target.SetState(6); // native restore first returns this window to maximized
         var result = await WindowsWindowActions.CloseAsync(Environment.ProcessPath!, target.Title, TimeSpan.FromSeconds(2), default, state);
         Assert.True(result.Success, result.Reason);
         Assert.True(state == "minimize" ? target.Minimized : state == "maximize" ? target.Maximized : !target.Minimized && !target.Maximized);
@@ -104,7 +105,7 @@ public sealed class WindowActionTests
     [InlineData("center")]
     public async Task NativeLayoutMovesAndResizesWithinCurrentWorkArea(string layout)
     {
-        using var target = new TrayWindow(); target.Show(); target.SetState(3);
+        using var target = new TrayWindow(); target.Show(); target.SetState(3); target.SetState(6);
         var result = await WindowsWindowActions.CloseAsync(Environment.ProcessPath!, target.Title, TimeSpan.FromSeconds(2), default, layout);
         Assert.True(result.Success, result.Reason); Assert.False(target.Maximized); Assert.False(target.Minimized); Assert.Equal(0, target.CloseCount);
         Assert.True(target.Visible);
@@ -173,6 +174,7 @@ public sealed class WindowActionTests
             target.Show(); await ReadKind("window-shown");
             target.SetState(3); await ReadKind("window-maximized");
             target.SetState(6); await ReadKind("window-minimized");
+            target.SetState(9); await ReadKind("window-maximized");
             target.SetState(9); await ReadKind("window-normal");
             Assert.True((await WindowsWindowActions.CloseAsync(Environment.ProcessPath!, target.Title, TimeSpan.FromSeconds(2), default)).Success);
             await ReadKind("window-hidden");
