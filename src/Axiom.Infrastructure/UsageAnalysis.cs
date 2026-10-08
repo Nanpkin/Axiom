@@ -278,6 +278,7 @@ public static class UsageAnalysis
             var resolved = invocation with { Parameters = parameters.ToImmutable() };
             AutomationTaskCompiler.ValidateInvocation(resolved, capability);
             // Provider-specific constraints are also checked before offering the draft.
+            if (resolved.CapabilityId == FileArrivalCapabilities.Arrived) FileArrivalCapabilities.Validate(resolved);
             if (resolved.CapabilityId == MicrophoneCapabilities.Set) MicrophoneCapabilities.Validate(resolved);
             if (resolved.CapabilityId == AudioPlaybackCapabilities.Set) AudioPlaybackCapabilities.Validate(resolved);
             if (resolved.CapabilityId == AudioCapabilities.Changed) AudioCapabilities.Validate(resolved);

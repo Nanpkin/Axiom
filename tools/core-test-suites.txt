@@ -46,3 +46,4 @@ AudioCapabilityTests
 DailyTimeTests
 OnceTimeTests
 AudioPlaybackTests
+FileArrivalTests

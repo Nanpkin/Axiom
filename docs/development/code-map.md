@@ -93,3 +93,5 @@ USB类别通知：`WindowsSessionEvents` 注册USB接口GUID、处理接入/移�
 通信麦克风：`MicrophoneCapabilities`/`MicrophonePlugin`/`MicrophoneCapabilityProvider`，资源与播放分开，沿用 `WindowsAudioPlayback.SetMicrophoneAsync` 的单个原生入口、eCapture/eCommunications默认角色及立即静音读回；不改输入音量。合成逻辑与导入验证位于 `AudioPlaybackTests`/`UsageObservationTests`。
 
 环境布局证据由 `UsageAnalysis.EnvironmentLayoutPairs` 按六类通知与目标/布局分组，处理边界与首个布局去重；草稿继续走实际系统/音频检测和窗口动作。`UsageObservationTests.RepeatedEnvironmentPreparationOffersWindowLayoutWithSeparateEventEvidence` 覆盖分类、混合不足、Axiom来源与边界中断。
+
+文件到达：`FileArrivalCapabilities`/`FileArrivalPlugin` 声明与事件编译，`FileArrivalCapabilityProvider` 提供计数和独立Unknown隔离；`FileArrivalSource` 按目录共享 `FileSystemWatcher`，只开FileName通知、非递归、固定一秒事件批次，无扫描或内容读取。`FileArrivalTests` 覆盖真实临时目录新建/重命名、按类型匹配、初始不补发、取消释放和16组合上限。
