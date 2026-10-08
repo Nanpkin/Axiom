@@ -248,7 +248,7 @@ public sealed partial class WorkbenchWindow
             }
             else await ConfirmAsync("证据不足", response.ExportText ?? "还需要更多观察或意图说明。", "知道了");
         }
-        catch (Exception error) { ShowNotice(error.Message); }
+        catch (Exception failure) { ShowNotice(failure.Message); }
     }
     private void SelectDraft(Axiom.Domain.AutomationTask draft)
     {
