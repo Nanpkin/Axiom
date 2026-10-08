@@ -60,7 +60,7 @@ public sealed class WindowsWindowEvents : IDisposable
         }
         private void OnEvent(nint hook, uint kind, nint window, int objectId, int childId, uint thread, uint time)
         {
-            if (kind is not (0x8000 or 0x8001 or 0x8002 or 0x8003 or 0x800A or 0x800B)) return;
+            if (kind is not (0x8000 or 0x8001 or 0x8002 or 0x8003 or 0x8004 or 0x800A or 0x800B)) return;
             if (window == 0 || objectId != 0 || childId != 0 || kind is 0x8000 or 0x8002 or 0x800A or 0x800B && GetAncestor(window, 2) != window) return;
             lock (Gate)
                 foreach (var client in Clients)

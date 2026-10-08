@@ -134,6 +134,18 @@ public sealed class WindowActionTests
         Assert.True((await WindowsWindowActions.CloseAsync(Environment.ProcessPath!, target.Title, TimeSpan.FromSeconds(2), default)).Success);
     }
 
+    [Fact(Timeout = 10000)]
+    public async Task TopmostAndUndoReadBackNativeStyleAndPreserveWindowSizeAndVisibility()
+    {
+        using var target = new TrayWindow(); target.Show();
+        var initial = target.Bounds;
+        var pinned = await WindowsWindowActions.CloseAsync(Environment.ProcessPath!, target.Title, TimeSpan.FromSeconds(2), default, "topmost");
+        Assert.True(pinned.Success, pinned.Reason); Assert.True(target.Topmost); Assert.Equal(initial, target.Bounds); Assert.True(target.Visible);
+        var unpinned = await WindowsWindowActions.CloseAsync(Environment.ProcessPath!, target.Title, TimeSpan.FromSeconds(2), default, "notopmost");
+        Assert.True(unpinned.Success, unpinned.Reason); Assert.False(target.Topmost); Assert.Equal(initial, target.Bounds); Assert.Equal(0, target.CloseCount);
+        target.SetState(6); Assert.True(target.Minimized); // no ongoing control after either command
+    }
+
     // Native fixture deliberately implements × as hide-to-tray, retaining its process.
     private sealed class TrayWindow : IDisposable
     {
@@ -145,6 +157,11 @@ public sealed class WindowActionTests
         private nint handle;
         public string Title { get; } = "Axiom window fixture " + Guid.NewGuid();
         public int CloseCount => Volatile.Read(ref count);
+        public bool Topmost => (GetWindowLongPtr(handle, -20).ToInt64() & 8) != 0;
+        public (int Left, int Top, int Right, int Bottom) Bounds { get { Assert.True(GetWindowRect(handle, out var rect)); return (rect.Left, rect.Top, rect.Right, rect.Bottom); } }
+        [StructLayout(LayoutKind.Sequential)] private struct Rect { public int Left, Top, Right, Bottom; }
+        [DllImport("user32.dll", EntryPoint="GetWindowLongPtrW")] private static extern nint GetWindowLongPtr(nint window, int index);
+        [DllImport("user32.dll")] private static extern bool GetWindowRect(nint window, out Rect rect);
         public bool Minimized => IsIconic(handle);
         public bool Maximized => IsZoomed(handle);
         public void SetState(int state) => SendMessage(handle, 0x8003, state, 0);

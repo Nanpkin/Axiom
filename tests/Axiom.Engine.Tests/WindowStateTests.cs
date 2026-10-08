@@ -14,6 +14,8 @@ public sealed class WindowStateTests
     [InlineData("left")]
     [InlineData("right")]
     [InlineData("center")]
+    [InlineData("topmost")]
+    [InlineData("notopmost")]
     public void StateActionCompilesWithDelayAndMultipleTargets(string state)
     {
         var action = new TaskInvocation(WindowCapabilities.State, 1, ImmutableDictionary<string, string>.Empty
@@ -36,7 +38,7 @@ public sealed class WindowStateTests
         Assert.Throws<ArgumentException>(() => Axiom.Providers.Windows.WindowLayoutGeometry.Calculate("left", 0, 0, 0, 10));
     }
     [Theory]
-    [InlineData("state", "topmost")]
+    [InlineData("state", "unsupported-state")]
     [InlineData("waitSeconds", "31")]
     [InlineData("executable", "cmd.exe")]
     [InlineData("execute", "anything")]
