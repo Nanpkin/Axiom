@@ -43,6 +43,43 @@ public sealed class UsageObservationTests
     }
 
     [Theory]
+    [InlineData("left", "left")]
+    [InlineData("right", "right")]
+    [InlineData("center", "center")]
+    [InlineData("maximized", "maximize")]
+    public void ForegroundPreparationUsesIndependentOpportunitiesAndReviewedActualCombination(string state, string command)
+    {
+        var recorder = new UsageRecorder(new(5, true, false, [], WindowStates: true), Now);
+        for (var i = 0; i < 3; i++)
+        {
+            recorder.Add(new(Now.AddSeconds(i * 60), "foreground", App("Editor")));
+            recorder.Add(new(Now.AddSeconds(i * 60 + 5), "window-" + state, App("Editor")));
+            recorder.Add(new(Now.AddSeconds(i * 60 + 6), "window-" + state, App("Editor")));
+            recorder.Add(new(Now.AddSeconds(i * 60 + 7), "foreground", App("Other")));
+        }
+        var suggestion = Assert.Single(UsageAnalysis.Analyze(recorder.Session), s => s.Id.StartsWith("focus-layout:"));
+        Assert.Equal(3, suggestion.Occurrences); Assert.Equal(3, suggestion.Opportunities); Assert.Contains("来源未知", suggestion.Limitation);
+        Assert.Equal(3, suggestion.EvidenceSamples!.Length);
+        var draft = UsageAnalysis.Draft(recorder.Session, suggestion, Catalog());
+        Assert.True(draft.Paused); Assert.Equal(0, draft.Version); Assert.Equal(ForegroundCapabilities.Active, draft.Detection.CapabilityId);
+        Assert.Equal("Editor.exe", draft.Detection.Parameters["processNames"]); Assert.Equal(command, draft.Action.Parameters["state"]);
+        var compiler = new AutomationTaskCompiler(); compiler.Register(new ForegroundTaskDetection()); compiler.Register(new WindowStateTaskAction());
+        Assert.NotNull(compiler.Compile(draft, "owner", ResourceScope.Session("owner", 1)));
+        Assert.NotEqual(UsageAnalysis.FeedbackKey(recorder.Session, suggestion), UsageAnalysis.FeedbackKey(recorder.Session, suggestion with { Id = "window:other" }));
+        foreach (var boundary in new[] { "gap", "system-locked", "axiom-action", "window-hidden", "process-exit", "foreground" })
+        {
+            var interrupted = recorder.Session with { Events = [.. recorder.Session.Events.SelectMany(e => e.Kind == "foreground" ? new[] { e, new UsageEvent(e.AtUtc, boundary, boundary == "foreground" ? null : e.ObjectId, boundary == "axiom-action" ? "axiom" : "unknown") } : new[] { e })] };
+            Assert.DoesNotContain(UsageAnalysis.Analyze(interrupted), s => s.Id.StartsWith("focus-layout:"));
+        }
+        var automated = recorder.Session with { Events = [.. recorder.Session.Events.Select(e => e.Kind.StartsWith("window-") ? e with { Origin = "axiom" } : e)] };
+        Assert.DoesNotContain(UsageAnalysis.Analyze(automated), s => s.Id.StartsWith("focus-layout:"));
+        var late = recorder.Session with { Events = [.. recorder.Session.Events.Select(e => e.Kind.StartsWith("window-") ? e with { AtUtc = e.AtUtc.AddSeconds(30) } : e)] };
+        Assert.DoesNotContain(UsageAnalysis.Analyze(late), s => s.Id.StartsWith("focus-layout:"));
+        var shortEvidence = recorder.Session with { Events = [.. recorder.Session.Events.Take(8)] };
+        Assert.DoesNotContain(UsageAnalysis.Analyze(shortEvidence), s => s.Id.StartsWith("focus-layout:"));
+    }
+
+    [Theory]
     [InlineData("system-unlocked", "system.event", "event", "unlocked")]
     [InlineData("system-resumed", "system.event", "event", "resumed")]
     [InlineData("system-usb-arrived", "system.event", "event", "usb-arrived")]
@@ -339,6 +376,25 @@ public sealed class UsageObservationTests
         Assert.Empty(UsageAnalysis.Analyze(controlled));
         var marked = recorder.Session with { Events = [new UsageEvent(Now, "axiom-action", recorder.Session.Objects[0].Id, "axiom"), .. recorder.Session.Events] };
         Assert.Empty(UsageAnalysis.Analyze(marked));
+    }
+    [Theory]
+    [InlineData("process-start")]
+    [InlineData("process-exit")]
+    [InlineData("window-shown")]
+    [InlineData("system-unlocked")]
+    public void KnownAxiomOriginCannotBecomeRepeatedLaborEvenWithoutSeparateActionRecord(string trigger)
+    {
+        var recorder = new UsageRecorder(new(5, true, true, [], SystemEvents: true, ProcessExits: true, WindowStates: true), Now);
+        for (var i = 0; i < 3; i++)
+        {
+            recorder.Add(new(Now.AddSeconds(i * 60), trigger, trigger.StartsWith("system-") ? null : App("Editor")));
+            recorder.Add(new(Now.AddSeconds(i * 60 + 4), trigger == "window-shown" ? "window-left" : trigger == "system-unlocked" ? "process-start" : trigger, trigger == "window-shown" ? App("Editor") : App("Companion")));
+        }
+        Assert.Single(UsageAnalysis.Analyze(recorder.Session));
+        var controlled = recorder.Session with { Events = [.. recorder.Session.Events.Select((e, i) => i % 2 == 1 ? e with { Origin = "axiom" } : e)] };
+        Assert.Empty(UsageAnalysis.Analyze(controlled));
+        var boundary = recorder.Session with { Events = [.. recorder.Session.Events.SelectMany(e => new[] { e, new UsageEvent(e.AtUtc, "window-normal", null, "axiom") })] };
+        Assert.Empty(UsageAnalysis.Analyze(boundary));
     }
     [Fact]
     public void FullRegisteredCatalogFitsExportAndOversizedDescriptionsAreSummarized()
