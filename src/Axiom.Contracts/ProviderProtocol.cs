@@ -13,7 +13,7 @@ public sealed record ProviderMessage(int Version, string Type, string RequestId,
     ProviderResource[]? Resources = null, TaskInvocation? Invocation = null, Guid? CommandId = null,
     long Sequence = 0, ProviderSample[]? Samples = null, OutcomeStatus? Status = null, string? Reason = null,
     string[]? RequiredCapabilities = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TrayCatalog? Tray = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TrayCatalog? Tray = null, UsageOptions? UsageOptions = null, UsageSample? UsageSample = null);
 
 public static class ProviderProtocol
 {
@@ -23,8 +23,10 @@ public static class ProviderProtocol
     {
         if (message.Version != 1 || string.IsNullOrWhiteSpace(message.RequestId) || message.RequestId.Length > 64 ||
             message.DeadlineUtc is not { } deadline || deadline <= now || deadline > now.AddSeconds(45) ||
-            message.Samples is not null || message.Status is not null || message.Reason is not null || message.Sequence != 0 || message.Tray is not null)
+            message.Samples is not null || message.Status is not null || message.Reason is not null || message.Sequence != 0 || message.Tray is not null || message.UsageSample is not null)
             throw new InvalidDataException("Provider 请求无效。");
+        if (message.Type == "observe-usage" && message.UsageOptions is not null && message.Invocation is null && message.CommandId is null && message.Resources is null && message.RequiredCapabilities is null) { UsageValidation.Options(message.UsageOptions); return; }
+        if (message.UsageOptions is not null) throw new InvalidDataException("Unexpected observation options.");
         if (message.Type == "read-tray" && message.Invocation is null && message.CommandId is null && message.Resources is null && message.RequiredCapabilities is null) return;
         if (message.Type == "observe" && message.Invocation is null && message.CommandId is null && message.Resources is { Length: <= 128 } resources &&
             message.RequiredCapabilities is { Length: > 0 and <= 128 } capabilities && capabilities.All(c => !string.IsNullOrWhiteSpace(c) && c.Length <= 128) &&

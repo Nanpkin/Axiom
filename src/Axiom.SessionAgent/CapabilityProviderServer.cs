@@ -50,6 +50,11 @@ internal sealed class CapabilityProviderServer(string sid, IEnumerable<ISessionC
                 if (caller != sid) throw new UnauthorizedAccessException("Provider 用户不匹配。");
                 GameHdrPipePeer.RequireHost(pipe);
                 ProviderProtocol.Validate(request, DateTimeOffset.UtcNow);
+                if (request.Type == "observe-usage")
+                {
+                    lifetime.CancelAfter(TimeSpan.FromMinutes(request.UsageOptions!.Minutes));
+                    await UsageObservationStream.RunAsync(pipe, request, lifetime.Token); return;
+                }
                 if (request.Type == "read-tray")
                 {
                     lifetime.CancelAfter(request.DeadlineUtc!.Value - DateTimeOffset.UtcNow);
@@ -71,6 +76,7 @@ internal sealed class CapabilityProviderServer(string sid, IEnumerable<ISessionC
                 {
                     lifetime.CancelAfter(request.DeadlineUtc!.Value - DateTimeOffset.UtcNow);
                     var provider = registry.GetValueOrDefault(request.Invocation!.CapabilityId) ?? throw new ArgumentException("未注册此能力。");
+                    UsageObservationStream.MarkAction();
                     var invocation = provider.InvokeAsync(request.Invocation, lifetime.Token);
                     var disconnected = ProviderProtocol.ReadAsync(pipe, lifetime.Token);
                     if (await Task.WhenAny(invocation, disconnected) != invocation)

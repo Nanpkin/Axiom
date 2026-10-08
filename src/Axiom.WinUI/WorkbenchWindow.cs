@@ -12,7 +12,7 @@ namespace Axiom.WinUI;
 
 public sealed partial class WorkbenchWindow : Window
 {
-    private enum Page { Rules, Groups, Toolbox, Activity, Settings }
+    private enum Page { Rules, Groups, Toolbox, Usage, Activity, Settings }
     private static SolidColorBrush Color(byte r, byte g, byte b) => new(Windows.UI.Color.FromArgb(255, r, g, b));
     private static readonly SolidColorBrush Canvas = Color(246, 247, 249);
     private static readonly SolidColorBrush Surface = Color(255, 255, 255);
@@ -55,7 +55,7 @@ public sealed partial class WorkbenchWindow : Window
         shell = BuildShell();
         Content = shell;
         InitializeTheme();
-        Closed += (_, _) => closed = true;
+        Closed += (_, _) => { closed = true; usageLease?.Dispose(); usageExpiry?.Cancel(); };
         AppWindow.Closing += async (_, args) =>
         {
             if (closingConfirmed) return;
@@ -105,6 +105,7 @@ public sealed partial class WorkbenchWindow : Window
         AddNavigation(nav, Page.Rules, "自动化", "\uE8A5");
         AddNavigation(nav, Page.Groups, "组", "\uE8F1");
         AddNavigation(nav, Page.Toolbox, "工具箱", "\uE90F");
+        AddNavigation(nav, Page.Usage, "使用观察", "\uE9D9");
         AddNavigation(nav, Page.Activity, "活动记录", "\uE81C");
         AddNavigation(nav, Page.Settings, "设置", "\uE713");
         side.Children.Add(nav);
@@ -125,7 +126,7 @@ public sealed partial class WorkbenchWindow : Window
         main.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         main.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         main.Children.Add(scroll);
-        var bottom = Column(8); bottom.Children.Add(notice); bottom.Children.Add(footerHost);
+        var bottom = Column(8); usageStop.Visibility = usageIndicator.Visibility = Visibility.Collapsed; usageStop.Click += async (_, _) => await UsageCommandAsync("stop"); bottom.Children.Add(usageIndicator); bottom.Children.Add(usageStop); bottom.Children.Add(notice); bottom.Children.Add(footerHost);
         bottom.Margin = new Thickness(24, 0, 24, 16);
         Grid.SetRow(bottom, 1); main.Children.Add(bottom);
         Grid.SetColumn(main, 1); shellGrid.Children.Add(main);
@@ -187,6 +188,7 @@ public sealed partial class WorkbenchWindow : Window
             Page.Groups when viewingProcessGroups => ("进程组", "整理程序名单，在不同任务中重复使用。"),
             Page.Groups => ("组", "把常用选择放在一起。"),
             Page.Toolbox => ("工具箱", "省去重复整理的时间。"),
+            Page.Usage => ("使用观察", "主动记录一段过程，发现值得自动化的环节。"),
             Page.Activity => ("活动记录", "发生了什么，为什么。每一次活动都可回看。"),
             _ => ("设置", "按你的习惯使用 Axiom。")
         };
@@ -199,7 +201,7 @@ public sealed partial class WorkbenchWindow : Window
         footer.Visibility = editing && page == Page.Rules || groupEditing && page == Page.Groups ? Visibility.Visible : Visibility.Collapsed;
         content.MaxWidth = editing && page == Page.Rules ? 780 : 940;
         switch (page) { case Page.Rules: if (editing) BuildEditor(); else BuildRules(); break; case Page.Groups: BuildGroups(); break;
-            case Page.Toolbox: BuildToolbox(); break; case Page.Activity: BuildActivity(); break; default: BuildSettings(); break; }
+            case Page.Toolbox: BuildToolbox(); break; case Page.Usage: BuildUsage(); break; case Page.Activity: BuildActivity(); break; default: BuildSettings(); break; }
         contentHost.Content = content;
         footerHost.Content = footer;
         if (activityScrollToTop && page == Page.Activity)
@@ -245,6 +247,7 @@ public sealed partial class WorkbenchWindow : Window
             status = response.Snapshot; reachable = true; readAt = DateTimeOffset.Now;
             await ReadGroupsAsync();
             if (page == Page.Toolbox) await ReadSteamToolAsync(false);
+            if (page == Page.Usage) await ReadUsageAsync();
             Render();
             if (page == Page.Activity) await ReadActivityCoreAsync(null, reset: true);
             if (page == Page.Settings)

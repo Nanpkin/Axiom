@@ -14,7 +14,7 @@ public sealed record AutomationMessage(int Version, string Type, string RequestI
     ProcessGroup? Group = null, ProcessGroup[]? Groups = null, bool? RefreshSteam = null,
     int? SteamOffset = null, string? SteamScanId = null, SteamCatalogPage? Steam = null,
     SteamToolSettings? SteamSettings = null, SteamToolSnapshot? SteamTool = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TrayCatalog? Tray = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TrayCatalog? Tray = null, UsageRequest? Usage = null, UsageSnapshot? UsageSnapshot = null, string? ExportText = null);
 
 public sealed record LoginStartupStatus(bool Registered, bool CurrentLocation, bool LauncherAvailable, string? Error = null);
 
@@ -28,8 +28,15 @@ public static class AutomationProtocol
         if (request.Version != 1 || string.IsNullOrWhiteSpace(request.RequestId) || request.RequestId.Length > 64 ||
             request.DeadlineUtc is not { } deadline || deadline <= now || deadline > now.AddSeconds(15) ||
             request.Snapshot is not null || request.Error is not null || request.Startup is not null || request.Shortcuts is not null ||
-            request.Activity is not null || request.ActivityCleanup is not null || request.Groups is not null || request.Steam is not null || request.SteamTool is not null || request.Tray is not null ||
+            request.Activity is not null || request.ActivityCleanup is not null || request.Groups is not null || request.Steam is not null || request.SteamTool is not null || request.Tray is not null || request.UsageSnapshot is not null || request.ExportText is not null ||
             request.ActivityBeforeId is <= 0 || request.ActivityPageSize is < 1 or > 64) throw new InvalidDataException("请求格式无效。");
+        if (request.Type == "usage" && !shortcutAgent)
+        {
+            if (request.Usage is null || request.Task is not null || request.Id is not null || request.ExpectedVersion is not null || request.StartupEnabled is not null || request.Shortcut is not null || request.Bindings is not null || request.Group is not null || request.SteamSettings is not null || request.RefreshSteam is not null || request.SteamOffset is not null || request.SteamScanId is not null || request.ActivityBeforeId is not null || request.ActivityPageSize is not null)
+                throw new InvalidDataException("观察请求字段无效。");
+            UsageValidation.Request(request.Usage); return;
+        }
+        if (request.Usage is not null) throw new InvalidDataException("观察字段不属于此操作。");
         if (request.Group is not null && request.Type != "save-group" ||
             request.SteamSettings is not null && request.Type != "save-steam-settings" ||
             request.RefreshSteam is not null && request.Type != "scan-steam" ||

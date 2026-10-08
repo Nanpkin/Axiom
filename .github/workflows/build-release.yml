@@ -1,5 +1,11 @@
 name: Build Windows packages
 on:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: false
+        default: '0.1.0-preview.observation'
   workflow_dispatch:
     inputs:
       version:

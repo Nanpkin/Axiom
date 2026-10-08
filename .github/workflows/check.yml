@@ -36,3 +36,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           dotnet build Axiom.slnx -c Release --no-restore /m:1 /nr:false
           exit $LASTEXITCODE
+  private-packages:
+    if: github.event_name == 'pull_request'
+    needs: core
+    uses: ./.github/workflows/build-release.yml
+    with:
+      version: '0.1.0-preview.observation'
