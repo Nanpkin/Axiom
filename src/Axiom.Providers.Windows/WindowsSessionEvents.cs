@@ -14,29 +14,38 @@ public sealed class WindowsSessionEvents : IDisposable
     private static Hub? shared;
     private readonly Channel<string> queue = Channel.CreateBounded<string>(64);
     private bool disposed;
+    private readonly Hub owner;
     public static int ActiveConsumers { get { lock (Gate) return shared?.Clients.Count ?? 0; } }
     public ChannelReader<string> Events => queue.Reader;
     public WindowsSessionEvents()
     {
         lock (Gate)
         {
-            shared ??= new Hub();
-            try { shared.Ready.Task.GetAwaiter().GetResult(); }
-            catch { shared = null; throw; }
-            shared.Clients.Add(this);
+            shared ??= new Hub(); owner = shared; owner.Clients.Add(this);
         }
+        // Do not block the gate while native subscription setup may deliver a callback.
+        try
+        {
+            owner.Ready.Task.GetAwaiter().GetResult();
+            if (owner.Stopped.Task.IsCompleted) throw new IOException("系统通知源已停止。");
+        }
+        catch { Dispose(); throw; }
     }
     public void Dispose()
     {
-        Hub? last = null;
+        var last = false;
         lock (Gate)
         {
             if (disposed) return; disposed = true; queue.Writer.TryComplete();
-            shared!.Clients.Remove(this);
-            if (shared.Clients.Count != 0) return;
-            last = shared; shared = null; PostMessage(last.Window, 0x10, 0, 0);
+            owner.Clients.Remove(this);
+            if (owner.Clients.Count == 0)
+            {
+                last = true;
+                if (ReferenceEquals(shared, owner)) shared = null;
+                if (!owner.Stopped.Task.IsCompleted && owner.Window != 0) PostMessage(owner.Window, 0x10, 0, 0);
+            }
         }
-        last.Stopped.Task.Wait(TimeSpan.FromSeconds(5));
+        if (last) owner.Stopped.Task.Wait(TimeSpan.FromSeconds(5));
     }
     private sealed class Hub
     {

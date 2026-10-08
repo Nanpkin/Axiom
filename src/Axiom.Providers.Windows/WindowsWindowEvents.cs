@@ -58,7 +58,7 @@ internal sealed class WindowsWindowEvents : IDisposable
         private void OnEvent(nint hook, uint kind, nint window, int objectId, int childId, uint thread, uint time)
         {
             if (kind is not (0x8000 or 0x8001 or 0x8002 or 0x8003 or 0x800A or 0x800B)) return;
-            if (window == 0 || objectId != 0 || childId != 0 || kind is 0x8000 or 0x8002 && GetAncestor(window, 2) != window) return;
+            if (window == 0 || objectId != 0 || childId != 0 || kind is 0x8000 or 0x8002 or 0x800A or 0x800B && GetAncestor(window, 2) != window) return;
             lock (Gate)
                 foreach (var client in Clients)
                     if (!client.Events.Writer.TryWrite(window)) client.Events.Writer.TryComplete(new IOException("窗口事件队列已满，无法确认窗口操作；不会自动重试。"));
