@@ -61,6 +61,16 @@ internal sealed class UsageObservationController(UsageJournal journal, IUsageObs
                 if (request.Operation == "clear" || current?.Session.Id == request.SessionId) { await StopWorkerAsync(); sessionLifetime?.Cancel(); ended.TrySetResult(); current = null; }
                 lock (gate) journal.Delete(request.Operation == "clear" ? null : request.SessionId);
             }
+            if (request.Operation == "annotate")
+            {
+                lock (gate)
+                {
+                    var stored = journal.Read(clock.GetUtcNow()).SingleOrDefault(s => s.Id == request.SessionId) ?? throw new ArgumentException("观察记录不存在。");
+                    if (current?.Session.Id == stored.Id) { current.Annotate(request.Text!); stored = current.Session; }
+                    else { var options = stored.Options with { Purpose = request.Text! }; UsageValidation.Options(options); stored = stored with { Options = options }; }
+                    journal.Save(stored);
+                }
+            }
             lock (gate)
             {
                 var sessions = journal.Read(clock.GetUtcNow());

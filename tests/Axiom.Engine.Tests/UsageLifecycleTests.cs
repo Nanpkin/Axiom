@@ -26,6 +26,28 @@ public sealed class UsageLifecycleTests
         controller.HandleAsync(new(1, "usage", "test", Usage: new(operation, options)), Catalog, default);
 
     [Fact(Timeout = 10000)]
+    public async Task PurposeCanBeAmendedAfterObservationWithoutChangingEvidenceOrRestartingCapture()
+    {
+        var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".db");
+        try
+        {
+            using var journal = new UsageJournal(path); var source = new Source();
+            var controller = new UsageObservationController(journal, source);
+            var id = (await Send(controller, "start", new(5, true, false, []))).UsageSnapshot!.ActiveId!;
+            source.Publish!(new(DateTimeOffset.UtcNow, "foreground", Path.Combine(Path.GetTempPath(), "Example.exe")));
+            await Send(controller, "stop"); var original = Assert.Single(journal.Read(DateTimeOffset.UtcNow));
+            var changed = await controller.HandleAsync(new(1, "usage", "test", Usage: new("annotate", SessionId: id, Text: "整理写作环境")), Catalog, default);
+            Assert.Equal("整理写作环境", changed.UsageSnapshot!.Selected!.Options.Purpose);
+            Assert.Equal(original.Events, changed.UsageSnapshot.Selected.Events); Assert.Equal(original.StoppedUtc, changed.UsageSnapshot.Selected.StoppedUtc);
+            Assert.Equal(1, source.Starts); Assert.Equal(0, source.Active);
+            await controller.DisposeAsync(); Assert.Equal("整理写作环境", Assert.Single(journal.Read(DateTimeOffset.UtcNow)).Options.Purpose);
+            Assert.Throws<ArgumentException>(() => UsageValidation.Request(new("annotate", SessionId: id, Text: new string('x', 501))));
+            Assert.Throws<ArgumentException>(() => UsageValidation.Request(new("annotate", Text: "missing session")));
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact(Timeout = 10000)]
     public async Task PauseResumeAndUiLeaseReleaseOnlyObservationAndPreserveItsOriginalDeadline()
     {
         var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".db");

@@ -63,6 +63,11 @@ public sealed class UsageRecorder
         UsageValidation.Options(options);
         Session = new(Guid.NewGuid().ToString("D"), now, now.AddMinutes(options.Minutes), "recording", options, [], [], []);
     }
+    public void Annotate(string purpose)
+    {
+        var options = Session.Options with { Purpose = purpose }; UsageValidation.Options(options);
+        Session = Session with { Options = options };
+    }
     public void State(string state, string? gap = null, DateTimeOffset? atUtc = null)
     {
         var at = atUtc ?? DateTimeOffset.UtcNow;
@@ -85,7 +90,13 @@ public sealed class UsageRecorder
         if (Session.State != "recording") return false;
         if (sample.AtUtc >= Session.EndsUtc) { State("stopped", atUtc: Session.EndsUtc); return false; }
         if (sample.AtUtc < Session.StartedUtc) return false;
-        if (sample.Kind is not ("foreground" or "process-start" or "axiom-action" or "gap" or "system-locked" or "system-unlocked" or "system-resumed" or "system-ac" or "system-battery" or "system-network-up" or "system-network-down") || sample.Origin is not ("unknown" or "axiom")) throw new ArgumentException("观察事件无效。");
+        if (sample.Kind is not ("foreground" or "foreground-unobserved" or "process-start" or "axiom-action" or "gap" or "system-locked" or "system-unlocked" or "system-resumed" or "system-ac" or "system-battery" or "system-network-up" or "system-network-down") || sample.Origin is not ("unknown" or "axiom")) throw new ArgumentException("观察事件无效。");
+        if (sample.Kind == "foreground-unobserved")
+        {
+            if (!Session.Options.Foreground) return false;
+            if (Session.Events.LastOrDefault(e => e.Kind is "foreground" or "gap") is { Kind: "gap" }) return false;
+            State(Session.Events.Length >= UsageValidation.MaximumEvents - 1 ? "stopped" : "recording", "前台处于未记录范围，相关停留与序列中断。", sample.AtUtc); return true;
+        }
         if (sample.Kind == "gap") { State(Session.Events.Length >= UsageValidation.MaximumEvents - 1 ? "stopped" : "recording", "事件无法识别或队列溢出；这一段数据不完整。", sample.AtUtc); return true; }
         if (sample.Kind == "foreground" && !Session.Options.Foreground || sample.Kind == "process-start" && !Session.Options.ProcessStarts) return false;
         if (sample.Kind.StartsWith("system-", StringComparison.Ordinal) && !Session.Options.SystemEvents) return false;

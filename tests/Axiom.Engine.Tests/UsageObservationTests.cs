@@ -18,6 +18,19 @@ public sealed class UsageObservationTests
             [.. modules.SelectMany(m => m.Combinations)], true, "ready", "", Now, []);
     }
     [Fact]
+    public void UnobservedForegroundClosesDwellWithoutRetainingAnObjectOrRepeatingGaps()
+    {
+        var at = DateTimeOffset.UtcNow; var recorder = new UsageRecorder(new(5, true, false, []), at);
+        recorder.Add(new(at, "foreground", Path.Combine(Path.GetTempPath(), "Example.exe")));
+        recorder.Add(new(at.AddSeconds(5), "foreground-unobserved"));
+        Assert.Equal(5, recorder.Session.Events[0].DwellSeconds);
+        Assert.Single(recorder.Session.Objects); Assert.Equal("gap", recorder.Session.Events[1].Kind);
+        Assert.False(recorder.Add(new(at.AddSeconds(10), "foreground-unobserved"))); Assert.Equal(2, recorder.Session.Events.Length);
+        recorder.Add(new(at.AddSeconds(20), "foreground", Path.Combine(Path.GetTempPath(), "Example.exe")));
+        Assert.Equal(3, recorder.Session.Events.Length); Assert.Null(recorder.Session.Events[2].DwellSeconds);
+    }
+
+    [Fact]
     public void ExclusionsPauseDeduplicationAndDeadlineApplyBeforePersistence()
     {
         var recorder = Recorder();
