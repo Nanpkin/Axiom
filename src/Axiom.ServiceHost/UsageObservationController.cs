@@ -107,7 +107,12 @@ internal sealed class UsageObservationController(UsageJournal journal, IUsageObs
                             if (imported.Proposal.Kind != "extension") throw new ArgumentException("请选择缺少能力的建议。");
                             export = UsageAnalysis.ExtensionTask(imported.Proposal, catalog);
                         }
-                        else { draft = imported.Draft; export = imported.Proposal.Kind + "：" + imported.Proposal.Title + "\n" + imported.Proposal.Explanation; }
+                        else
+                        {
+                            draft = imported.Draft; export = imported.Proposal.Kind + "：" + imported.Proposal.Title + "\n" + imported.Proposal.Explanation;
+                            if (draft is not null && UsageAnalysis.MissingManualFields(draft, catalog) is { Length: > 0 } missing)
+                                export += "\n仍需手工填写：" + string.Join("、", missing) + "。补齐并通过校验后才能保存或启用。";
+                        }
                     }
                 }
                 var dismissed = journal.Dismissed(null);

@@ -278,6 +278,7 @@ public sealed class UsageObservationTests
         Assert.True(System.Text.Encoding.UTF8.GetByteCount(UsageAnalysis.Prompt + summary) <= UsageValidation.MaximumExportBytes);
         Assert.DoesNotContain("synthetic-private", summary); Assert.DoesNotContain(App("Synthetic0"), summary);
         using var document = JsonDocument.Parse(summary);
+        Assert.Equal(nameof(TaskFieldKind.DirectoryPath), document.RootElement.GetProperty("fieldKinds").GetProperty(((int)TaskFieldKind.DirectoryPath).ToString()).GetString());
         var capabilities = document.RootElement.GetProperty("capabilities").EnumerateArray().ToDictionary(c => c.GetProperty("Id").GetString()!);
         Assert.Equal(catalog.Capabilities.Length, capabilities.Count);
         foreach (var capability in catalog.Capabilities)
@@ -363,6 +364,58 @@ public sealed class UsageObservationTests
         var second = Recorder(); second.Add(new(Now, "foreground", App("Editor")));
         Assert.NotEqual(recorder.Session.Objects[0].Id, second.Session.Objects[0].Id);
     }
+    [Fact]
+    public void ImportedFolderPlaceholderRequiresManualEditingAndNormalCompileStillRejectsIt()
+    {
+        var recorder = Recorder(); recorder.Add(new(Now, "process-start", App("WorkTool"))); var catalog = Catalog();
+        var proposal = new UsageImport(1, recorder.Session.Id, "existing", "文件准备", "合成测试候选",
+            new(FileArrivalCapabilities.Arrived, 1, new Dictionary<string, string> { ["directory"] = "", ["kind"] = "pdf" }.ToImmutableDictionary()),
+            new("program.start", 1, ProgramCapabilities.Describe(true).Fields.Where(f => f.DefaultValue is not null)
+                .ToImmutableDictionary(f => f.Id, f => f.DefaultValue!).Add("executable", recorder.Session.Objects[0].Id)));
+        var draft = UsageAnalysis.Import(JsonSerializer.Serialize(proposal), recorder.Session, catalog).Draft!;
+        Assert.True(draft.Paused); Assert.Equal(0, draft.Version); Assert.Equal(new[] { "本机文件夹完整路径" }, UsageAnalysis.MissingManualFields(draft, catalog));
+        var compiler = new AutomationTaskCompiler(); compiler.Register(new FileArrivalTaskDetection()); compiler.Register(new ProgramTaskAction(true));
+        Assert.Throws<ArgumentException>(() => compiler.Compile(draft, "owner", ResourceScope.Session("owner", 1)));
+        var editor = new Axiom.WinUI.TaskEditorState(); editor.LoadDraft(draft); editor.SetParameter(TaskCapabilityKind.Detection, "directory", Path.GetTempPath());
+        Assert.True(editor.Dirty); var completed = editor.Build(); Assert.True(completed.Paused); Assert.Empty(UsageAnalysis.MissingManualFields(completed, catalog));
+        Assert.NotNull(compiler.Compile(completed, "owner", ResourceScope.Session("owner", 1)));
+        Assert.Throws<ArgumentException>(() => UsageAnalysis.Import(JsonSerializer.Serialize(proposal with { Detection = proposal.Detection! with { Parameters = proposal.Detection.Parameters.SetItem("kind", "arbitrary") } }), recorder.Session, catalog));
+    }
+    [Fact]
+    public void ImportedUrlPlaceholderDoesNotAcceptUrlsOrRelaxOtherParameters()
+    {
+        var recorder = Recorder(); var catalog = Catalog();
+        var proposal = new UsageImport(1, recorder.Session.Id, "existing", "解锁准备", "合成测试候选",
+            new(SystemEventCapabilities.Event, 1, ImmutableDictionary<string, string>.Empty.Add("event", "unlocked")),
+            new(OpenTargetCapabilities.Open, 1, new Dictionary<string, string> { ["kind"] = "url", ["target"] = "", ["delaySeconds"] = "0" }.ToImmutableDictionary()));
+        var draft = UsageAnalysis.Import(JsonSerializer.Serialize(proposal), recorder.Session, catalog).Draft!;
+        Assert.Equal(new[] { "目录路径或网址" }, UsageAnalysis.MissingManualFields(draft, catalog));
+        var compiler = new AutomationTaskCompiler(); compiler.Register(new SystemEventTaskDetection()); compiler.Register(new OpenTargetTaskAction());
+        Assert.Throws<ArgumentException>(() => compiler.Compile(draft, "owner", ResourceScope.Session("owner", 1)));
+        var completed = draft with { Action = draft.Action with { Parameters = draft.Action.Parameters.SetItem("target", "https://example.invalid/reminder") } };
+        Assert.NotNull(compiler.Compile(completed, "owner", ResourceScope.Session("owner", 1)));
+        foreach (var (field, value) in new[] { ("target", "https://example.invalid/reminder"), ("delaySeconds", "86401"), ("kind", "script") })
+            Assert.Throws<ArgumentException>(() => UsageAnalysis.Import(JsonSerializer.Serialize(proposal with { Action = proposal.Action! with { Parameters = proposal.Action.Parameters.SetItem(field, value) } }), recorder.Session, catalog));
+        var audio = new TaskInvocation(AudioPlaybackCapabilities.Set, 1, new Dictionary<string, string> { ["operation"] = "volume", ["percent"] = "0.5", ["delaySeconds"] = "0" }.ToImmutableDictionary());
+        var partialDetection = new TaskInvocation(FileArrivalCapabilities.Arrived, 1, new Dictionary<string, string> { ["directory"] = "", ["kind"] = "pdf" }.ToImmutableDictionary());
+        var withCombination = catalog with { Combinations = catalog.Combinations.Add(new(FileArrivalCapabilities.Arrived, AudioPlaybackCapabilities.Set)) };
+        var invalidAudio = Assert.Throws<ArgumentException>(() => UsageAnalysis.Import(JsonSerializer.Serialize(proposal with { Detection = partialDetection, Action = audio }), recorder.Session, withCombination));
+        Assert.Contains("整数", invalidAudio.Message);
+    }
+    [Fact]
+    public void ImportedHdrCandidateCanLeaveDeviceSelectionForTheUserWithoutExposingIdentifiers()
+    {
+        var recorder = Recorder(); recorder.Add(new(Now, "process-start", App("WorkTool"))); var catalog = Catalog();
+        catalog = catalog with { Capabilities = catalog.Capabilities.Add(new HdrTaskAction().Descriptor), Combinations = catalog.Combinations.Add(new("process.running", "display.hdr")) };
+        var proposal = new UsageImport(1, recorder.Session.Id, "existing", "HDR准备", "合成测试候选",
+            new("process.running", 2, ImmutableDictionary<string, string>.Empty.Add("processNames", recorder.Session.Objects[0].Id)),
+            new("display.hdr", 1, new Dictionary<string, string> { ["display"] = "", ["enabled"] = "true" }.ToImmutableDictionary()));
+        var draft = UsageAnalysis.Import(JsonSerializer.Serialize(proposal), recorder.Session, catalog).Draft!;
+        Assert.True(draft.Paused); Assert.Equal(new[] { "显示器" }, UsageAnalysis.MissingManualFields(draft, catalog));
+        Assert.Throws<ArgumentException>(() => GameHdrTasks.CreateCompiler().Compile(draft, "owner", ResourceScope.Session("owner", 1)));
+        Assert.Throws<ArgumentException>(() => UsageAnalysis.Import(JsonSerializer.Serialize(proposal with { Action = proposal.Action! with { Parameters = proposal.Action.Parameters.SetItem("display", "synthetic-untrusted-display") } }), recorder.Session, catalog));
+    }
+
     [Fact]
     public void ImportedFileWatchCannotIntroduceAnUnobservedFilesystemPath()
     {
