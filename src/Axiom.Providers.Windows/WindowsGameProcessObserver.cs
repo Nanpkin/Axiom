@@ -188,7 +188,7 @@ public sealed class WindowsGameProcessObserver : IAsyncDisposable
         }
     }
 
-    private static string ReadImagePath(IntPtr handle)
+    internal static string ReadImagePath(IntPtr handle)
     {
         var buffer = new StringBuilder(32768);
         uint length = (uint)buffer.Capacity;
@@ -197,7 +197,7 @@ public sealed class WindowsGameProcessObserver : IAsyncDisposable
         return Path.GetFullPath(buffer.ToString());
     }
 
-    private static string ReadOwnerSid(IntPtr handle)
+    internal static string ReadOwnerSid(IntPtr handle)
     {
         if (!OpenProcessToken(handle, 0x0008, out var token))
             throw new Win32Exception(Marshal.GetLastWin32Error());

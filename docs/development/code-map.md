@@ -53,3 +53,7 @@ Host 自身生命周期检测位于 Host：`AxiomStartupPlugin → PluginTaskRun
 ## 用最少上下文完成任务
 
 先读当前交接和本轮相关入口，沿真实调用链补读必要实现/测试。变更前核对当前文件；不因摘要而跳过授权或关键语义检查。文档维护不启动应用、不重跑功能测试；代码行为变更按直接风险验证，真实 UI / 系统动作需相应实际证据。实现职责或文件名变化后更新本表，无需逐行复制代码说明。
+
+## 主动观察入口
+
+`WorkbenchWindow.Usage → AutomationProtocol usage → UsageObservationController → ProviderProtocol observe-usage → UsageObservationStream → WindowsUsageObservation`。前台 WinEvent 与共享进程启动通知；UI 租约和绝对截止时间同时约束生命周期。核心对象/请求在 `Contracts/UsageObservation.cs`，有界聚合和 SQLite 在 `Infrastructure/UsageJournal.cs`，统计/脱敏/导入/扩展任务在 `UsageAnalysis.cs`。测试 `UsageObservationTests`，行为见 [使用观察](usage-observation.md)。窗口整理通过原 WindowPlugin/Provider，声明 `window.state`；测试 `WindowStateTests`。

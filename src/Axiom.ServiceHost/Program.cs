@@ -82,10 +82,15 @@ internal static class Program
         try { loginStartup.MigrateLegacy(); }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Runtime.InteropServices.COMException)
         { engine.RecordActivity(new(DateTimeOffset.UtcNow, "设置", "登录启动迁移未完成", error.Message)); }
+        var usageDatabase = Path.Combine(Path.GetDirectoryName(ruleDatabase)!, "usage.db");
+        if (File.Exists(usageDatabase)) RuleDraftDataPath.ProtectFile(usageDatabase, sid);
+        using var usageJournal = new UsageJournal(usageDatabase);
+        RuleDraftDataPath.ProtectFile(usageDatabase, sid);
+        await using var usage = new UsageObservationController(usageJournal, sid);
         var taskServer = new AutomationPipeServer([new GameHdrTaskBackend(game, sid,
             ResourceScope.Session(sid, System.Diagnostics.Process.GetCurrentProcess().SessionId)), plugins], new AutomationRuntimeLifetime(game, plugins), sid, exit,
             loginStartup,
-            new ShortcutCoordinator(shortcutStore, new ShortcutAgentClient(sid)), engine, utilities);
+            new ShortcutCoordinator(shortcutStore, new ShortcutAgentClient(sid)), engine, utilities, usage);
         var serveTasks = taskServer.RunAsync();
         utilities.StartStartupScan();
         try { await game.RefreshAgentAsync(exit.Token); }

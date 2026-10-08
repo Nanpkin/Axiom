@@ -21,6 +21,7 @@ public sealed class WindowsProcessStartEvents : IDisposable
     private readonly Channel<ProcessStartHint> queue = Channel.CreateBounded<ProcessStartHint>(
         new BoundedChannelOptions(256) { SingleReader = true, SingleWriter = false, AllowSynchronousContinuations = false });
     private bool disposed;
+    private readonly bool observeAll;
     private Exception? failure;
 
     public ChannelReader<ProcessStartHint> Events => queue.Reader;
@@ -32,10 +33,11 @@ public sealed class WindowsProcessStartEvents : IDisposable
     public static bool IsSubscribed { get { lock (Gate) return watcher is not null; } }
     public static (long Received, long Routed) Counters => (Interlocked.Read(ref receivedEvents), Interlocked.Read(ref routedHints));
 
-    public WindowsProcessStartEvents(IEnumerable<string> executableNames)
+    public WindowsProcessStartEvents(IEnumerable<string> executableNames, bool observeAll = false)
     {
+        this.observeAll = observeAll;
         names = executableNames.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        if (names.Count == 0) throw new ArgumentException("At least one process name is required.", nameof(executableNames));
+        if (names.Count == 0 && !observeAll) throw new ArgumentException("At least one process name is required.", nameof(executableNames));
         lock (Gate)
         {
             if (sourceFailure is not null) throw new InvalidOperationException("Process event source is reconnecting.", sourceFailure);
@@ -68,7 +70,7 @@ public sealed class WindowsProcessStartEvents : IDisposable
             lock (Gate)
             {
                 foreach (var client in Clients)
-                    if (Volatile.Read(ref client.failure) is null && client.names.Contains(name))
+                    if (Volatile.Read(ref client.failure) is null && (client.observeAll || client.names.Contains(name)))
                     {
                         Interlocked.Increment(ref routedHints);
                         if (!client.queue.Writer.TryWrite(new(pid, time)))

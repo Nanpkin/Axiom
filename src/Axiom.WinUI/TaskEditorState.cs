@@ -22,6 +22,11 @@ internal sealed class TaskEditorState
         original = task; Id = task?.Id ?? Guid.NewGuid().ToString("D"); Version = task?.Version ?? 0;
         Title = task?.Title ?? ""; Paused = task?.Paused ?? false; Detection = task?.Detection; Action = task?.Action;
     }
+    public void LoadDraft(AutomationTask task)
+    {
+        if (task.Version != 0) throw new ArgumentException("候选必须是未保存的任务。");
+        Load(task); original = null;
+    }
     public void Select(TaskCapability descriptor, ImmutableArray<TaskCombination> combinations)
     {
         var invocation = new TaskInvocation(descriptor.Id, descriptor.SchemaVersion,
