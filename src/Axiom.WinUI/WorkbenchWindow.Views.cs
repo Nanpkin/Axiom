@@ -169,25 +169,7 @@ public sealed partial class WorkbenchWindow
             case TaskFieldKind.DirectoryPath:
                 var path = new TextBox { Header = field.Label, Text = value ?? "", MaxLength = field.MaximumLength };
                 path.TextChanged += (_, _) => editor.SetParameter(descriptor.Kind, field.Id, path.Text); body.Children.Add(path);
-                var browse = Action(field.Kind == TaskFieldKind.FilePath ? "选择文件…" : "选择文件夹…");
-                browse.Click += async (_, _) =>
-                {
-                    try
-                    {
-                        if (field.Kind == TaskFieldKind.FilePath)
-                        {
-                            var filePicker = new Microsoft.Windows.Storage.Pickers.FileOpenPicker(AppWindow.Id); filePicker.FileTypeFilter.Add("*");
-                            var file = await filePicker.PickSingleFileAsync(); if (file is not null) path.Text = file.Path;
-                        }
-                        else
-                        {
-                            var folderPicker = new Microsoft.Windows.Storage.Pickers.FolderPicker(AppWindow.Id);
-                            var folder = await folderPicker.PickSingleFolderAsync(); if (folder is not null) path.Text = folder.Path;
-                        }
-                    }
-                    catch (Exception error) { ShowNotice("无法打开选择器：" + error.Message); }
-                };
-                body.Children.Add(browse); break;
+                AddLocalPathBrowse(body, path, field.Kind == TaskFieldKind.FilePath, field.Kind == TaskFieldKind.DirectoryPath); break;
             case TaskFieldKind.Number:
                 var number = new NumberBox { Header = field.Label,
                     Minimum = (double)(field.Minimum ?? decimal.MinValue), Maximum = (double)(field.Maximum ?? decimal.MaxValue),
@@ -198,7 +180,9 @@ public sealed partial class WorkbenchWindow
                 body.Children.Add(number); break;
             case TaskFieldKind.Text:
                 var text = new TextBox { Header = field.Label, Text = value ?? "", MaxLength = field.MaximumLength };
-                text.TextChanged += (_, _) => editor.SetParameter(descriptor.Kind, field.Id, text.Text); body.Children.Add(text); break;
+                text.TextChanged += (_, _) => editor.SetParameter(descriptor.Kind, field.Id, text.Text); body.Children.Add(text);
+                if (field.BrowseLocalPath) AddLocalPathBrowse(body, text, true, true);
+                break;
             case TaskFieldKind.TextList:
                 var lines = new TextBox { Header = field.Label, MaxLength = field.MaximumLength,
                     AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 112, Text = value ?? "" };
@@ -230,6 +214,37 @@ public sealed partial class WorkbenchWindow
             default: body.Children.Add(Text("此参数类型需要更新 Axiom 后编辑。", 12, Amber)); break;
         }
         if (!string.IsNullOrWhiteSpace(field.Hint)) body.Children.Add(Text(field.Hint, 12, Muted));
+    }
+    private void AddLocalPathBrowse(StackPanel body, TextBox path, bool files, bool directories)
+    {
+        var choices = Row(8);
+        if (files) Add("选择文件…", true);
+        if (directories) Add("选择文件夹…", false);
+        body.Children.Add(choices);
+        void Add(string label, bool file)
+        {
+            var browse = Action(label);
+            browse.Click += async (_, _) =>
+            {
+                foreach (var button in choices.Children.OfType<Button>()) button.IsEnabled = false;
+                try
+                {
+                    if (file)
+                    {
+                        var picker = new Microsoft.Windows.Storage.Pickers.FileOpenPicker(AppWindow.Id); picker.FileTypeFilter.Add("*");
+                        var selected = await picker.PickSingleFileAsync(); if (selected is not null) path.Text = selected.Path;
+                    }
+                    else
+                    {
+                        var picker = new Microsoft.Windows.Storage.Pickers.FolderPicker(AppWindow.Id);
+                        var selected = await picker.PickSingleFolderAsync(); if (selected is not null) path.Text = selected.Path;
+                    }
+                }
+                catch (Exception failure) { ShowNotice("无法打开选择器，原输入已保留：" + failure.Message); }
+                finally { foreach (var button in choices.Children.OfType<Button>()) button.IsEnabled = true; }
+            };
+            choices.Children.Add(browse);
+        }
     }
     private void BuildSettings()
     {

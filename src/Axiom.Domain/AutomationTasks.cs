@@ -12,7 +12,7 @@ public enum TaskFieldKind { Text, Boolean, Choice, Resource, TextList, FilePath,
 public sealed record TaskChoice(string Value, string Label);
 public sealed record TaskField(string Id, string Label, TaskFieldKind Kind, bool Required,
     string Hint, string? DefaultValue, int MaximumLength, ImmutableArray<TaskChoice> Choices,
-    decimal? Minimum = null, decimal? Maximum = null, string? Group = null);
+    decimal? Minimum = null, decimal? Maximum = null, string? Group = null, bool BrowseLocalPath = false);
 public sealed record TaskCapability(string Id, int SchemaVersion, TaskCapabilityKind Kind,
     string Category, string Name, string Description, ImmutableArray<TaskField> Fields,
     string Behavior, string EditWarning);
