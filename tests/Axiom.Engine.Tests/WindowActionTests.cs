@@ -152,14 +152,32 @@ public sealed class WindowActionTests
         using var target = new TrayWindow(); using var cancellation = new CancellationTokenSource();
         var changes = System.Threading.Channels.Channel.CreateUnbounded<string>();
         var observing = WindowsUsageWindows.RunAsync([], (_, kind, path) => { if (string.Equals(path, Environment.ProcessPath, StringComparison.OrdinalIgnoreCase)) changes.Writer.TryWrite(kind); }, cancellation.Token);
-        async Task ReadKind(string expected) { while (await changes.Reader.ReadAsync() != expected) { } }
-        target.Show(); await ReadKind("window-shown");
-        target.SetState(3); await ReadKind("window-maximized");
-        target.SetState(6); await ReadKind("window-minimized");
-        target.SetState(9); await ReadKind("window-normal");
-        Assert.True((await WindowsWindowActions.CloseAsync(Environment.ProcessPath!, target.Title, TimeSpan.FromSeconds(2), default)).Success);
-        await ReadKind("window-hidden");
-        cancellation.Cancel(); await Assert.ThrowsAnyAsync<OperationCanceledException>(() => observing);
+        var received = new List<string>();
+        async Task ReadKind(string expected)
+        {
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+            try
+            {
+                while (true)
+                {
+                    var read = changes.Reader.ReadAsync(deadline.Token).AsTask();
+                    if (await Task.WhenAny(read, observing) == observing) await observing;
+                    var kind = await read; received.Add(kind); if (kind == expected) return;
+                }
+            }
+            catch (OperationCanceledException) when (deadline.IsCancellationRequested)
+            { throw new TimeoutException($"Expected {expected}; observed: {string.Join(", ", received)}; minimized={target.Minimized}, maximized={target.Maximized}, visible={target.Visible}."); }
+        }
+        try
+        {
+            target.Show(); await ReadKind("window-shown");
+            target.SetState(3); await ReadKind("window-maximized");
+            target.SetState(6); await ReadKind("window-minimized");
+            target.SetState(9); await ReadKind("window-normal");
+            Assert.True((await WindowsWindowActions.CloseAsync(Environment.ProcessPath!, target.Title, TimeSpan.FromSeconds(2), default)).Success);
+            await ReadKind("window-hidden");
+        }
+        finally { cancellation.Cancel(); await Assert.ThrowsAnyAsync<OperationCanceledException>(() => observing); }
         target.Show(); Assert.True((await WindowsWindowActions.CloseAsync(Environment.ProcessPath!, target.Title, TimeSpan.FromSeconds(2), default)).Success);
     }
 
