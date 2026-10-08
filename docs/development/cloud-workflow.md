@@ -8,6 +8,12 @@
 
 Codex Cloud 选择本仓库和 main 创建环境，安装命令为 `bash tools/cloud-setup.sh`，验证命令为 `bash tools/test-core.sh`。脚本使用 `$HOME/.dotnet`；Windows/PowerShell 可用 `pwsh -File tools/test-core.ps1`，两入口共用核心测试名单。Linux 不运行 WinUI 或原生 Windows 集成，不能把平台缺失当测试成功。
 
+首次在设置 → Codex Cloud → Environments 创建私有环境，选择本仓库。可将以下内容交给环境设置对话：
+
+> 读取 AGENTS.md 和 docs/development/cloud-workflow.md；运行 bash tools/cloud-setup.sh，再运行 bash tools/test-core.sh；仅准备环境，暂不开发功能。保留核心测试输出，Windows 构建使用仓库的 GitHub Actions。准备成功后等待所有者发布环境。
+
+环境必须 Publish 后再开始开发任务。GitHub CLI 授权只用于 GitHub，不能代替 Codex 侧的仓库访问授权。若仓库没有出现在选择器中，在 GitHub 连接设置中授予此私有仓库访问权限。现有 Codex CLI 支持提交/查看云端任务，但没有创建环境命令。
+
 GitHub Actions 的 Check source 在 Ubuntu/Windows 运行明确的核心套件，Windows 额外构建应用；Build Windows packages 手动生成便携和安装包。自动检查不启动用户后台，不使用个人规则，不自动发布 Release。
 
 ## 候选目标（等待确认）
@@ -18,6 +24,8 @@ GitHub Actions 的 Check source 在 Ubuntu/Windows 运行明确的核心套件�
 4. **后台资源控制**：只针对真实异常或已证实问题定位订阅泄漏、无界队列或无理由唤醒；保持事件驱动，不为优化而循环重构。
 
 建议顺序为 1 → 3 → 2 → 4。每轮完成一个可验收改动，独立分支/提交，检查通过后记录证据和下一项。没有明确收益时结束，不为持续运行制造任务。
+
+首轮建议以“现有功能达到可分发的第一版”为完成标准，不扩展新能力。逐项记录发现、复现、修复和验收；无需等待所有者逐轮提醒即可处理已确认范围内的后续事项。仅在完成、实质阻塞或需要范围决策时请求所有者介入。无人监督不意味着无限运行：额度、环境可用性和平台权限仍会限制任务，真实 Windows/HDR/托盘验收也不能由 Linux 模拟结果替代。
 
 ## 授权边界
 
