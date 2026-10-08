@@ -60,12 +60,15 @@ public static class WindowsWindowActions
             {
                 bool Confirmed() => Visible(target, pid) && (state == "minimize" ? IsIconic(target) : state == "maximize" ? IsZoomed(target) : state is "topmost" or "notopmost" ? Topmost(target) == (state == "topmost") : !IsIconic(target) && !IsZoomed(target));
                 if (Confirmed()) return new(true, "窗口已处于所选状态；未重复操作。");
-                var accepted = state is "topmost" or "notopmost"
-                    ? SetWindowPos(target, state == "topmost" ? -1 : -2, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010 | 0x4000)
-                    : ShowWindowAsync(target, state == "minimize" ? 6 : state == "maximize" ? 3 : 9);
-                if (!accepted) return new(false, "无法更改窗口状态。");
                 using var stateDeadline = CancellationTokenSource.CreateLinkedTokenSource(token); stateDeadline.CancelAfter(TimeSpan.FromSeconds(3));
-                try { while (!Confirmed()) await events.Events.Reader.ReadAsync(stateDeadline.Token); }
+                try
+                {
+                    var accepted = state == "restore" ? await RestoreNormalAsync(target, pid, events, stateDeadline.Token)
+                        : state is "topmost" or "notopmost" ? SetWindowPos(target, state == "topmost" ? -1 : -2, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010 | 0x4000)
+                        : ShowWindowAsync(target, state == "minimize" ? 6 : 3);
+                    if (!accepted) return new(false, "无法更改窗口状态。");
+                    while (!Confirmed()) await events.Events.Reader.ReadAsync(stateDeadline.Token);
+                }
                 catch (OperationCanceledException) when (!token.IsCancellationRequested)
                 { if (!Confirmed()) return new(false, "已请求整理，但窗口状态未确认；不会自动重试。"); }
                 return new(true, "窗口状态已确认；后续手动调整不受干预。");
@@ -82,6 +85,24 @@ public static class WindowsWindowActions
             return new(true, $"窗口已关闭：{Path.GetFileName(path)}；" + (running ? "程序仍在运行。" : "目标程序处理关闭请求后已退出。"));
         }
         finally { foreach (var process in current) process.Dispose(); }
+    }
+    internal static async Task<bool> RestoreNormalAsync(nint window, int pid, WindowsWindowEvents events, CancellationToken token)
+    {
+        // A minimized maximized window first restores to maximized on Windows.
+        // Normalize each state once, under the caller's single deadline.
+        if (IsIconic(window))
+        {
+            token.ThrowIfCancellationRequested();
+            if (!Visible(window, pid) || !ShowWindowAsync(window, 9)) return false;
+            while (IsIconic(window)) await events.Events.Reader.ReadAsync(token);
+        }
+        if (IsZoomed(window))
+        {
+            token.ThrowIfCancellationRequested();
+            if (!Visible(window, pid) || !ShowWindowAsync(window, 9)) return false;
+            while (IsZoomed(window) || IsIconic(window)) await events.Events.Reader.ReadAsync(token);
+        }
+        return Visible(window, pid);
     }
     private static bool Topmost(nint window)
     {

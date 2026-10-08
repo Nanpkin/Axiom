@@ -1,7 +1,7 @@
 name: Check source
 on:
   push:
-    branches: [main, 'codex/**']
+    branches: [main]
   pull_request:
   workflow_dispatch:
 permissions:
@@ -28,6 +28,12 @@ jobs:
       - name: Core behavior and architecture
         shell: pwsh
         run: ./tools/test-core.ps1
+      - name: Native window and shared system subscription regressions
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          dotnet test tests/Axiom.Engine.Tests/Axiom.Engine.Tests.csproj -c Release --no-build --no-restore --filter "FullyQualifiedName~Axiom.Engine.Tests.WindowActionTests.|FullyQualifiedName~Axiom.Engine.Tests.WindowsSessionEventTests."
+          exit $LASTEXITCODE
       - name: Build Windows application
         if: runner.os == 'Windows'
         shell: pwsh
@@ -35,12 +41,6 @@ jobs:
           dotnet restore Axiom.slnx --locked-mode -p:NuGetAudit=false
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           dotnet build Axiom.slnx -c Release --no-restore /m:1 /nr:false
-          exit $LASTEXITCODE
-      - name: Native window and shared system subscription regressions
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          dotnet test tests/Axiom.Engine.Tests/Axiom.Engine.Tests.csproj -c Release --no-build --no-restore --filter "FullyQualifiedName~Axiom.Engine.Tests.WindowActionTests.|FullyQualifiedName~Axiom.Engine.Tests.WindowsSessionEventTests."
           exit $LASTEXITCODE
   private-packages:
     if: github.event_name == 'pull_request'

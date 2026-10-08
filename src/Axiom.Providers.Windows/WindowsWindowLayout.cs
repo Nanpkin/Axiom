@@ -26,12 +26,7 @@ internal static class WindowsWindowLayout
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token); deadline.CancelAfter(TimeSpan.FromSeconds(3));
         try
         {
-            if (IsIconic(window) || IsZoomed(window))
-            {
-                token.ThrowIfCancellationRequested();
-                if (!ShowWindowAsync(window, 9)) return new(false, "无法还原窗口，未调整布局。");
-                while (IsIconic(window) || IsZoomed(window)) await events.Events.Reader.ReadAsync(deadline.Token);
-            }
+            if (!await WindowsWindowActions.RestoreNormalAsync(window, pid, events, deadline.Token)) return new(false, "无法还原窗口，未调整布局。");
             token.ThrowIfCancellationRequested();
             var processes = WindowsProgramControl.Matching(path);
             try
