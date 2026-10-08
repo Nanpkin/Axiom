@@ -102,14 +102,14 @@ internal sealed class PluginTaskRuntime : IAutomationTaskBackend, ICapabilityExe
             if (response.Version != 1 || response.Type != "result" || response.RequestId != id || response.CommandId != command.CommandId ||
                 response.Status is not (OutcomeStatus.Succeeded or OutcomeStatus.Failed or OutcomeStatus.Rejected) || string.IsNullOrWhiteSpace(response.Reason))
                 throw new InvalidDataException("Provider 回执无效。");
-            Record(response.Status == OutcomeStatus.Succeeded ? "程序动作已完成" : "程序动作未完成", response.Reason,
+            Record(response.Status == OutcomeStatus.Succeeded ? "自动化动作已完成" : "自动化动作未完成", response.Reason,
                 response.Status == OutcomeStatus.Succeeded ? ActivityLevel.Success : ActivityLevel.Error);
             return new(response.Status.Value, response.Reason, command.CommandId);
         }
         catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
         {
             var message = error is OperationCanceledException ? "动作已取消或通信超时；无法确认程序是否已执行，不会自动重试。" : error.Message;
-            Record("程序动作未确认", message, ActivityLevel.Warning);
+            Record("自动化动作未确认", message, ActivityLevel.Warning);
             return new(OutcomeStatus.Unknown, message, command.CommandId);
         }
     }
@@ -140,7 +140,7 @@ internal sealed class PluginTaskRuntime : IAutomationTaskBackend, ICapabilityExe
         {
             await database.DeleteAsync(id, expectedVersion, token);
             lock (statusGate) { engine.RemoveRule(id); tasks = tasks.Where(t => t.Id != id).ToArray(); }
-            await RefreshObservationAsync(); Record("任务已删除", "尚未执行的程序动作已取消。", ActivityLevel.Success);
+            await RefreshObservationAsync(); Record("任务已删除", "尚未执行的动作已取消。", ActivityLevel.Success);
         }
         finally { gate.Release(); }
     }
@@ -152,9 +152,9 @@ internal sealed class PluginTaskRuntime : IAutomationTaskBackend, ICapabilityExe
             lock (statusGate) return new([.. tasks], compiler.Catalog, Combinations, watching.Length == 0 || connected &&
                 (firstBoot is not null || !tasks.Any(t => !t.Paused && t.Detection.CapabilityId == AxiomStartupPlugin.CapabilityId && t.Detection.Parameters["frequency"] == "firstBoot")), state, reason, at,
                 [.. engine.ReadSnapshot().States.Where(p => watching.Contains(p.Key)).Select(p => new TaskObservation(
-                    p.Key.CapabilityId == AxiomStartupPlugin.CapabilityId ? tasks.SingleOrDefault(t => t.Id == p.Key.ResourceId)?.Title ?? "Axiom 启动" : p.Key.ResourceId,
+                    p.Key.CapabilityId == AxiomStartupPlugin.CapabilityId ? tasks.SingleOrDefault(t => t.Id == p.Key.ResourceId)?.Title ?? "Axiom 启动" : p.Key.CapabilityId == SystemEventCapabilities.Event ? SystemEventName(p.Key.ResourceId) : p.Key.ResourceId,
                     p.Value.Observation.Quality != StateQuality.Known ? observationReasons.GetValueOrDefault(p.Key, "状态未知") : p.Key.CapabilityId == HotkeyCapabilities.Pressed
-                        ? "等待快捷键" : p.Key.CapabilityId == AxiomStartupPlugin.CapabilityId
+                        ? "等待快捷键" : p.Value.Observation.Value?.Number is not null ? "等待下一次事件" : p.Key.CapabilityId == AxiomStartupPlugin.CapabilityId
                         ? p.Value.Observation.Value?.Boolean == true ? "已触发启动条件" : "等待下次启动"
                         : p.Value.Observation.Value?.Boolean == true ? "正在运行" : "未运行"))]);
         }
@@ -262,18 +262,21 @@ internal sealed class PluginTaskRuntime : IAutomationTaskBackend, ICapabilityExe
                         engine.Update(source!, response.Sequence, observations[0]);
                         if (observations[0].Key.CapabilityId == HotkeyCapabilities.Pressed && observations[0].Quality == StateQuality.Known)
                             Record("快捷键已按下", (samples[0].Reason ?? observations[0].Key.ResourceId) + "：已交给规则判断。", ActivityLevel.Information);
+                        if (observations[0].Key.CapabilityId == SystemEventCapabilities.Event && observations[0].Quality == StateQuality.Known)
+                            Record("系统通知已到达", SystemEventName(observations[0].Key.ResourceId) + "：已交给规则判断。", ActivityLevel.Information);
                     }
                 }
             }
             catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
             {
                 if (!token.IsCancellationRequested && (connected || lastWatchError != error.Message))
-                { lastWatchError = error.Message; Record("程序检测中断", error.Message + " 尚未执行的动作已取消，后台会尝试重新连接。", ActivityLevel.Warning); }
+                { lastWatchError = error.Message; Record("自动化检测中断", error.Message + " 尚未执行的动作已取消，后台会尝试重新连接。", ActivityLevel.Warning); }
             }
             finally { connected = false; if (source is not null) engine.ReleaseSource(source); if (startupSource is not null) engine.ReleaseSource(startupSource); }
             try { await Task.Delay(TimeSpan.FromSeconds(5), token); } catch (OperationCanceledException) { break; }
         }
     }
+    private static string SystemEventName(string kind) => SystemEventCapabilities.Descriptor.Fields[0].Choices.FirstOrDefault(c => c.Value == kind)?.Label ?? "系统事件";
     private Observation StartupBaseline(ResourceKey key)
     {
         var task = tasks.Single(t => t.Id == key.ResourceId);
@@ -284,7 +287,7 @@ internal sealed class PluginTaskRuntime : IAutomationTaskBackend, ICapabilityExe
     private void Record(string title, string detail, ActivityLevel level)
     {
         var now = DateTimeOffset.UtcNow; lock (statusGate) { state = title; reason = detail; at = now; }
-        activity.RecordActivity(new(now, "程序任务", title, detail, level));
+        activity.RecordActivity(new(now, "自动化任务", title, detail, level));
     }
     public async Task EnsureSafeToStopAsync(CancellationToken token)
     {

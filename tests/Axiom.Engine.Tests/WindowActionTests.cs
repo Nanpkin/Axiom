@@ -98,6 +98,18 @@ public sealed class WindowActionTests
         target.SetState(9); Assert.False(target.Minimized); Assert.False(target.Maximized);
         Assert.Equal(0, target.CloseCount);
     }
+    [Theory(Timeout = 10000)]
+    [InlineData("left")]
+    [InlineData("right")]
+    [InlineData("center")]
+    public async Task NativeLayoutMovesAndResizesWithinCurrentWorkArea(string layout)
+    {
+        using var target = new TrayWindow(); target.Show(); target.SetState(3);
+        var result = await WindowsWindowActions.CloseAsync(Environment.ProcessPath!, target.Title, TimeSpan.FromSeconds(2), default, layout);
+        Assert.True(result.Success, result.Reason); Assert.False(target.Maximized); Assert.False(target.Minimized); Assert.Equal(0, target.CloseCount);
+        Assert.True(target.Visible);
+        target.SetState(3); Assert.True(target.Maximized); // later user control remains possible
+    }
     [Fact(Timeout = 10000)]
     public async Task CancelledStateWaitDoesNotChangeALaterWindow()
     {
