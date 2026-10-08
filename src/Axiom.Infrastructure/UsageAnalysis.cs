@@ -41,10 +41,10 @@ public static class UsageAnalysis
                 [g.Key.Item1!, g.Key.Item2!], g.Count(), session.Events.Count(e => e.Kind == "process-exit" && e.ObjectId == g.Key.Item1), EvidenceSamples: Evidence(session, g)));
         var windows = WindowPairs(session).GroupBy(p => (p.Second.Kind, p.Second.ObjectId)).Where(g => g.Count() >= 3).Select(g => new UsageSuggestion(
             "window:" + g.Key.Kind + ":" + g.Key.ObjectId, "existing", "窗口显示后反复调整状态",
-            $"{g.Count()} 次在窗口显示后 30 秒内观察到同一应用{(g.Key.Kind == "window-minimized" ? "最小化" : "最大化")}；该应用有 {session.Events.Count(e => e.Kind == "window-shown" && e.ObjectId == g.Key.ObjectId)} 次已观察显示机会。",
-            "来源未知，可能是应用自己调整，不证明手动操作。多窗口情况下不能确认是同一个窗口；候选仅在应用从无主窗口到有主窗口时整理一个匹配窗口，不会逐个处理后续窗口。请审阅目标和标题筛选。一次操作，之后手动改变不干预，结束不恢复。Axiom 动作目标和数据缺口排除。",
+            $"{g.Count()} 次在窗口显示后 30 秒内观察到同一应用{WindowKindName(g.Key.Kind)}；该应用有 {session.Events.Count(e => e.Kind == "window-shown" && e.ObjectId == g.Key.ObjectId)} 次已观察显示机会。",
+            "来源未知，可能是应用自己调整，不证明手动操作。多窗口情况下不能确认是同一个窗口；候选仅在应用从无主窗口到有主窗口时整理一个匹配窗口，不会逐个处理后续窗口。请审阅目标和标题筛选。布局只分类当前显示器工作区的近似左右半屏/中央，不保存坐标或显示器标识；动作在触发时的显示器执行，不保证复原旧布局。一次操作，之后手动改变不干预，结束不恢复。Axiom 动作目标和数据缺口排除。",
             [g.Key.ObjectId!], g.Count(), session.Events.Count(e => e.Kind == "window-shown" && e.ObjectId == g.Key.ObjectId), EvidenceSamples: Evidence(session, g),
-            WindowState: g.Key.Kind == "window-minimized" ? "minimize" : "maximize"));
+            WindowState: WindowCommand(g.Key.Kind)));
         var afterEvents = SystemPairs(session).GroupBy(p => (p.First.Kind, p.Second.ObjectId)).Where(g => g.Count() >= 3).Select(g => new UsageSuggestion(
             "event:" + g.Key.Kind + ":" + g.Key.ObjectId, "existing", "系统事件后反复打开同一程序",
             $"{g.Count()} 次在 {SystemName(g.Key.Kind)} 后一分钟内启动；此事件共出现 {session.Events.Count(e => e.Kind == g.Key.Kind)} 次。",
@@ -54,6 +54,8 @@ public static class UsageAnalysis
             s.Kind == "existing" && !s.ObjectIds.All(id => CanUse(session.Objects.Single(o => o.Id == id).Executable))
                 ? s with { Kind = "insufficient", Limitation = s.Limitation + "此对象不符合当前程序动作的安全范围，不能生成规则。" } : s)];
     }
+    private static string WindowKindName(string kind) => kind switch { "window-minimized" => "最小化", "window-maximized" => "最大化", "window-left" => "摆到近似左半屏", "window-right" => "摆到近似右半屏", "window-center" => "摆到近似中央（80%）", _ => "改变状态" };
+    private static string WindowCommand(string kind) => kind switch { "window-minimized" => "minimize", "window-maximized" => "maximize", _ => kind[7..] };
     private static IEnumerable<(UsageEvent First, UsageEvent Second)> WindowPairs(UsageSession session)
     {
         var automated = session.Events.Where(e => e.Kind == "axiom-action" && e.ObjectId is not null).Select(e => e.ObjectId).ToHashSet();
@@ -64,7 +66,7 @@ public static class UsageAnalysis
             if (item.ObjectId is null || automated.Contains(item.ObjectId)) continue;
             if (item.Kind == "window-shown") { shown[item.ObjectId] = item; continue; }
             if (item.Kind == "window-hidden") { shown.Remove(item.ObjectId); continue; }
-            if (item.Kind is "window-minimized" or "window-maximized" && shown.Remove(item.ObjectId, out var first) && item.AtUtc - first.AtUtc <= TimeSpan.FromSeconds(30))
+            if (item.Kind is "window-minimized" or "window-maximized" or "window-left" or "window-right" or "window-center" && shown.Remove(item.ObjectId, out var first) && item.AtUtc - first.AtUtc <= TimeSpan.FromSeconds(30))
                 yield return (first, item);
         }
     }

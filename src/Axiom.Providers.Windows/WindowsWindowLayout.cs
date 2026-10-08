@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 
@@ -5,6 +6,18 @@ namespace Axiom.Providers.Windows;
 
 internal static class WindowLayoutGeometry
 {
+    internal static string Classify(int x, int y, int width, int height, int left, int top, int workWidth, int workHeight, int tolerance)
+    {
+        if (width <= 0 || height <= 0 || tolerance < 0) throw new ArgumentException("窗口布局无效。");
+        var margin = Math.Min(tolerance, Math.Min(workWidth, workHeight) / 20);
+        foreach (var layout in new[] { "left", "right", "center" })
+        {
+            var target = Calculate(layout, left, top, workWidth, workHeight);
+            if (Math.Abs((long)x - target.X) <= margin && Math.Abs((long)y - target.Y) <= margin &&
+                Math.Abs((long)width - target.Width) <= margin && Math.Abs((long)height - target.Height) <= margin) return layout;
+        }
+        return "normal";
+    }
     internal static (int X, int Y, int Width, int Height) Calculate(string layout, int left, int top, int width, int height)
     {
         if (width < 2 || height < 2) throw new ArgumentException("显示器工作区无效。");
@@ -21,6 +34,21 @@ internal static class WindowLayoutGeometry
 [SupportedOSPlatform("windows")]
 internal static class WindowsWindowLayout
 {
+    internal static string ReadLayout(nint window)
+    {
+        var previous = SetThreadDpiAwarenessContext(-4);
+        if (previous == 0) throw new Win32Exception("无法确认窗口缩放，布局记录不完整。");
+        try
+        {
+            var monitor = new MonitorInfo { Size = (uint)Marshal.SizeOf<MonitorInfo>() };
+            if (!GetMonitorInfo(MonitorFromWindow(window, 2), ref monitor) || !GetWindowRect(window, out var rect))
+                throw new Win32Exception("无法读取窗口工作区，布局记录不完整。");
+            var dpi = GetDpiForWindow(window); if (dpi == 0) throw new Win32Exception("无法读取窗口缩放。");
+            return WindowLayoutGeometry.Classify(rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top,
+                monitor.Work.Left, monitor.Work.Top, monitor.Work.Right - monitor.Work.Left, monitor.Work.Bottom - monitor.Work.Top, Math.Max(16, (int)dpi / 6));
+        }
+        finally { SetThreadDpiAwarenessContext(previous); }
+    }
     internal static async Task<ProgramControlResult> ApplyAsync(nint window, int pid, string path, string layout, WindowsWindowEvents events, CancellationToken token)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token); deadline.CancelAfter(TimeSpan.FromSeconds(3));
@@ -64,6 +92,7 @@ internal static class WindowsWindowLayout
     }
     [StructLayout(LayoutKind.Sequential)] private struct Rect { public int Left,Top,Right,Bottom; }
     [StructLayout(LayoutKind.Sequential)] private struct MonitorInfo { public uint Size; public Rect Monitor,Work; public uint Flags; }
+    [DllImport("user32.dll")] private static extern uint GetDpiForWindow(nint window);
     [DllImport("user32.dll")] private static extern nint SetThreadDpiAwarenessContext(nint context);
     [DllImport("user32.dll")] private static extern nint MonitorFromWindow(nint window, uint flags);
     [DllImport("user32.dll",CharSet=CharSet.Unicode)] private static extern bool GetMonitorInfo(nint monitor, ref MonitorInfo info);

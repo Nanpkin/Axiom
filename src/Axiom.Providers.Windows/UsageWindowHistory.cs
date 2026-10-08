@@ -7,7 +7,7 @@ public sealed class UsageWindowHistory
     private readonly Dictionary<nint, (string Path, string State, int Pid)> windows = [];
     public UsageWindowChange? Update(nint window, string path, string state, bool baseline = false, int pid = 0)
     {
-        if (state is not ("normal" or "minimized" or "maximized")) throw new ArgumentException("Invalid window state.");
+        if (state is not ("normal" or "minimized" or "maximized" or "left" or "right" or "center")) throw new ArgumentException("Invalid window state.");
         var had = windows.TryGetValue(window, out var previous);
         if (!had && windows.Count >= 4096) throw new IOException("窗口观察容量达到上限，记录不完整。");
         windows[window] = (path, state, pid);
