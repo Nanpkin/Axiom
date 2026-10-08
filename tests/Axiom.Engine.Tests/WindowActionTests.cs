@@ -188,6 +188,59 @@ public sealed class WindowActionTests
         target.Show(); Assert.True((await WindowsWindowActions.CloseAsync(Environment.ProcessPath!, target.Title, TimeSpan.FromSeconds(2), default)).Success);
     }
 
+    [Fact(Timeout = 20000)]
+    public async Task SyntheticNativeWindowEvidenceRoundTripsStorageAndBecomesOnlyAReviewedPausedDraft()
+    {
+        using var cancellation = new CancellationTokenSource();
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var records = System.Threading.Channels.Channel.CreateBounded<UsageSample>(128);
+        var recorder = new UsageRecorder(new(1, false, false, [], Purpose: "synthetic native window fixture", WindowStates: true), DateTimeOffset.UtcNow);
+        var observing = WindowsUsageWindows.RunAsync([], (at, kind, path) =>
+        {
+            if (string.Equals(path, Environment.ProcessPath, StringComparison.OrdinalIgnoreCase) && !records.Writer.TryWrite(new(at, kind, path)))
+                throw new IOException("Synthetic fixture queue overflowed.");
+        }, cancellation.Token);
+        async Task ReadThrough(string expected)
+        {
+            while (true)
+            {
+                var next = records.Reader.ReadAsync(deadline.Token).AsTask();
+                if (await Task.WhenAny(next, observing) == observing) await observing;
+                var sample = await next; recorder.Add(sample); if (sample.Kind == expected) return;
+            }
+        }
+        try
+        {
+            for (var i = 0; i < 3; i++)
+            {
+                using var window = new TrayWindow(); window.Show(); await ReadThrough("window-shown");
+                window.SetState(6); await ReadThrough("window-minimized");
+                window.SetState(0); await ReadThrough("window-hidden");
+            }
+        }
+        finally { cancellation.Cancel(); await Assert.ThrowsAnyAsync<OperationCanceledException>(() => observing); }
+        recorder.State("stopped", atUtc: DateTimeOffset.UtcNow);
+        var path = Path.Combine(Path.GetTempPath(), "axiom-synthetic-observation-" + Guid.NewGuid() + ".db");
+        try
+        {
+            using var journal = new UsageJournal(path); journal.Save(recorder.Session);
+            var session = Assert.Single(journal.Read(DateTimeOffset.UtcNow)); Assert.Equal("stopped", session.State);
+            var suggestion = Assert.Single(UsageAnalysis.Analyze(session)); Assert.Equal(3, suggestion.Occurrences); Assert.Equal(3, suggestion.Opportunities);
+            var modules = new IAutomationPlugin[] { new WindowPresencePlugin(), new WindowPlugin() };
+            var catalog = new AutomationSnapshot([], [.. modules.SelectMany(m => m.Detections.Select(d => d.Descriptor).Concat(m.Actions.Select(a => a.Descriptor)))],
+                [.. modules.SelectMany(m => m.Combinations)], true, "ready", "", DateTimeOffset.UtcNow, []);
+            var summary = UsageAnalysis.Summary(session, catalog);
+            Assert.Contains("synthetic native window fixture", summary); Assert.DoesNotContain(Environment.ProcessPath!, summary);
+            var draft = UsageAnalysis.Draft(session, suggestion, catalog);
+            Assert.True(draft.Paused); Assert.Equal(0, draft.Version); Assert.Equal("minimize", draft.Action.Parameters["state"]);
+            var compiler = new AutomationTaskCompiler();
+            foreach (var module in modules) { foreach (var d in module.Detections) compiler.Register(d); foreach (var a in module.Actions) compiler.Register(a); }
+            Assert.NotNull(compiler.Compile(draft, "owner", ResourceScope.Session("owner", 1)));
+            journal.Delete(session.Id); Assert.Empty(journal.Read(DateTimeOffset.UtcNow));
+        }
+        finally { File.Delete(path); }
+    }
+
     // Native fixture deliberately implements × as hide-to-tray, retaining its process.
     private sealed class TrayWindow : IDisposable
     {
