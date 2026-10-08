@@ -84,6 +84,9 @@ public sealed partial class WorkbenchWindow
         var export = Action("预览分析摘要…"); export.Click += async (_, _) => await PreviewUsageExportAsync(selected.Id); tools.Children.Add(export);
         var import = Action("导入 AI 建议…"); import.Click += async (_, _) => await ImportUsageAsync(selected.Id); tools.Children.Add(import);
         content.Children.Add(tools);
+        var extensionRequest = Action("补充需求并生成开发任务…");
+        extensionRequest.Click += async (_, _) => await CreateUsageExtensionAsync(selected.Id);
+        content.Children.Add(extensionRequest);
         if (usageSnapshot.DismissedSuggestions > 0)
         {
             var restore = Action($"重新显示已处理建议（{usageSnapshot.DismissedSuggestions}）");
@@ -111,7 +114,7 @@ public sealed partial class WorkbenchWindow
             }
             var feedback = Row(8); var ignore = Action("忽略"); ignore.Click += async (_, _) => await UsageCommandAsync("feedback", selected.Id, suggestion.Id, "ignored"); feedback.Children.Add(ignore);
             var irrelevant = Action("不符合需求"); irrelevant.Click += async (_, _) => await UsageCommandAsync("feedback", selected.Id, suggestion.Id, "irrelevant"); feedback.Children.Add(irrelevant);
-            var extension = Action("补充需求…"); extension.Click += async (_, _) => await CreateUsageExtensionAsync(selected.Id); feedback.Children.Add(extension);
+            var extension = Action("补充需求…"); extension.Click += async (_, _) => await CreateUsageExtensionAsync(selected.Id, suggestion); feedback.Children.Add(extension);
             card.Children.Add(feedback); content.Children.Add(Card(card));
         }
         if (usageSnapshot.Suggestions is not { Length: > 0 }) content.Children.Add(Text("目前没有足够重复证据，或建议已处理。可使用摘要与 AI 分析，不会自动配置规则。", 13, Muted));
@@ -134,7 +137,17 @@ public sealed partial class WorkbenchWindow
         var purpose = new TextBox { Header = "我刚才在做什么、希望减少什么操作", Text = session.Options.Purpose, MaxLength = 500, AcceptsReturn = true, Height = 120 };
         body.Children.Add(purpose); body.Children.Add(Text("只补充你对这次观察的说明，不改动事件证据。这段文字会进入摘要预览，请避免填写账号、私人内容或完整路径。可清空。", 12, Muted));
         var dialog = new ContentDialog { Title = "补充观察目的", Content = body, PrimaryButtonText = "保存", CloseButtonText = "取消", DefaultButton = ContentDialogButton.Close, XamlRoot = shell.XamlRoot };
-        if (await ShowDialogAsync(dialog) == ContentDialogResult.Primary) await UsageCommandAsync("annotate", session.Id, text: purpose.Text);
+        var error = Text("", 12, Amber); body.Children.Add(error); var submitting = false;
+        dialog.Closing += (_, args) => { if (submitting) args.Cancel = true; };
+        dialog.PrimaryButtonClick += async (sender, args) =>
+        {
+            var deferral = args.GetDeferral(); submitting = true; purpose.IsEnabled = false;
+            error.Text = "正在保存本次目的…";
+            try { await UsageAsync(new("annotate", SessionId: session.Id, Text: purpose.Text, Offset: usageOffset)); }
+            catch (Exception failure) { args.Cancel = true; error.Text = "保存未确认，输入已保留：" + failure.Message; }
+            finally { purpose.IsEnabled = true; submitting = false; deferral.Complete(); }
+        };
+        if (await ShowDialogAsync(dialog) == ContentDialogResult.Primary) Render();
     }
 
     private async Task StartUsageAsync()
@@ -284,12 +297,15 @@ public sealed partial class WorkbenchWindow
     {
         editor.LoadDraft(draft); editing = true; notice.IsOpen = false; Render();
     }
-    private async Task CreateUsageExtensionAsync(string id)
+    private async Task CreateUsageExtensionAsync(string id, UsageSuggestion? suggestion = null)
     {
-        var title = new TextBox { Header = "希望解决什么问题", MaxLength = 120 };
+        var title = new TextBox { Header = "希望解决什么问题", MaxLength = 120, Text = suggestion?.Title ?? "" };
         var description = new TextBox { Header = "操作前后对比、希望自动完成的步骤（不填路径或个人信息）", AcceptsReturn = true, Height = 180, MaxLength = 2000 };
-        var body = Column(10); body.Children.Add(title); body.Children.Add(description);
-        var dialog = new ContentDialog { Title = "补充并确认扩展需求", Content = body, PrimaryButtonText = "生成任务包", CloseButtonText = "取消", XamlRoot = shell.XamlRoot };
+        var body = Column(10);
+        if (suggestion is not null)
+            body.Children.Add(Text("观察线索：" + suggestion.Evidence + "\n这不证明存在重复劳动或缺少能力。请在下面说明希望改变的行为；不会默认附带观察记录或对象映射。", 12, Muted));
+        body.Children.Add(title); body.Children.Add(description);
+        var dialog = new ContentDialog { Title = "补充并确认扩展需求", Content = new ScrollViewer { Content = body, MaxHeight = Math.Clamp(shell.ActualHeight - 230, 180, 500), VerticalScrollBarVisibility = ScrollBarVisibility.Auto }, PrimaryButtonText = "生成任务包", CloseButtonText = "取消", XamlRoot = shell.XamlRoot };
         var error = Text("", 12, Amber); body.Children.Add(error);
         string? package = null; var submitting = false;
         dialog.Closing += (_, args) => { if (submitting) args.Cancel = true; };
