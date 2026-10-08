@@ -20,6 +20,7 @@ public static class AutomationTemplates
         new("window-prepare", "窗口出现后整理", "选择检测和目标程序，再选择布局；初始已有窗口不补执行，多窗口时只处理一个匹配窗口。", WindowPresenceCapabilities.Visible, WindowCapabilities.State, [], [("state", "maximize")]),
         new("focus-layout", "切到应用时摆到左半屏", "选择前台应用与目标程序；按触发时的显示器工作区整理一次，之后手动调整不会被持续干预。", ForegroundCapabilities.Active, WindowCapabilities.State, [], [("state", "left")]),
         new("display-layout", "显示变化后整理窗口", "选择目标程序和布局；显示模式通知后整理一次，按该窗口当前显示器处理，不识别特定屏幕组合、不恢复旧布局。", SystemEventCapabilities.Event, WindowCapabilities.State, [("event", "display-changed")], [("state", "left")]),
+        new("lock-mute", "锁屏后静音默认播放设备", "锁屏时静音一次，不停止播放、不改麦克风，解锁不自动恢复。之后可手动取消静音；请审阅后启用。", SystemEventCapabilities.Event, AudioPlaybackCapabilities.Set, [("event", "locked")], [("operation", "mute")]),
         new("once-meeting", "指定日期打开会议页面", "填写日期、本地时刻和http/https会议网址；只等待未来时刻，不补发已错过的会议，不自动加入或操作会议。", OnceTimeCapabilities.Due, OpenTargetCapabilities.Open, [], [("kind", "url")]),
         new("daily-work-folder", "工作日定时打开目录", "填写工作目录，选择本地时刻和星期；默认周一至周五9点。只等未来时刻，错过不补发，也不唤醒电脑。", DailyTimeCapabilities.Due, OpenTargetCapabilities.Open, [], [("kind", "folder")]),
         new("regular-reminder", "定期打开提醒页", "填写提醒页的 http/https 网址和间隔；首次也需等待完整间隔，每次到期会请求打开一次，请避免过短间隔造成重复标签页。", IntervalCapabilities.Elapsed, OpenTargetCapabilities.Open, [], [("kind", "url")]),
