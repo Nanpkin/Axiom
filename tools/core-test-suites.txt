@@ -44,3 +44,4 @@ IntervalTests
 AudioCapabilityTests
 
 DailyTimeTests
+OnceTimeTests

@@ -85,3 +85,5 @@ USB类别通知：`WindowsSessionEvents` 注册USB接口GUID、处理接入/移�
 默认音频：`AudioCapabilities`/`AudioPlugin` 声明与事件编译，`AudioCapabilityProvider` 计数/Unknown隔离；`WindowsAudioEvents` 的MTA COM通知注册与共享租约，不读设备标识；`UsageOptions.AudioEvents` 独立默认关闭，复用观察/证据/导入链。`SessionCapabilityProvider.cs` 承载原有Provider接口和更新类型，服务器职责不变，便于验证音频失败不结束其他检测。
 
 日历定时：`DailyTimeCapabilities` 声明、星期掩码和DST计算，`DailyTimePlugin` 编译，Agent 的 `DailyTimeCapabilityProvider`/`DailyEventSource` 管理最近deadline和失败隔离；`WindowsSessionEvents(clockOnly: true)` 仅交付时钟/设置/恢复信号，不积累普通系统事件。`DailyTimeTests` 验证合成时区与可控时钟，`WindowsSessionEventTests` 验证真实隐藏窗口消息与租约。
+
+单次日期：`OnceTimeCapabilities` 校验真实日期/资源与DST，`OnceTimePlugin` 编译，Agent `OnceTimeCapabilityProvider`/`OnceEventSource` 共享时钟通知和最近deadline；过期/已到期状态由Host转为可读检测原因。`OnceTimeTests` 覆盖时区重算、远期分块、终止不重发与取消；导入继续强制校验后才提供暂停草稿。
