@@ -68,9 +68,10 @@ public static class UsageAnalysis
             $"{g.Count()} 次在 {SystemName(g.Key.Kind)} 后一分钟内启动；此事件共出现 {session.Events.Count(e => e.Kind == g.Key.Kind)} 次。",
             "来源未知，不证明是手动操作或因果。先确认这是你希望自动完成的步骤。候选只启动一次，已运行则跳过；之后不自动关闭。缺口或 Axiom 动作会中断序列，已知动作目标不参加分析。" + (g.Key.Kind == "system-usb-arrived" ? "触发范围是任意USB设备接入通知，不能筛选某个设备；复合设备或系统重枚举可能产生多次。" : g.Key.Kind.StartsWith("audio-", StringComparison.Ordinal) ? "触发范围是Windows默认音频角色变化，不能筛选具体设备；应用自己的音频选择可能不受影响。" : ""),
             [g.Key.ObjectId!], g.Count(), session.Events.Count(e => e.Kind == g.Key.Kind), g.Key.Kind.StartsWith("audio-", StringComparison.Ordinal) ? g.Key.Kind : g.Key.Kind[7..], Evidence(session, g)));
-        return [.. environmentWindows.Concat(focusWindows).Concat(afterEvents).Concat(starts).Concat(exits).Concat(windowCleanup).Concat(windows).Concat(switches).OrderByDescending(s => s.Occurrences).Take(12).Select(s =>
+        return [.. environmentWindows.Concat(focusWindows).Concat(afterEvents).Concat(starts).Concat(exits).Concat(windowCleanup).Concat(windows).Concat(switches).Select(s =>
             s.Kind == "existing" && !s.ObjectIds.All(id => CanUse(session.Objects.Single(o => o.Id == id).Executable))
-                ? s with { Kind = "insufficient", Limitation = s.Limitation + "此对象不符合当前程序动作的安全范围，不能生成规则。" } : s)];
+                ? s with { Kind = "insufficient", Limitation = s.Limitation + "此对象不符合当前程序动作的安全范围，不能生成规则。" } : s)
+            .OrderBy(s => s.Kind == "existing" ? 0 : 1).ThenByDescending(s => s.Occurrences).ThenBy(s => s.Id, StringComparer.Ordinal).Take(12)];
     }
     private static IEnumerable<(UsageEvent First, UsageEvent Second)> ForegroundLayoutPairs(UsageSession session)
     {
@@ -264,7 +265,7 @@ public static class UsageAnalysis
             {
                 patterns = suggestions.Take(6).ToArray(), evidence = body.evidence.Take(3),
                 capabilities = body.capabilities.Select(c => c with { Description = "", Behavior = "", EditWarning = "", Fields = [.. c.Fields.Select(f => f with { Hint = "" })] }).ToArray(),
-                omissions = body.omissions + "为满足大小上限，仅保留出现次数最高的 6 个模式、3 条代表事件；省略能力说明和字段提示，保留完整能力 ID、版本、参数类型、范围、选项及组合。"
+                omissions = body.omissions + "为满足大小上限，仅保留优先级最高的 6 个模式（可审阅规则优先，再按次数）、3 条代表事件；省略能力说明和字段提示，保留完整能力 ID、版本、参数类型、范围、选项及组合。"
             };
             result = JsonSerializer.Serialize(body, CompactJson);
         }
