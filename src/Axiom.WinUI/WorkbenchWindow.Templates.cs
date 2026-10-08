@@ -16,7 +16,7 @@ public sealed partial class WorkbenchWindow
         var details = Text(templates[0].Description, 14, Muted);
         choices.SelectionChanged += (_, _) => { if (choices.SelectedIndex >= 0) details.Text = templates[choices.SelectedIndex].Description; };
         body.Children.Add(choices); body.Children.Add(details);
-        body.Children.Add(Text("这是未保存、默认暂停的草稿，不会执行。打开编辑器后仍需选择程序、目录或快捷键，再审阅、保存并启用；所有参数沿用正常校验。", 12, Muted));
+        body.Children.Add(Text("这是未保存、默认暂停的草稿，不会执行。打开编辑器后仍需填写所需内容并选择对象，再审阅、保存并启用；所有参数沿用正常校验。", 12, Muted));
         var dialog = new ContentDialog { Title = "从常用场景开始", Content = body, PrimaryButtonText = "打开暂停草稿", CloseButtonText = "取消", DefaultButton = ContentDialogButton.Close, XamlRoot = shell.XamlRoot };
         if (await ShowDialogAsync(dialog) == ContentDialogResult.Primary && choices.SelectedIndex >= 0) SelectDraft(templates[choices.SelectedIndex].Draft);
     }

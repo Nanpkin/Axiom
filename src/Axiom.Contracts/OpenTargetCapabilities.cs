@@ -10,7 +10,7 @@ public static class OpenTargetCapabilities
     public static TaskCapability Descriptor { get; } = new(Open, 1, TaskCapabilityKind.Action, "日常工具", "打开目录、文档或网页",
         "用资源管理器打开目录、默认关联应用打开本机文档，或默认浏览器打开http/https网页。",
         [new("kind", "打开什么", TaskFieldKind.Choice, true, "文档仅支持列出的常见格式，不接受脚本、程序、快捷方式或自定义协议。", "folder", 16, [new("folder", "目录"), new("document", "本机文档或图片"), new("url", "网页")]),
-         new("target", "目录/文档路径或网址", TaskFieldKind.Text, true, "本机完整路径；文档支持pdf/txt/md/rtf/csv/docx/xlsx/pptx/odt/ods/odp/jpg/jpeg/png/bmp/gif/webp。网页只支持无账号密码的http/https。", null, 2048, []),
+         new("target", "目录/文档路径或网址", TaskFieldKind.Text, true, "本机完整路径；文档支持pdf/txt/md/rtf/csv/docx/xlsx/pptx/odt/ods/odp/jpg/jpeg/png/bmp/gif/webp。网页只支持无账号密码的http/https。", null, 2048, [], BrowseLocalPath: true),
          new("delaySeconds", "延迟执行（秒）", TaskFieldKind.Number, true, "等待由规则调度；暂停会取消尚未打开的请求。", "0", 8, [], 0, 86400)],
         "每次触发请求打开一次；文档交给Windows默认关联应用，不传入参数、不读取内容。暂停不关闭已打开的窗口；成功仅表示系统接受请求，不代表应用已载入文档或网页。",
         "会显示窗口或标签页；频繁触发可能重复打开。文档应来自可信来源，默认关联由Windows决定；此动作不检查文档内容。只处理明确配置的本机路径/网址，不执行任意命令，不支持网络共享。");

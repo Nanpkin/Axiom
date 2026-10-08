@@ -9,7 +9,7 @@ public static class NotificationCapabilities
     public static TaskCapability Descriptor { get; } = new(Show, 1, TaskCapabilityKind.Action, "提醒", "显示桌面提醒",
         "通过Windows通知区域请求显示一条文字提醒，不打开浏览器。",
         [new("title", "提醒标题", TaskFieldKind.Text, true, "最多63个字符，不含控制字符。", "Axiom 提醒", 63, []),
-         new("body", "提醒内容", TaskFieldKind.Text, true, "最多255个字符，可换行；只显示文字，不打开链接或执行内容。", null, 255, []),
+         new("body", "提醒内容", TaskFieldKind.TextList, true, "最多255个字符，可换行；只显示文字，不打开链接或执行内容。", null, 255, []),
          new("sound", "请求系统提示音", TaskFieldKind.Boolean, true, "默认关闭；实际通知行为由Windows设置决定。", "false", 5, []),
          new("delaySeconds", "延迟执行（秒）", TaskFieldKind.Number, true, "由规则调度，暂停取消尚未开始的提醒。", "0", 5, [], Minimum: 0, Maximum: 86400)],
         "一次只处理一条提醒，不排队补发；临时托盘图标最多保留约10秒，通知显示时长由Windows决定。UI退出仍可触发，点击提醒不执行其他动作。",
