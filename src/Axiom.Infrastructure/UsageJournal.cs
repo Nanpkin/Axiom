@@ -47,6 +47,16 @@ public sealed class UsageJournal : IDisposable
         using var command = connection.CreateCommand(); command.CommandText = "INSERT INTO usage_feedback VALUES($s,$id,$v) ON CONFLICT(session,id) DO UPDATE SET value=$v; DELETE FROM usage_feedback WHERE rowid NOT IN (SELECT rowid FROM usage_feedback ORDER BY rowid DESC LIMIT 256);";
         command.Parameters.AddWithValue("$s", session); command.Parameters.AddWithValue("$id", id); command.Parameters.AddWithValue("$v", value); command.ExecuteNonQuery();
     }
+    public void RestoreFeedback(string[] ids)
+    {
+        if (ids.Length > 12 || ids.Any(id => string.IsNullOrWhiteSpace(id) || id.Length > 200)) throw new ArgumentException("建议反馈范围无效。");
+        using var transaction = connection.BeginTransaction();
+        using var command = connection.CreateCommand(); command.Transaction = transaction;
+        command.CommandText = "DELETE FROM usage_feedback WHERE id=$id";
+        var parameter = command.Parameters.AddWithValue("$id", "");
+        foreach (var id in ids.Distinct()) { parameter.Value = id; command.ExecuteNonQuery(); }
+        transaction.Commit();
+    }
     public HashSet<string> Dismissed(string? session)
     {
         using var command = connection.CreateCommand(); command.CommandText = session is null ? "SELECT id FROM usage_feedback" : "SELECT id FROM usage_feedback WHERE session=$s"; if (session is not null) command.Parameters.AddWithValue("$s", session);

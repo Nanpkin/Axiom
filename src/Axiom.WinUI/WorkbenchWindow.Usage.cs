@@ -83,6 +83,13 @@ public sealed partial class WorkbenchWindow
         var export = Action("预览分析摘要…"); export.Click += async (_, _) => await PreviewUsageExportAsync(selected.Id); tools.Children.Add(export);
         var import = Action("导入 AI 建议…"); import.Click += async (_, _) => await ImportUsageAsync(selected.Id); tools.Children.Add(import);
         content.Children.Add(tools);
+        if (usageSnapshot.DismissedSuggestions > 0)
+        {
+            var restore = Action($"重新显示已处理建议（{usageSnapshot.DismissedSuggestions}）");
+            restore.Click += async (_, _) => await UsageCommandAsync("restore-suggestions", selected.Id);
+            content.Children.Add(restore);
+            content.Children.Add(Text("撤销与这次记录中已处理模式相关的本地反馈，让这些模式重新显示；不改观察或已有规则。生成草稿后未保存，也可从这里重新审阅。", 12, Muted));
+        }
         foreach (var suggestion in usageSnapshot.Suggestions ?? [])
         {
             var card = Column(8); card.Children.Add(Text(suggestion.Title + (suggestion.Kind == "existing" ? " · 可审阅规则" : " · 证据不足"), 17, Ink, true));

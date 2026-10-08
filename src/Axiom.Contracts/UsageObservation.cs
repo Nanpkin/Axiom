@@ -7,7 +7,7 @@ public sealed record UsageEvent(DateTimeOffset AtUtc, string Kind, string? Objec
 public sealed record UsageObject(string Id, string Executable);
 public sealed record UsageSession(string Id, DateTimeOffset StartedUtc, DateTimeOffset EndsUtc, string State,
     UsageOptions Options, UsageObject[] Objects, UsageEvent[] Events, string[] Gaps, DateTimeOffset? StoppedUtc = null);
-public sealed record UsageSnapshot(UsageSession[] Sessions, string? ActiveId, DateTimeOffset ReadAtUtc, UsageSession? Selected = null, int TotalEvents = 0, UsageSuggestion[]? Suggestions = null);
+public sealed record UsageSnapshot(UsageSession[] Sessions, string? ActiveId, DateTimeOffset ReadAtUtc, UsageSession? Selected = null, int TotalEvents = 0, UsageSuggestion[]? Suggestions = null, int DismissedSuggestions = 0);
 public sealed record UsageRequest(string Operation, UsageOptions? Options = null, string? SessionId = null, string? Text = null, string? FeedbackId = null, int Offset = 0);
 public sealed record UsageEvidence(int FromOffsetSeconds, int ToOffsetSeconds);
 public sealed record UsageSuggestion(string Id, string Kind, string Title, string Evidence, string Limitation,
@@ -28,13 +28,13 @@ public static class UsageValidation
     }
     public static void Request(UsageRequest request)
     {
-        if (request.Operation is not ("start" or "read" or "pause" or "resume" or "stop" or "delete" or "clear" or "feedback" or "export" or "import" or "extension" or "draft" or "catalog" or "catalog-readable" or "annotate") ||
+        if (request.Operation is not ("start" or "read" or "pause" or "resume" or "stop" or "delete" or "clear" or "feedback" or "restore-suggestions" or "export" or "import" or "extension" or "draft" or "catalog" or "catalog-readable" or "annotate") ||
             request.Operation == "start" != (request.Options is not null) ||
             request.SessionId is not null && !Guid.TryParseExact(request.SessionId, "D", out _) ||
             request.Text is not null && request.Text.Length > MaximumExportBytes || request.FeedbackId is not null && request.FeedbackId.Length > 200 || request.Offset is < 0 or > MaximumEvents)
             throw new ArgumentException("观察请求无效。");
         if (request.Options is not null) Options(request.Options);
-        if (request.Operation is "delete" or "feedback" or "export" or "import" or "extension" or "draft" or "annotate" && request.SessionId is null) throw new ArgumentException("请选择观察记录。");
+        if (request.Operation is "delete" or "feedback" or "restore-suggestions" or "export" or "import" or "extension" or "draft" or "annotate" && request.SessionId is null) throw new ArgumentException("请选择观察记录。");
         if (request.Operation == "annotate" && (request.Text is null || request.Text.Length > 500)) throw new ArgumentException("观察目的最多 500 字，可清空。");
         if (request.Operation == "feedback" && (request.Text is not ("accepted" or "ignored" or "irrelevant") || string.IsNullOrWhiteSpace(request.FeedbackId)))
             throw new ArgumentException("建议反馈无效。");
