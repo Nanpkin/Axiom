@@ -34,7 +34,7 @@ try {
         $revision = & git -C $AxiomRepoRoot rev-parse HEAD 2>$null
         if ($LASTEXITCODE -eq 0 -and $revision -match '^[a-f0-9]{40}$') {
             $sourceCommit = $revision
-            $changes = & git -C $AxiomRepoRoot status --porcelain --untracked-files=no
+            $changes = & git -C $AxiomRepoRoot status --porcelain --untracked-files=normal
             if ($LASTEXITCODE -ne 0) { throw 'Cannot determine source worktree status.' }
             $sourceDirty = [bool]$changes
         }
