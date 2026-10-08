@@ -30,7 +30,13 @@ public sealed class ObservedProcessExitTracker(Action<DateTimeOffset, string> pu
             using var cancel = lifetime.Token.Register(() => completion.TrySetCanceled(lifetime.Token));
             var wait = ThreadPool.RegisterWaitForSingleObject(handle, (_, _) => completion.TrySetResult(), null, Timeout.Infinite, executeOnlyOnce: true);
             try { await completion.Task.ConfigureAwait(false); }
-            finally { wait.Unregister(null); }
+            finally
+            {
+                // Windows unregisters asynchronously unless given a completion event.
+                // The callback only completes an asynchronous TCS and never takes our gate.
+                using var unregistered = new ManualResetEvent(false);
+                if (wait.Unregister(unregistered)) unregistered.WaitOne();
+            }
             lifetime.Token.ThrowIfCancellationRequested();
             publish(exitTime(), executable);
         }
