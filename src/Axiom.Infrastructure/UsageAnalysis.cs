@@ -33,12 +33,18 @@ public static class UsageAnalysis
                 $"{g.Count()} 次在 30 秒内相继启动；前一个程序共出现 {session.Events.Count(e => e.Kind == "process-start" && e.ObjectId == g.Key.Item1)} 次启动机会。",
                 "来源未知，相关不代表因果。仅在你确认属于重复准备工作后审阅规则。检测按程序名，启动按完整路径；已经运行则跳过，结束后不自动关闭。已有 Axiom 动作或记录缺口之间的序列不计入；本次已知 Axiom 动作目标不参与建议。",
                 [g.Key.Item1!, g.Key.Item2!], g.Count(), session.Events.Count(e => e.Kind == "process-start" && e.ObjectId == g.Key.Item1), EvidenceSamples: Evidence(session, g)));
+        var exits = Pairs(session, "process-exit", TimeSpan.FromSeconds(30)).GroupBy(p => (p.First.ObjectId, p.Second.ObjectId))
+            .Where(g => g.Count() >= 3).OrderByDescending(g => g.Count()).Take(8).Select(g => new UsageSuggestion(
+                "exit:" + g.Key.Item1 + ":" + g.Key.Item2, "existing", "经常相继退出两个程序",
+                $"{g.Count()} 次在 30 秒内相继退出；前一个程序有 {session.Events.Count(e => e.Kind == "process-exit" && e.ObjectId == g.Key.Item1)} 次已观察退出机会。",
+                "退出原因未知，可能是自动退出或崩溃，不证明手动收尾。只覆盖观察期间新核验的进程。候选在检测程序的最后实例退出时，请求正常关闭配套程序最近启动的一个实例；不强制结束、不自动重开。多实例退出次数不等同规则触发次数；未保存内容可能需要确认。Axiom 动作目标和记录缺口不参与序列。",
+                [g.Key.Item1!, g.Key.Item2!], g.Count(), session.Events.Count(e => e.Kind == "process-exit" && e.ObjectId == g.Key.Item1), EvidenceSamples: Evidence(session, g)));
         var afterEvents = SystemPairs(session).GroupBy(p => (p.First.Kind, p.Second.ObjectId)).Where(g => g.Count() >= 3).Select(g => new UsageSuggestion(
             "event:" + g.Key.Kind + ":" + g.Key.ObjectId, "existing", "系统事件后反复打开同一程序",
             $"{g.Count()} 次在 {SystemName(g.Key.Kind)} 后一分钟内启动；此事件共出现 {session.Events.Count(e => e.Kind == g.Key.Kind)} 次。",
             "来源未知，不证明是手动操作或因果。先确认这是你希望自动完成的步骤。候选只启动一次，已运行则跳过；之后不自动关闭。缺口或 Axiom 动作会中断序列，已知动作目标不参加分析。",
             [g.Key.ObjectId!], g.Count(), session.Events.Count(e => e.Kind == g.Key.Kind), g.Key.Kind[7..], Evidence(session, g)));
-        return [.. afterEvents.Concat(starts).Concat(switches).OrderByDescending(s => s.Occurrences).Take(12).Select(s =>
+        return [.. afterEvents.Concat(starts).Concat(exits).Concat(switches).OrderByDescending(s => s.Occurrences).Take(12).Select(s =>
             s.Kind == "existing" && !s.ObjectIds.All(id => CanUse(session.Objects.Single(o => o.Id == id).Executable))
                 ? s with { Kind = "insufficient", Limitation = s.Limitation + "此对象不符合当前程序动作的安全范围，不能生成规则。" } : s)];
     }
@@ -80,12 +86,15 @@ public static class UsageAnalysis
     public static AutomationTask Draft(UsageSession session, UsageSuggestion suggestion, AutomationSnapshot catalog)
     {
         if (suggestion.Kind != "existing" || suggestion.ObjectIds.Length != (suggestion.EventKind is null ? 2 : 1)) throw new ArgumentException("此建议尚不足以生成规则。");
-        var detection = catalog.Capabilities.Single(c => c.Id == (suggestion.EventKind is null ? "process.running" : SystemEventCapabilities.Event) && c.Kind == TaskCapabilityKind.Detection);
-        var action = catalog.Capabilities.Single(c => c.Id == "program.start" && c.Kind == TaskCapabilityKind.Action);
+        var closing = suggestion.Id.StartsWith("exit:", StringComparison.Ordinal);
+        var detection = catalog.Capabilities.Single(c => c.Id == (suggestion.EventKind is null ? closing ? "process.exited" : "process.running" : SystemEventCapabilities.Event) && c.Kind == TaskCapabilityKind.Detection);
+        var action = catalog.Capabilities.Single(c => c.Id == (closing ? "program.close" : "program.start") && c.Kind == TaskCapabilityKind.Action);
         TaskInvocation Make(TaskCapability capability, string field, string alias) => new(capability.Id, capability.SchemaVersion,
             capability.Fields.Where(f => f.DefaultValue is not null).ToImmutableDictionary(f => f.Id, f => f.DefaultValue!).SetItem(field, alias));
-        var candidate = new UsageImport(1, session.Id, "existing", "启动配套程序", suggestion.Evidence,
-            suggestion.EventKind is null ? Make(detection, detection.Fields.Single(f => f.Kind == TaskFieldKind.ProcessSelection).Id, suggestion.ObjectIds[0]) : Make(detection, "event", suggestion.EventKind), Make(action, "executable", suggestion.ObjectIds[^1]));
+        var actionInvocation = Make(action, "executable", suggestion.ObjectIds[^1]);
+        if (closing) actionInvocation = actionInvocation with { Parameters = actionInvocation.Parameters.SetItem("mode", "graceful").SetItem("instances", "latest") };
+        var candidate = new UsageImport(1, session.Id, "existing", closing ? "退出后关闭配套程序" : "启动配套程序", suggestion.Evidence,
+            suggestion.EventKind is null ? Make(detection, detection.Fields.Single(f => f.Kind == TaskFieldKind.ProcessSelection).Id, suggestion.ObjectIds[0]) : Make(detection, "event", suggestion.EventKind), actionInvocation);
         return Import(JsonSerializer.Serialize(candidate), session, catalog).Draft!;
     }
     private static TaskCapability[] SafeCatalog(AutomationSnapshot catalog) => [.. catalog.Capabilities.Select(c => c with
@@ -103,7 +112,10 @@ public static class UsageAnalysis
             text.AppendLine($"## {capability.Name} ({capability.Id}, schema {capability.SchemaVersion})").AppendLine();
             text.AppendLine(capability.Description).AppendLine().AppendLine(capability.Behavior).AppendLine();
             foreach (var field in capability.Fields)
+            {
                 text.AppendLine($"- {field.Id} / {field.Label}: {field.Kind}; {(field.Required ? "必填" : "选填")}; 默认 {field.DefaultValue ?? "无"}; 范围 {field.Minimum}–{field.Maximum}; {field.Hint}");
+                if (!field.Choices.IsEmpty) text.AppendLine("  可选值：" + string.Join("；", field.Choices.Select(c => $"{c.Value} = {c.Label}")));
+            }
             text.AppendLine().AppendLine(capability.EditWarning).AppendLine();
         }
         text.AppendLine("## 已接通组合").AppendLine();
@@ -122,7 +134,7 @@ public static class UsageAnalysis
         var body = new
         {
             version = 1, sessionId = session.Id, environment = new { platform = "Windows 11 x64", source = "user-enabled-metadata-observation" },
-            coverage = new { plannedMinutes = (session.EndsUtc - session.StartedUtc).TotalMinutes, stoppedAfterSeconds = session.StoppedUtc is { } stopped ? (double?)(stopped - session.StartedUtc).TotalSeconds : null, firstEventOffset = session.Events.FirstOrDefault() is { } first ? (double?)(first.AtUtc - session.StartedUtc).TotalSeconds : null, lastEventOffset = session.Events.LastOrDefault() is { } last ? (double?)(last.AtUtc - session.StartedUtc).TotalSeconds : null, session.State, events = session.Events.Length, session.Options.Foreground, session.Options.ProcessStarts, session.Options.SystemEvents, gaps = session.Gaps },
+            coverage = new { plannedMinutes = (session.EndsUtc - session.StartedUtc).TotalMinutes, stoppedAfterSeconds = session.StoppedUtc is { } stopped ? (double?)(stopped - session.StartedUtc).TotalSeconds : null, firstEventOffset = session.Events.FirstOrDefault() is { } first ? (double?)(first.AtUtc - session.StartedUtc).TotalSeconds : null, lastEventOffset = session.Events.LastOrDefault() is { } last ? (double?)(last.AtUtc - session.StartedUtc).TotalSeconds : null, session.State, events = session.Events.Length, session.Options.Foreground, session.Options.ProcessStarts, session.Options.ProcessExits, session.Options.SystemEvents, gaps = session.Gaps },
             objects = session.Objects.Select(o => new { id = o.Id, kind = "application" }),
             patterns = suggestions,
             evidence = session.Events.Where(e => e.Kind != "gap").Take(12).Select(e => new { offsetSeconds = (int)(e.AtUtc - session.StartedUtc).TotalSeconds, e.Kind, e.ObjectId, e.Origin, e.DwellSeconds }),

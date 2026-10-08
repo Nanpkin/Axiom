@@ -30,3 +30,5 @@ OpenTargetTests
 ForegroundTests
 
 WindowPresenceTests
+
+ObservedProcessExitTests
