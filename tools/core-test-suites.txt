@@ -42,3 +42,5 @@ BatteryThresholdTests
 IntervalTests
 
 AudioCapabilityTests
+
+DailyTimeTests

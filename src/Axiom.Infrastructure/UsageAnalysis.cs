@@ -265,6 +265,7 @@ public static class UsageAnalysis
             AutomationTaskCompiler.ValidateInvocation(resolved, capability);
             // Provider-specific constraints are also checked before offering the draft.
             if (resolved.CapabilityId == AudioCapabilities.Changed) AudioCapabilities.Validate(resolved);
+            if (resolved.CapabilityId == DailyTimeCapabilities.Due) DailyTimeCapabilities.Validate(resolved);
             if (resolved.CapabilityId == IntervalCapabilities.Elapsed) IntervalCapabilities.Validate(resolved);
             if (resolved.CapabilityId == SystemEventCapabilities.Event) SystemEventCapabilities.Validate(resolved);
             if (resolved.CapabilityId is WindowCapabilities.Close or WindowCapabilities.State) WindowCapabilities.ValidateTargets(resolved);

@@ -113,6 +113,19 @@ public sealed class WindowsSessionEventTests
         }
         finally { Marshal.FreeHGlobal(buffer); }
     }
+    [Fact(Timeout = 10000)]
+    public async Task ClockOnlyLeaseReceivesRecalculationSignalsWithoutAccumulatingSystemEvents()
+    {
+        using var system = new WindowsSessionEvents(); using var clock = new WindowsSessionEvents(clockOnly: true);
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+        SendMessage(clock.NotificationWindow, 0x001E, 0, 0);
+        Assert.Equal((byte)1, await clock.ClockChanges.ReadAsync(deadline.Token)); Assert.False(system.ClockChanges.TryRead(out _));
+        SendMessage(clock.NotificationWindow, 0x0218, 0x12, 0);
+        Assert.Equal((byte)1, await clock.ClockChanges.ReadAsync(deadline.Token));
+        string kind; do { kind = await system.Events.ReadAsync(deadline.Token); } while (kind != "resumed");
+        Assert.False(clock.Events.TryRead(out _));
+        clock.Dispose(); Assert.Equal(1, WindowsSessionEvents.ActiveConsumers); Assert.False(system.Events.Completion.IsCompleted);
+    }
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern nint SendMessage(nint window, uint message, nint w, nint l);
 
 }

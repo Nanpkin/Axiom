@@ -83,3 +83,5 @@ Host 自身生命周期检测位于 Host：`AxiomStartupPlugin → PluginTaskRun
 USB类别通知：`WindowsSessionEvents` 注册USB接口GUID、处理接入/移除头并注销句柄，不解析设备名称字段；经系统检测及主动观察进入 `UsageAnalysis.SystemPairs`，保留任意设备/重复通知限制。`WindowsSessionEventTests` 的合成通知验证共享投递，不模拟物理插拔。
 
 默认音频：`AudioCapabilities`/`AudioPlugin` 声明与事件编译，`AudioCapabilityProvider` 计数/Unknown隔离；`WindowsAudioEvents` 的MTA COM通知注册与共享租约，不读设备标识；`UsageOptions.AudioEvents` 独立默认关闭，复用观察/证据/导入链。`SessionCapabilityProvider.cs` 承载原有Provider接口和更新类型，服务器职责不变，便于验证音频失败不结束其他检测。
+
+日历定时：`DailyTimeCapabilities` 声明、星期掩码和DST计算，`DailyTimePlugin` 编译，Agent 的 `DailyTimeCapabilityProvider`/`DailyEventSource` 管理最近deadline和失败隔离；`WindowsSessionEvents(clockOnly: true)` 仅交付时钟/设置/恢复信号，不积累普通系统事件。`DailyTimeTests` 验证合成时区与可控时钟，`WindowsSessionEventTests` 验证真实隐藏窗口消息与租约。

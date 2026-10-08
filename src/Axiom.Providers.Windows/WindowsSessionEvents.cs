@@ -13,13 +13,17 @@ public sealed class WindowsSessionEvents : IDisposable
     private static readonly object Gate = new();
     private static Hub? shared;
     private readonly Channel<string> queue = Channel.CreateBounded<string>(64);
+    private readonly Channel<byte> clocks = Channel.CreateBounded<byte>(new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropOldest });
+    private readonly bool clockOnly;
     private bool disposed;
     private readonly Hub owner;
     public static int ActiveConsumers { get { lock (Gate) return shared?.Clients.Count ?? 0; } }
     public ChannelReader<string> Events => queue.Reader;
+    public ChannelReader<byte> ClockChanges => clocks.Reader;
     internal nint NotificationWindow => owner.Window;
-    public WindowsSessionEvents()
+    public WindowsSessionEvents(bool clockOnly = false)
     {
+        this.clockOnly = clockOnly;
         lock (Gate)
         {
             shared ??= new Hub(); owner = shared; owner.Clients.Add(this);
@@ -37,7 +41,7 @@ public sealed class WindowsSessionEvents : IDisposable
         var last = false;
         lock (Gate)
         {
-            if (disposed) return; disposed = true; queue.Writer.TryComplete();
+            if (disposed) return; disposed = true; queue.Writer.TryComplete(); clocks.Writer.TryComplete();
             owner.Clients.Remove(this);
             if (owner.Clients.Count == 0)
             {
@@ -90,7 +94,7 @@ public sealed class WindowsSessionEvents : IDisposable
             catch (Exception error)
             {
                 Ready.TrySetException(error);
-                lock (Gate) foreach (var client in Clients) client.queue.Writer.TryComplete(new IOException("系统通知中断。", error));
+                Complete(new IOException("系统通知中断。", error));
             }
             finally
             {
@@ -100,7 +104,7 @@ public sealed class WindowsSessionEvents : IDisposable
                 if (notified) WTSUnRegisterSessionNotification(Window);
                 if (Window != 0) DestroyWindow(Window);
                 if (registered) UnregisterClass(name, instance);
-                lock (Gate) foreach (var client in Clients) client.queue.Writer.TryComplete(new IOException("系统通知已停止。"));
+                Complete(new IOException("系统通知已停止。"));
                 Stopped.TrySetResult();
             }
         }
@@ -114,6 +118,7 @@ public sealed class WindowsSessionEvents : IDisposable
         }
         private nint Handle(nint window, uint message, nint w, nint l)
         {
+            if (message is 0x001E or 0x001A) { ClockChanged(); return 0; } // clock/settings changes; no payload is read
             if (message == 0x0219 && w is 0x8000 or 0x8004 && l != 0)
             {
                 // DEV_BROADCAST_DEVICEINTERFACE: inspect only size/type/class GUID, never its device path.
@@ -131,7 +136,7 @@ public sealed class WindowsSessionEvents : IDisposable
             {
                 if (w == 0x8013 && l != 0 && Marshal.PtrToStructure<Guid>(l) == BatteryPercentage && Marshal.ReadInt32(l, 16) == sizeof(uint))
                     foreach (var kind in battery.Update(unchecked((uint)Marshal.ReadInt32(l, 20)))) Publish(kind);
-                if (w == 0x12) Publish("resumed"); // automatic resume; do not also emit the interactive-resume broadcast
+                if (w == 0x12) { ClockChanged(); Publish("resumed"); } // automatic resume; do not also emit the interactive-resume broadcast
                 if (w == 0x0A && GetSystemPowerStatus(out var status))
                 {
                     var before = supply; supply = status.AcLine;
@@ -142,10 +147,18 @@ public sealed class WindowsSessionEvents : IDisposable
             if (message == 0x10) { PostQuitMessage(0); return 0; }
             return DefWindowProc(window, message, w, l);
         }
+        private void ClockChanged()
+        {
+            lock (Gate) foreach (var client in Clients) if (client.clockOnly) client.clocks.Writer.TryWrite(1);
+        }
+        private void Complete(Exception error)
+        {
+            lock (Gate) foreach (var client in Clients) { client.queue.Writer.TryComplete(error); client.clocks.Writer.TryComplete(error); }
+        }
         private void Publish(string kind)
         {
             lock (Gate) foreach (var client in Clients)
-                if (!client.queue.Writer.TryWrite(kind)) client.queue.Writer.TryComplete(new IOException("系统事件队列已满，检测状态未知。"));
+                if (!client.clockOnly && !client.queue.Writer.TryWrite(kind)) client.queue.Writer.TryComplete(new IOException("系统事件队列已满，检测状态未知。"));
         }
     }
     [StructLayout(LayoutKind.Sequential)] private struct DeviceInterface { public uint Size, DeviceType, Reserved; public Guid ClassGuid; public ushort Name; }
