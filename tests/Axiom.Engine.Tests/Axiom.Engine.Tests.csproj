@@ -1,5 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <Compile Include="../../src/Axiom.Providers.Windows/UsageWindowHistory.cs" Link="UsageWindowHistory.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsUsageWindows.cs" Link="WindowsUsageWindows.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/ObservedProcessExitTracker.cs" Link="ObservedProcessExitTracker.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowPresenceState.cs" Link="WindowPresenceState.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsWindowPresence.cs" Link="WindowsWindowPresence.cs" />

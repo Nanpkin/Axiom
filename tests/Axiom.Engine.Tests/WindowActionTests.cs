@@ -146,6 +146,23 @@ public sealed class WindowActionTests
         target.SetState(6); Assert.True(target.Minimized); // no ongoing control after either command
     }
 
+    [Fact(Timeout = 15000)]
+    public async Task WindowObservationReadsActualStatesAndStopsWithoutAffectingCommandConsumers()
+    {
+        using var target = new TrayWindow(); using var cancellation = new CancellationTokenSource();
+        var changes = System.Threading.Channels.Channel.CreateUnbounded<string>();
+        var observing = WindowsUsageWindows.RunAsync([], (_, kind, path) => { if (string.Equals(path, Environment.ProcessPath, StringComparison.OrdinalIgnoreCase)) changes.Writer.TryWrite(kind); }, cancellation.Token);
+        async Task ReadKind(string expected) { while (await changes.Reader.ReadAsync() != expected) { } }
+        target.Show(); await ReadKind("window-shown");
+        target.SetState(3); await ReadKind("window-maximized");
+        target.SetState(6); await ReadKind("window-minimized");
+        target.SetState(9); await ReadKind("window-normal");
+        Assert.True((await WindowsWindowActions.CloseAsync(Environment.ProcessPath!, target.Title, TimeSpan.FromSeconds(2), default)).Success);
+        await ReadKind("window-hidden");
+        cancellation.Cancel(); await Assert.ThrowsAnyAsync<OperationCanceledException>(() => observing);
+        target.Show(); Assert.True((await WindowsWindowActions.CloseAsync(Environment.ProcessPath!, target.Title, TimeSpan.FromSeconds(2), default)).Success);
+    }
+
     // Native fixture deliberately implements × as hide-to-tray, retaining its process.
     private sealed class TrayWindow : IDisposable
     {

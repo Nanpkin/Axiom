@@ -67,3 +67,5 @@ Host 自身生命周期检测位于 Host：`AxiomStartupPlugin → PluginTaskRun
 - 窗口出现检测：`WindowPresenceCapabilities` / `WindowPresencePlugin` / `WindowPresenceCapabilityProvider`；`WindowsWindowPresence` 初始枚举后接共享 `WindowsWindowEvents`，`WindowPresenceState` 有界聚合。`WindowsProcessIdentity` 复用进程路径/SID核验；纯逻辑 `WindowPresenceTests`，原生回归 `WindowActionTests`。
 
 - 使用观察的进程退出：`WindowsUsageObservation` 核验新进程后交 `ObservedProcessExitTracker` 持有有界等待句柄；暂停/退出全释放。`UsageOptions.ProcessExits` 显式范围，`UsageAnalysis` 退出对生成正常关闭暂停草稿；`ObservedProcessExitTests`、`UsageObservationTests` 验证边界。
+
+- 窗口状态观察：`WindowsUsageWindows` / `UsageWindowHistory` 接共享窗口源，仅状态变化记录；`UsageOptions.WindowStates` 显式范围，`UsageAnalysis.WindowPairs` 经证据形成暂停草稿。`UsageWindowTests` 和原生 `WindowActionTests` 验证基线、去重、容量及真实状态。

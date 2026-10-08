@@ -12,7 +12,7 @@ public sealed record NativeUsageSample(DateTimeOffset AtUtc, string Kind, string
 [SupportedOSPlatform("windows")]
 public static class WindowsUsageObservation
 {
-    public static async Task RunAsync(bool foreground, bool starts, bool systemEvents, bool exits, string[] excludedApplications, Action<NativeUsageSample> publish, CancellationToken token)
+    public static async Task RunAsync(bool foreground, bool starts, bool systemEvents, bool exits, bool windowStates, string[] excludedApplications, Action<NativeUsageSample> publish, CancellationToken token)
     {
         using var currentProcess = Process.GetCurrentProcess();
         using var identity = WindowsIdentity.GetCurrent();
@@ -28,6 +28,7 @@ public static class WindowsUsageObservation
         if (system is not null) jobs.Add(System());
         if (source is not null) jobs.Add(Starts());
         if (window is not null) jobs.Add(Windows());
+        if (windowStates) jobs.Add(WindowsUsageWindows.RunAsync(excludedApplications, (at, kind, path) => publish(new(at, kind, path)), lifetime.Token));
         try { await await Task.WhenAny(jobs); }
         finally { lifetime.Cancel(); try { await Task.WhenAll(jobs.Where(t => !ReferenceEquals(t, exitTracker.Failure))); } catch (OperationCanceledException) { } }
 

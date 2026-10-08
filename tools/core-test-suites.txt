@@ -32,3 +32,5 @@ ForegroundTests
 WindowPresenceTests
 
 ObservedProcessExitTests
+
+UsageWindowTests

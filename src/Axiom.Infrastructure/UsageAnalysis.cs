@@ -39,14 +39,34 @@ public static class UsageAnalysis
                 $"{g.Count()} 次在 30 秒内相继退出；前一个程序有 {session.Events.Count(e => e.Kind == "process-exit" && e.ObjectId == g.Key.Item1)} 次已观察退出机会。",
                 "退出原因未知，可能是自动退出或崩溃，不证明手动收尾。只覆盖观察期间新核验的进程。候选在检测程序的最后实例退出时，请求正常关闭配套程序最近启动的一个实例；不强制结束、不自动重开。多实例退出次数不等同规则触发次数；未保存内容可能需要确认。Axiom 动作目标和记录缺口不参与序列。",
                 [g.Key.Item1!, g.Key.Item2!], g.Count(), session.Events.Count(e => e.Kind == "process-exit" && e.ObjectId == g.Key.Item1), EvidenceSamples: Evidence(session, g)));
+        var windows = WindowPairs(session).GroupBy(p => (p.Second.Kind, p.Second.ObjectId)).Where(g => g.Count() >= 3).Select(g => new UsageSuggestion(
+            "window:" + g.Key.Kind + ":" + g.Key.ObjectId, "existing", "窗口显示后反复调整状态",
+            $"{g.Count()} 次在窗口显示后 30 秒内观察到同一应用{(g.Key.Kind == "window-minimized" ? "最小化" : "最大化")}；该应用有 {session.Events.Count(e => e.Kind == "window-shown" && e.ObjectId == g.Key.ObjectId)} 次已观察显示机会。",
+            "来源未知，可能是应用自己调整，不证明手动操作。多窗口情况下不能确认是同一个窗口；候选仅在应用从无主窗口到有主窗口时整理一个匹配窗口，不会逐个处理后续窗口。请审阅目标和标题筛选。一次操作，之后手动改变不干预，结束不恢复。Axiom 动作目标和数据缺口排除。",
+            [g.Key.ObjectId!], g.Count(), session.Events.Count(e => e.Kind == "window-shown" && e.ObjectId == g.Key.ObjectId), EvidenceSamples: Evidence(session, g),
+            WindowState: g.Key.Kind == "window-minimized" ? "minimize" : "maximize"));
         var afterEvents = SystemPairs(session).GroupBy(p => (p.First.Kind, p.Second.ObjectId)).Where(g => g.Count() >= 3).Select(g => new UsageSuggestion(
             "event:" + g.Key.Kind + ":" + g.Key.ObjectId, "existing", "系统事件后反复打开同一程序",
             $"{g.Count()} 次在 {SystemName(g.Key.Kind)} 后一分钟内启动；此事件共出现 {session.Events.Count(e => e.Kind == g.Key.Kind)} 次。",
             "来源未知，不证明是手动操作或因果。先确认这是你希望自动完成的步骤。候选只启动一次，已运行则跳过；之后不自动关闭。缺口或 Axiom 动作会中断序列，已知动作目标不参加分析。",
             [g.Key.ObjectId!], g.Count(), session.Events.Count(e => e.Kind == g.Key.Kind), g.Key.Kind[7..], Evidence(session, g)));
-        return [.. afterEvents.Concat(starts).Concat(exits).Concat(switches).OrderByDescending(s => s.Occurrences).Take(12).Select(s =>
+        return [.. afterEvents.Concat(starts).Concat(exits).Concat(windows).Concat(switches).OrderByDescending(s => s.Occurrences).Take(12).Select(s =>
             s.Kind == "existing" && !s.ObjectIds.All(id => CanUse(session.Objects.Single(o => o.Id == id).Executable))
                 ? s with { Kind = "insufficient", Limitation = s.Limitation + "此对象不符合当前程序动作的安全范围，不能生成规则。" } : s)];
+    }
+    private static IEnumerable<(UsageEvent First, UsageEvent Second)> WindowPairs(UsageSession session)
+    {
+        var automated = session.Events.Where(e => e.Kind == "axiom-action" && e.ObjectId is not null).Select(e => e.ObjectId).ToHashSet();
+        var shown = new Dictionary<string, UsageEvent>();
+        foreach (var item in session.Events.OrderBy(e => e.AtUtc))
+        {
+            if (item.Kind is "gap" or "axiom-action" || item.Kind.StartsWith("system-", StringComparison.Ordinal)) { shown.Clear(); continue; }
+            if (item.ObjectId is null || automated.Contains(item.ObjectId)) continue;
+            if (item.Kind == "window-shown") { shown[item.ObjectId] = item; continue; }
+            if (item.Kind == "window-hidden") { shown.Remove(item.ObjectId); continue; }
+            if (item.Kind is "window-minimized" or "window-maximized" && shown.Remove(item.ObjectId, out var first) && item.AtUtc - first.AtUtc <= TimeSpan.FromSeconds(30))
+                yield return (first, item);
+        }
     }
     private static bool CanUse(string path) { try { ExecutablePaths.ValidatePath(path); return true; } catch (ArgumentException) { return false; } }
     private static string SystemName(string kind) => kind switch { "system-unlocked" => "解锁", "system-resumed" => "唤醒", "system-ac" => "接通交流电", "system-battery" => "切换电池", "system-network-up" => "网络可用", _ => "系统变化" };
@@ -85,15 +105,16 @@ public static class UsageAnalysis
     }
     public static AutomationTask Draft(UsageSession session, UsageSuggestion suggestion, AutomationSnapshot catalog)
     {
-        if (suggestion.Kind != "existing" || suggestion.ObjectIds.Length != (suggestion.EventKind is null ? 2 : 1)) throw new ArgumentException("此建议尚不足以生成规则。");
+        if (suggestion.Kind != "existing" || suggestion.ObjectIds.Length != (suggestion.EventKind is null && suggestion.WindowState is null ? 2 : 1)) throw new ArgumentException("此建议尚不足以生成规则。");
         var closing = suggestion.Id.StartsWith("exit:", StringComparison.Ordinal);
-        var detection = catalog.Capabilities.Single(c => c.Id == (suggestion.EventKind is null ? closing ? "process.exited" : "process.running" : SystemEventCapabilities.Event) && c.Kind == TaskCapabilityKind.Detection);
-        var action = catalog.Capabilities.Single(c => c.Id == (closing ? "program.close" : "program.start") && c.Kind == TaskCapabilityKind.Action);
+        var detection = catalog.Capabilities.Single(c => c.Id == (suggestion.WindowState is not null ? WindowPresenceCapabilities.Visible : suggestion.EventKind is null ? closing ? "process.exited" : "process.running" : SystemEventCapabilities.Event) && c.Kind == TaskCapabilityKind.Detection);
+        var action = catalog.Capabilities.Single(c => c.Id == (suggestion.WindowState is not null ? WindowCapabilities.State : closing ? "program.close" : "program.start") && c.Kind == TaskCapabilityKind.Action);
         TaskInvocation Make(TaskCapability capability, string field, string alias) => new(capability.Id, capability.SchemaVersion,
             capability.Fields.Where(f => f.DefaultValue is not null).ToImmutableDictionary(f => f.Id, f => f.DefaultValue!).SetItem(field, alias));
         var actionInvocation = Make(action, "executable", suggestion.ObjectIds[^1]);
+        if (suggestion.WindowState is not null) actionInvocation = actionInvocation with { Parameters = actionInvocation.Parameters.SetItem("state", suggestion.WindowState) };
         if (closing) actionInvocation = actionInvocation with { Parameters = actionInvocation.Parameters.SetItem("mode", "graceful").SetItem("instances", "latest") };
-        var candidate = new UsageImport(1, session.Id, "existing", closing ? "退出后关闭配套程序" : "启动配套程序", suggestion.Evidence,
+        var candidate = new UsageImport(1, session.Id, "existing", suggestion.WindowState is not null ? "窗口出现后整理" : closing ? "退出后关闭配套程序" : "启动配套程序", suggestion.Evidence,
             suggestion.EventKind is null ? Make(detection, detection.Fields.Single(f => f.Kind == TaskFieldKind.ProcessSelection).Id, suggestion.ObjectIds[0]) : Make(detection, "event", suggestion.EventKind), actionInvocation);
         return Import(JsonSerializer.Serialize(candidate), session, catalog).Draft!;
     }
@@ -125,7 +146,7 @@ public static class UsageAnalysis
     // This local feedback key is never exported as an anonymous object identifier.
     public static string FeedbackKey(UsageSession session, UsageSuggestion suggestion)
     {
-        var text = suggestion.Id.Split(':')[0] + ":" + suggestion.EventKind + ":" + string.Join("|", suggestion.ObjectIds.Select(id => session.Objects.Single(o => o.Id == id).Executable.ToLowerInvariant()));
+        var text = suggestion.Id.Split(':')[0] + ":" + suggestion.EventKind + (suggestion.WindowState is null ? "" : ":" + suggestion.WindowState) + ":" + string.Join("|", suggestion.ObjectIds.Select(id => session.Objects.Single(o => o.Id == id).Executable.ToLowerInvariant()));
         return "local:" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(text)));
     }
     public static string Summary(UsageSession session, AutomationSnapshot catalog)
@@ -134,7 +155,7 @@ public static class UsageAnalysis
         var body = new
         {
             version = 1, sessionId = session.Id, environment = new { platform = "Windows 11 x64", source = "user-enabled-metadata-observation" },
-            coverage = new { plannedMinutes = (session.EndsUtc - session.StartedUtc).TotalMinutes, stoppedAfterSeconds = session.StoppedUtc is { } stopped ? (double?)(stopped - session.StartedUtc).TotalSeconds : null, firstEventOffset = session.Events.FirstOrDefault() is { } first ? (double?)(first.AtUtc - session.StartedUtc).TotalSeconds : null, lastEventOffset = session.Events.LastOrDefault() is { } last ? (double?)(last.AtUtc - session.StartedUtc).TotalSeconds : null, session.State, events = session.Events.Length, session.Options.Foreground, session.Options.ProcessStarts, session.Options.ProcessExits, session.Options.SystemEvents, gaps = session.Gaps },
+            coverage = new { plannedMinutes = (session.EndsUtc - session.StartedUtc).TotalMinutes, stoppedAfterSeconds = session.StoppedUtc is { } stopped ? (double?)(stopped - session.StartedUtc).TotalSeconds : null, firstEventOffset = session.Events.MinBy(e => e.AtUtc) is { } first ? (double?)(first.AtUtc - session.StartedUtc).TotalSeconds : null, lastEventOffset = session.Events.MaxBy(e => e.AtUtc) is { } last ? (double?)(last.AtUtc - session.StartedUtc).TotalSeconds : null, session.State, events = session.Events.Length, session.Options.Foreground, session.Options.ProcessStarts, session.Options.ProcessExits, session.Options.WindowStates, session.Options.SystemEvents, gaps = session.Gaps },
             objects = session.Objects.Select(o => new { id = o.Id, kind = "application" }),
             patterns = suggestions,
             evidence = session.Events.Where(e => e.Kind != "gap").Take(12).Select(e => new { offsetSeconds = (int)(e.AtUtc - session.StartedUtc).TotalSeconds, e.Kind, e.ObjectId, e.Origin, e.DwellSeconds }),
