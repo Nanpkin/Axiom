@@ -15,6 +15,8 @@ public sealed class SystemEventTests
     [InlineData("battery")]
     [InlineData("network-up")]
     [InlineData("network-down")]
+    [InlineData("battery-low20")]
+    [InlineData("battery-low10")]
     public void SessionSignalsCompileToEventEdgesAndSaveAsOrdinaryRules(string kind)
     {
         var detection = new TaskInvocation(SystemEventCapabilities.Event, 1, ImmutableDictionary<string,string>.Empty.Add("event", kind));
@@ -44,8 +46,12 @@ public sealed class SystemEventTests
         var selected = new UsageRecorder(new(5, false, false, [], SystemEvents: true), now);
         Assert.True(selected.Add(new(now, "system-unlocked")));
         Assert.Single(selected.Session.Events); Assert.Empty(selected.Session.Objects);
+        Assert.True(selected.Add(new(now.AddSeconds(1), "system-battery-low20")));
+        Assert.True(selected.Add(new(now.AddSeconds(2), "system-battery-low10")));
+        Assert.Empty(selected.Session.Objects);
         var other = new UsageRecorder(new(5, true, false, []), now);
         Assert.False(other.Add(new(now, "system-unlocked")));
+        Assert.False(other.Add(new(now, "system-battery-low20")));
         Assert.Throws<ArgumentException>(() => UsageValidation.Options(new(5, false, false, [])));
     }
 }

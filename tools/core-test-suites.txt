@@ -36,3 +36,5 @@ ObservedProcessExitTests
 UsageWindowTests
 
 AutomationTemplateTests
+
+BatteryThresholdTests
