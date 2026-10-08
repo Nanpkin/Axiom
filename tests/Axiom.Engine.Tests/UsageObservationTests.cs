@@ -13,7 +13,7 @@ public sealed class UsageObservationTests
     private static UsageRecorder Recorder() => new(new(5, true, true, ["Private.exe"]), Now);
     private static AutomationSnapshot Catalog()
     {
-        var modules = new IAutomationPlugin[] { new ProgramPlugin(), new WindowPlugin(), new SystemEventPlugin(), new IntervalPlugin(), new WindowPresencePlugin() };
+        var modules = new IAutomationPlugin[] { new ProgramPlugin(), new WindowPlugin(), new SystemEventPlugin(), new IntervalPlugin(), new AudioPlugin(), new WindowPresencePlugin() };
         return new([], [.. modules.SelectMany(m => m.Detections.Select(d => d.Descriptor).Concat(m.Actions.Select(a => a.Descriptor)))],
             [.. modules.SelectMany(m => m.Combinations)], true, "ready", "", Now, []);
     }
@@ -38,6 +38,28 @@ public sealed class UsageObservationTests
         Assert.NotEqual(UsageAnalysis.FeedbackKey(recorder.Session, suggestion), UsageAnalysis.FeedbackKey(recorder.Session, suggestion with { WindowState = "minimize" }));
         var missing = recorder.Session with { Events = [.. recorder.Session.Events.SelectMany(e => new[] { e, new UsageEvent(e.AtUtc, "gap", null, "unknown") })] };
         Assert.Empty(UsageAnalysis.Analyze(missing));
+        var automated = recorder.Session with { Events = [new UsageEvent(Now, "axiom-action", recorder.Session.Objects[0].Id, "axiom"), .. recorder.Session.Events] };
+        Assert.Empty(UsageAnalysis.Analyze(automated));
+    }
+
+    [Theory]
+    [InlineData("output")]
+    [InlineData("input")]
+    public void RepeatedAudioPreparationKeepsRoleLimitsAndCreatesOnlyAPausedReviewedRule(string endpoint)
+    {
+        var recorder = new UsageRecorder(new(5, false, true, [], AudioEvents: true), Now);
+        for (var i = 0; i < 3; i++)
+        {
+            recorder.Add(new(Now.AddSeconds(i * 70), "audio-" + endpoint));
+            recorder.Add(new(Now.AddSeconds(i * 70 + 5), "process-start", App("AudioTool")));
+        }
+        var suggestion = Assert.Single(UsageAnalysis.Analyze(recorder.Session)); Assert.Equal(3, suggestion.Occurrences); Assert.Equal(3, suggestion.Opportunities);
+        Assert.Contains("不能筛选具体设备", suggestion.Limitation);
+        var draft = UsageAnalysis.Draft(recorder.Session, suggestion, Catalog()); Assert.True(draft.Paused);
+        Assert.Equal(AudioCapabilities.Changed, draft.Detection.CapabilityId); Assert.Equal(endpoint, draft.Detection.Parameters["endpoint"]);
+        var compiler = new AutomationTaskCompiler(); compiler.Register(new AudioTaskDetection()); compiler.Register(new ProgramTaskAction(true));
+        Assert.NotNull(compiler.Compile(draft, "owner", ResourceScope.Session("owner", 1)));
+        Assert.Contains("AudioEvents", UsageAnalysis.Summary(recorder.Session, Catalog()));
         var automated = recorder.Session with { Events = [new UsageEvent(Now, "axiom-action", recorder.Session.Objects[0].Id, "axiom"), .. recorder.Session.Events] };
         Assert.Empty(UsageAnalysis.Analyze(automated));
     }
@@ -245,7 +267,7 @@ public sealed class UsageObservationTests
     [Fact]
     public void FullRegisteredCatalogFitsExportAndOversizedDescriptionsAreSummarized()
     {
-        var modules = new IAutomationPlugin[] { new ProgramPlugin(), new WindowPlugin(), new SystemEventPlugin(), new IntervalPlugin(), new AxiomStartupPlugin(), new KeyboardPlugin(), new TrayPlugin(), new OpenTargetPlugin(), new ForegroundPlugin(), new WindowPresencePlugin() };
+        var modules = new IAutomationPlugin[] { new ProgramPlugin(), new WindowPlugin(), new SystemEventPlugin(), new IntervalPlugin(), new AudioPlugin(), new AxiomStartupPlugin(), new KeyboardPlugin(), new TrayPlugin(), new OpenTargetPlugin(), new ForegroundPlugin(), new WindowPresencePlugin() };
         var catalog = Catalog() with { Capabilities = [.. modules.SelectMany(m => m.Detections.Select(d => d.Descriptor).Concat(m.Actions.Select(a => a.Descriptor))).DistinctBy(c => (c.Kind, c.Id))], Combinations = [.. modules.SelectMany(m => m.Combinations)] };
         var recorder = Recorder(); recorder.Add(new(Now, "foreground", App("Editor")));
         var normal = UsageAnalysis.Prompt + UsageAnalysis.Summary(recorder.Session, catalog);

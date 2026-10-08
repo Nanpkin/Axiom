@@ -32,7 +32,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          dotnet test tests/Axiom.Engine.Tests/Axiom.Engine.Tests.csproj -c Release --no-build --no-restore --filter "FullyQualifiedName~Axiom.Engine.Tests.WindowActionTests.|FullyQualifiedName~Axiom.Engine.Tests.WindowsSessionEventTests."
+          dotnet test tests/Axiom.Engine.Tests/Axiom.Engine.Tests.csproj -c Release --no-build --no-restore --filter "FullyQualifiedName~Axiom.Engine.Tests.WindowActionTests.|FullyQualifiedName~Axiom.Engine.Tests.WindowsSessionEventTests.|FullyQualifiedName~Axiom.Engine.Tests.WindowsAudioEventTests."
           exit $LASTEXITCODE
       - name: Build Windows application
         if: runner.os == 'Windows'

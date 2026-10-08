@@ -2,7 +2,7 @@ namespace Axiom.Contracts;
 
 // Only these metadata events cross the Agent boundary. Titles, arguments and content have no field.
 public sealed record UsageSample(DateTimeOffset AtUtc, string Kind, string? Executable = null, string Origin = "unknown");
-public sealed record UsageOptions(int Minutes, bool Foreground, bool ProcessStarts, string[] ExcludedApplications, string Purpose = "", bool SystemEvents = false, bool ProcessExits = false, bool WindowStates = false);
+public sealed record UsageOptions(int Minutes, bool Foreground, bool ProcessStarts, string[] ExcludedApplications, string Purpose = "", bool SystemEvents = false, bool ProcessExits = false, bool WindowStates = false, bool AudioEvents = false);
 public sealed record UsageEvent(DateTimeOffset AtUtc, string Kind, string? ObjectId, string Origin, int Count = 1, double? DwellSeconds = null);
 public sealed record UsageObject(string Id, string Executable);
 public sealed record UsageSession(string Id, DateTimeOffset StartedUtc, DateTimeOffset EndsUtc, string State,
@@ -21,7 +21,7 @@ public static class UsageValidation
     public const int MaximumExportBytes = 65536;
     public static void Options(UsageOptions options)
     {
-        if (options.Minutes is < 1 or > 120 || !options.Foreground && !options.ProcessStarts && !options.SystemEvents && !options.ProcessExits && !options.WindowStates ||
+        if (options.Minutes is < 1 or > 120 || !options.Foreground && !options.ProcessStarts && !options.SystemEvents && !options.ProcessExits && !options.WindowStates && !options.AudioEvents ||
             options.ExcludedApplications is null || options.ExcludedApplications.Length > 128 || options.Purpose is null || options.Purpose.Length > 500 ||
             options.ExcludedApplications.Any(n => string.IsNullOrWhiteSpace(n) || n.Length > 132 || !n.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) || n.IndexOfAny(['/', '\\', ':', '\r', '\n']) >= 0))
             throw new ArgumentException("请选择观察范围、1–120 分钟及有效的排除程序名；目的最多 500 字。");

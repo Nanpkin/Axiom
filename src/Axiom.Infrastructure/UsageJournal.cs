@@ -90,7 +90,7 @@ public sealed class UsageRecorder
         if (Session.State != "recording") return false;
         if (sample.AtUtc >= Session.EndsUtc) { State("stopped", atUtc: Session.EndsUtc); return false; }
         if (sample.AtUtc < Session.StartedUtc) return false;
-        if (sample.Kind is not ("foreground" or "foreground-unobserved" or "process-start" or "process-exit" or "window-shown" or "window-hidden" or "window-minimized" or "window-maximized" or "window-normal" or "window-left" or "window-right" or "window-center" or "axiom-action" or "gap" or "system-locked" or "system-unlocked" or "system-resumed" or "system-ac" or "system-battery" or "system-network-up" or "system-network-down" or "system-battery-low20" or "system-battery-low10" or "system-display-changed" or "system-usb-arrived" or "system-usb-removed") || sample.Origin is not ("unknown" or "axiom")) throw new ArgumentException("观察事件无效。");
+        if (sample.Kind is not ("foreground" or "foreground-unobserved" or "process-start" or "process-exit" or "window-shown" or "window-hidden" or "window-minimized" or "window-maximized" or "window-normal" or "window-left" or "window-right" or "window-center" or "axiom-action" or "gap" or "system-locked" or "system-unlocked" or "system-resumed" or "system-ac" or "system-battery" or "system-network-up" or "system-network-down" or "system-battery-low20" or "system-battery-low10" or "system-display-changed" or "system-usb-arrived" or "system-usb-removed" or "audio-output" or "audio-input") || sample.Origin is not ("unknown" or "axiom")) throw new ArgumentException("观察事件无效。");
         if (sample.Kind == "foreground-unobserved")
         {
             if (!Session.Options.Foreground) return false;
@@ -101,6 +101,7 @@ public sealed class UsageRecorder
         if (sample.Kind == "foreground" && !Session.Options.Foreground || sample.Kind == "process-start" && !Session.Options.ProcessStarts || sample.Kind == "process-exit" && !Session.Options.ProcessExits) return false;
         if (sample.Kind.StartsWith("window-", StringComparison.Ordinal) && !Session.Options.WindowStates) return false;
         if (sample.Kind.StartsWith("system-", StringComparison.Ordinal) && !Session.Options.SystemEvents) return false;
+        if (sample.Kind.StartsWith("audio-", StringComparison.Ordinal) && !Session.Options.AudioEvents) return false;
         string? id = null;
         if (sample.Executable is { } path)
         {

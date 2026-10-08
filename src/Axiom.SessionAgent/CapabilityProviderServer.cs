@@ -7,14 +7,6 @@ using Axiom.Providers.Windows;
 
 namespace Axiom.SessionAgent;
 
-internal sealed record ProviderUpdate(bool Snapshot, ProviderSample[] Samples);
-internal interface ISessionCapabilityProvider
-{
-    IReadOnlyCollection<string> Capabilities { get; }
-    Task ObserveAsync(ProviderResource[] resources, Action<ProviderUpdate> publish, CancellationToken token);
-    Task<(OutcomeStatus Status, string Reason)> InvokeAsync(TaskInvocation invocation, CancellationToken token);
-}
-
 // The transport knows only registered capability IDs, never individual program parameters.
 internal sealed class CapabilityProviderServer(string sid, IEnumerable<ISessionCapabilityProvider> providers)
 {
