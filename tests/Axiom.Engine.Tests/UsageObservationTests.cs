@@ -43,6 +43,38 @@ public sealed class UsageObservationTests
     }
 
     [Theory]
+    [InlineData("system-unlocked", "system.event", "event", "unlocked")]
+    [InlineData("system-resumed", "system.event", "event", "resumed")]
+    [InlineData("system-usb-arrived", "system.event", "event", "usb-arrived")]
+    [InlineData("audio-output", "audio.default", "endpoint", "output")]
+    [InlineData("audio-input", "audio.default", "endpoint", "input")]
+    public void RepeatedEnvironmentPreparationOffersWindowLayoutWithSeparateEventEvidence(string kind, string capability, string field, string value)
+    {
+        var recorder = new UsageRecorder(new(5, false, false, [], SystemEvents: true, WindowStates: true, AudioEvents: true), Now);
+        for (var i = 0; i < 3; i++)
+        {
+            recorder.Add(new(Now.AddSeconds(i * 70), kind));
+            recorder.Add(new(Now.AddSeconds(i * 70 + 5), "window-left", App("Editor")));
+            recorder.Add(new(Now.AddSeconds(i * 70 + 6), "window-right", App("Editor"))); // one observation opportunity, not two repeats
+        }
+        var suggestion = Assert.Single(UsageAnalysis.Analyze(recorder.Session));
+        Assert.Equal(3, suggestion.Occurrences); Assert.Equal(3, suggestion.Opportunities); Assert.Contains("来源未知", suggestion.Limitation);
+        var draft = UsageAnalysis.Draft(recorder.Session, suggestion, Catalog()); Assert.True(draft.Paused);
+        Assert.Equal(capability, draft.Detection.CapabilityId); Assert.Equal(value, draft.Detection.Parameters[field]); Assert.Equal("left", draft.Action.Parameters["state"]);
+        var compiler = new AutomationTaskCompiler(); compiler.Register(new SystemEventTaskDetection()); compiler.Register(new AudioTaskDetection()); compiler.Register(new WindowStateTaskAction());
+        Assert.NotNull(compiler.Compile(draft, "owner", ResourceScope.Session("owner", 1)));
+        var mixed = recorder.Session with { Events = [.. recorder.Session.Events.Select((e, index) => index == 0 ? e with { Kind = kind == "system-unlocked" ? "system-resumed" : "system-unlocked" } : e)] };
+        Assert.Empty(UsageAnalysis.Analyze(mixed)); // different environmental triggers cannot be pooled to reach three
+        foreach (var boundary in new[] { "gap", "system-locked", "axiom-action" })
+        {
+            var interrupted = recorder.Session with { Events = [.. recorder.Session.Events.SelectMany(e => e.Kind == kind ? new[] { e, new UsageEvent(e.AtUtc, boundary, null, boundary == "axiom-action" ? "axiom" : "unknown") } : new[] { e })] };
+            Assert.Empty(UsageAnalysis.Analyze(interrupted));
+        }
+        var automated = recorder.Session with { Events = [.. recorder.Session.Events.Select(e => e.Kind == "window-left" ? e with { Origin = "axiom" } : e)] };
+        Assert.Empty(UsageAnalysis.Analyze(automated));
+    }
+
+    [Theory]
     [InlineData("output")]
     [InlineData("input")]
     public void RepeatedAudioPreparationKeepsRoleLimitsAndCreatesOnlyAPausedReviewedRule(string endpoint)
