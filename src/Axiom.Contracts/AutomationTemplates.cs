@@ -1,0 +1,51 @@
+using System.Collections.Immutable;
+using Axiom.Domain;
+
+namespace Axiom.Contracts;
+
+public sealed record AutomationTemplate(string Id, string Name, string Description, AutomationTask Draft);
+
+// Recipes reference the live catalog; they do not duplicate capability schemas or save rules.
+public static class AutomationTemplates
+{
+    private sealed record Recipe(string Id, string Name, string Description, string Detection, string Action,
+        (string Field, string Value)[] DetectionValues, (string Field, string Value)[] ActionValues);
+    private static readonly Recipe[] Recipes =
+    [
+        new("launch-companion", "打开程序后启动配套工具", "选择检测程序和要启动的工具；工具已运行时跳过，结束后不自动关闭。", "process.running", "program.start", [], []),
+        new("cleanup-companion", "程序退出后关闭配套工具", "只请求正常关闭最近启动的一个匹配实例；不强制结束、不自动重开，未保存内容可能需要确认。", "process.exited", "program.close", [], [("mode", "graceful"), ("instances", "latest")]),
+        new("restore-work", "睡眠恢复后打开工作工具", "选择要启动的程序；恢复不等于已经解锁，已运行则跳过，不补发之前的唤醒。", SystemEventCapabilities.Event, "program.start", [("event", "resumed")], []),
+        new("open-work-folder", "解锁后打开工作目录", "填写本机目录路径；每次新解锁请求打开一次，之后不会自动关闭目录窗口。", SystemEventCapabilities.Event, OpenTargetCapabilities.Open, [("event", "unlocked")], [("kind", "folder")]),
+        new("window-prepare", "窗口出现后整理", "选择检测和目标程序，再选择布局；初始已有窗口不补执行，多窗口时只处理一个匹配窗口。", WindowPresenceCapabilities.Visible, WindowCapabilities.State, [], [("state", "maximize")]),
+        new("focus-layout", "切到应用时摆到左半屏", "选择前台应用与目标程序；按触发时的显示器工作区整理一次，之后手动调整不会被持续干预。", ForegroundCapabilities.Active, WindowCapabilities.State, [], [("state", "left")]),
+        new("pin-shortcut", "按快捷键置顶工具窗口", "选择全局快捷键与目标程序；一次置顶。可把窗口状态改为取消置顶建立另一条规则。", HotkeyCapabilities.Pressed, WindowCapabilities.State, [], [("state", "topmost")])
+    ];
+    public static AutomationTemplate[] Build(AutomationSnapshot catalog)
+    {
+        var result = new List<AutomationTemplate>();
+        foreach (var recipe in Recipes)
+        {
+            if (!catalog.Combinations.Contains(new(recipe.Detection, recipe.Action))) continue;
+            var detection = Invocation(recipe.Detection, TaskCapabilityKind.Detection, recipe.DetectionValues);
+            var action = Invocation(recipe.Action, TaskCapabilityKind.Action, recipe.ActionValues);
+            if (detection is null || action is null) continue;
+            result.Add(new(recipe.Id, recipe.Name, recipe.Description, new(Guid.NewGuid().ToString("D"), 0, recipe.Name, true, detection, action)));
+        }
+        return [.. result];
+
+        TaskInvocation? Invocation(string id, TaskCapabilityKind kind, (string Field, string Value)[] overrides)
+        {
+            var capability = catalog.Capabilities.SingleOrDefault(c => c.Id == id && c.Kind == kind);
+            if (capability is null) return null;
+            var values = capability.Fields.Where(f => f.DefaultValue is not null || f.Kind == TaskFieldKind.Boolean)
+                .ToImmutableDictionary(f => f.Id, f => f.DefaultValue ?? "false").ToBuilder();
+            foreach (var (fieldId, value) in overrides)
+            {
+                var field = capability.Fields.SingleOrDefault(f => f.Id == fieldId);
+                if (field is null || value.Length > field.MaximumLength || field.Kind == TaskFieldKind.Choice && !field.Choices.Any(c => c.Value == value)) return null;
+                values[fieldId] = value;
+            }
+            return new(id, capability.SchemaVersion, values.ToImmutable());
+        }
+    }
+}

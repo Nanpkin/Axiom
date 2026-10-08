@@ -96,7 +96,7 @@ public sealed partial class WorkbenchWindow
                 accept.Click += async (_, _) =>
                 {
                     if (!await ConfirmAsync("这是你希望自动完成的重复操作吗？", suggestion.Limitation, "生成暂停的草稿")) return;
-                    try { var result = await UsageAsync(new("draft", SessionId: selected.Id, FeedbackId: suggestion.Id)); page = Page.Rules; SelectUsageDraft(result.Task!); }
+                    try { var result = await UsageAsync(new("draft", SessionId: selected.Id, FeedbackId: suggestion.Id)); page = Page.Rules; SelectDraft(result.Task!); }
                     catch (Exception error) { ShowNotice(error.Message); }
                 };
                 card.Children.Add(accept);
@@ -203,7 +203,7 @@ public sealed partial class WorkbenchWindow
             if (response.Task is { } draft)
             {
                 if (!await ConfirmAsync("审阅候选规则", response.ExportText + "\n将进入规则编辑器，默认暂停；必须保存并启用才可能执行。", "打开编辑器")) return;
-                page = Page.Rules; SelectUsageDraft(draft);
+                page = Page.Rules; SelectDraft(draft);
             }
             else if (response.ExportText?.StartsWith("extension：", StringComparison.Ordinal) == true)
             {
@@ -216,7 +216,7 @@ public sealed partial class WorkbenchWindow
         }
         catch (Exception error) { ShowNotice(error.Message); }
     }
-    private void SelectUsageDraft(Axiom.Domain.AutomationTask draft)
+    private void SelectDraft(Axiom.Domain.AutomationTask draft)
     {
         editor.LoadDraft(draft); editing = true; notice.IsOpen = false; Render();
     }

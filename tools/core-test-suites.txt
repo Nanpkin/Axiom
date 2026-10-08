@@ -34,3 +34,5 @@ WindowPresenceTests
 ObservedProcessExitTests
 
 UsageWindowTests
+
+AutomationTemplateTests

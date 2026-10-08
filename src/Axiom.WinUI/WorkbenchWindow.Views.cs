@@ -46,6 +46,8 @@ public sealed partial class WorkbenchWindow
         var add = Action("＋  新建任务", true); add.IsEnabled = status is not null;
         add.Click += (_, _) => SelectRule(null); buttons.Children.Add(add);
         Grid.SetColumn(buttons, 1); toolbar.Children.Add(buttons); content.Children.Add(toolbar);
+        var template = Action("从常用场景开始…"); template.IsEnabled = reachable && status is not null;
+        template.Click += async (_, _) => await ChooseTaskTemplateAsync(); content.Children.Add(template);
         if (!reachable || status?.DetectionAvailable != true)
             content.Children.Add(Card(Text(reachable ? "检测暂不可用。请重新打开 Axiom，然后刷新状态。" : "后台状态未确认，显示上次读取的内容。", 13, Amber), PaleAmber, 16));
         if (status?.Tasks.Length is not > 0)
