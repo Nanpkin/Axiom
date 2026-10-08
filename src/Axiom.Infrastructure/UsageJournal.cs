@@ -90,7 +90,7 @@ public sealed class UsageRecorder
         if (Session.State != "recording") return false;
         if (sample.AtUtc >= Session.EndsUtc) { State("stopped", atUtc: Session.EndsUtc); return false; }
         if (sample.AtUtc < Session.StartedUtc) return false;
-        if (sample.Kind is not ("foreground" or "foreground-unobserved" or "process-start" or "process-exit" or "window-shown" or "window-hidden" or "window-minimized" or "window-maximized" or "window-normal" or "window-left" or "window-right" or "window-center" or "axiom-action" or "gap" or "system-locked" or "system-unlocked" or "system-resumed" or "system-ac" or "system-battery" or "system-network-up" or "system-network-down" or "system-battery-low20" or "system-battery-low10" or "system-display-changed") || sample.Origin is not ("unknown" or "axiom")) throw new ArgumentException("观察事件无效。");
+        if (sample.Kind is not ("foreground" or "foreground-unobserved" or "process-start" or "process-exit" or "window-shown" or "window-hidden" or "window-minimized" or "window-maximized" or "window-normal" or "window-left" or "window-right" or "window-center" or "axiom-action" or "gap" or "system-locked" or "system-unlocked" or "system-resumed" or "system-ac" or "system-battery" or "system-network-up" or "system-network-down" or "system-battery-low20" or "system-battery-low10" or "system-display-changed" or "system-usb-arrived" or "system-usb-removed") || sample.Origin is not ("unknown" or "axiom")) throw new ArgumentException("观察事件无效。");
         if (sample.Kind == "foreground-unobserved")
         {
             if (!Session.Options.Foreground) return false;

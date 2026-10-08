@@ -57,6 +57,7 @@ public sealed class WindowsSessionEvents : IDisposable
         private readonly Procedure procedure;
         private byte supply = 255;
         private readonly BatteryThresholdEvents battery = new();
+        private static readonly Guid UsbDevice = new("A5DCBF10-6530-11D2-901F-00C04FB951ED");
         private static readonly Guid BatteryPercentage = new("A7AD8041-B45A-4CAE-87A3-EECBB468A9E1");
         private bool network;
         internal Hub() { procedure = Handle; new Thread(Run) { IsBackground = true, Name = "Axiom session and power events" }.Start(); }
@@ -65,13 +66,16 @@ public sealed class WindowsSessionEvents : IDisposable
             var name = "AxiomSystemEvents-" + Guid.NewGuid().ToString("N");
             var instance = GetModuleHandle(null);
             var cls = new WindowClass { Size = (uint)Marshal.SizeOf<WindowClass>(), Procedure = procedure, Name = name, Instance = instance };
-            var registered = false; var notified = false; var networkSubscribed = false; nint powerNotification = 0;
+            var registered = false; var notified = false; var networkSubscribed = false; nint powerNotification = 0, deviceNotification = 0;
             try
             {
                 if (RegisterClassEx(ref cls) == 0) throw new Win32Exception(Marshal.GetLastWin32Error()); registered = true;
                 Window = CreateWindowEx(0, name, "", 0, 0, 0, 0, 0, 0, 0, instance, 0);
                 if (Window == 0) throw new Win32Exception(Marshal.GetLastWin32Error());
                 if (!WTSRegisterSessionNotification(Window, 0)) throw new Win32Exception(Marshal.GetLastWin32Error()); notified = true;
+                var filter = new DeviceInterface { Size = (uint)Marshal.SizeOf<DeviceInterface>(), DeviceType = 5, ClassGuid = UsbDevice };
+                deviceNotification = RegisterDeviceNotification(Window, ref filter, 0);
+                if (deviceNotification == 0) throw new Win32Exception(Marshal.GetLastWin32Error(), "无法订阅USB设备类别通知。");
                 var setting = BatteryPercentage;
                 powerNotification = RegisterPowerSettingNotification(Window, ref setting, 0);
                 if (powerNotification == 0) throw new Win32Exception(Marshal.GetLastWin32Error(), "无法订阅电量变化通知。");
@@ -91,6 +95,7 @@ public sealed class WindowsSessionEvents : IDisposable
             finally
             {
                 if (networkSubscribed) NetworkChange.NetworkAvailabilityChanged -= NetworkChanged;
+                if (deviceNotification != 0) UnregisterDeviceNotification(deviceNotification);
                 if (powerNotification != 0) UnregisterPowerSettingNotification(powerNotification);
                 if (notified) WTSUnRegisterSessionNotification(Window);
                 if (Window != 0) DestroyWindow(Window);
@@ -109,6 +114,13 @@ public sealed class WindowsSessionEvents : IDisposable
         }
         private nint Handle(nint window, uint message, nint w, nint l)
         {
+            if (message == 0x0219 && w is 0x8000 or 0x8004 && l != 0)
+            {
+                // DEV_BROADCAST_DEVICEINTERFACE: inspect only size/type/class GUID, never its device path.
+                if (Marshal.ReadInt32(l) >= Marshal.SizeOf<DeviceInterface>() && Marshal.ReadInt32(l, 4) == 5 && Marshal.PtrToStructure<Guid>(l + 12) == UsbDevice)
+                    Publish(w == 0x8000 ? "usb-arrived" : "usb-removed");
+                return 1;
+            }
             if (message == 0x007E) { Publish("display-changed"); return 0; } // WM_DISPLAYCHANGE; do not retain resolution/depth payload
             if (message == 0x02B1)
             {
@@ -136,6 +148,9 @@ public sealed class WindowsSessionEvents : IDisposable
                 if (!client.queue.Writer.TryWrite(kind)) client.queue.Writer.TryComplete(new IOException("系统事件队列已满，检测状态未知。"));
         }
     }
+    [StructLayout(LayoutKind.Sequential)] private struct DeviceInterface { public uint Size, DeviceType, Reserved; public Guid ClassGuid; public ushort Name; }
+    [DllImport("user32.dll", EntryPoint="RegisterDeviceNotificationW", SetLastError=true)] private static extern nint RegisterDeviceNotification(nint recipient, ref DeviceInterface filter, uint flags);
+    [DllImport("user32.dll")] private static extern bool UnregisterDeviceNotification(nint notification);
     private delegate nint Procedure(nint window,uint message,nint w,nint l);
     [StructLayout(LayoutKind.Sequential,CharSet=CharSet.Unicode)] private struct WindowClass { public uint Size,Style; public Procedure Procedure; public int ClassExtra,WindowExtra; public nint Instance,Icon,Cursor,Background; public string? Menu,Name; public nint SmallIcon; }
     [StructLayout(LayoutKind.Sequential)] private struct Message { public nint Window; public uint Id; public nint W,L; public uint Time; public int X,Y; public uint Private; }

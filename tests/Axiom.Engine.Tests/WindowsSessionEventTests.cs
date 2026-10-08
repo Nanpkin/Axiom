@@ -89,6 +89,30 @@ public sealed class WindowsSessionEventTests
             Assert.Equal("display-changed", kind);
         }
     }
+    [Fact(Timeout = 10000)]
+    public async Task SyntheticUsbClassNotificationsAreSharedWithoutParsingAnyDeviceIdentity()
+    {
+        using var one = new WindowsSessionEvents(); using var two = new WindowsSessionEvents();
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+        var buffer = Marshal.AllocHGlobal(32);
+        try
+        {
+            Marshal.WriteInt32(buffer, 0, 32); Marshal.WriteInt32(buffer, 4, 5); Marshal.WriteInt32(buffer, 8, 0);
+            Marshal.StructureToPtr(new Guid("A5DCBF10-6530-11D2-901F-00C04FB951ED"), buffer + 12, false);
+            Marshal.WriteInt32(buffer, 28, 0); // no path or serial number is required or read
+            foreach (var (nativeKind, expected) in new[] { (0x8000, "usb-arrived"), (0x8004, "usb-removed") })
+            {
+                SendMessage(one.NotificationWindow, 0x0219, nativeKind, buffer);
+                foreach (var source in new[] { one, two })
+                {
+                    string kind;
+                    do { kind = await source.Events.ReadAsync(deadline.Token); } while (!kind.StartsWith("usb-", StringComparison.Ordinal));
+                    Assert.Equal(expected, kind);
+                }
+            }
+        }
+        finally { Marshal.FreeHGlobal(buffer); }
+    }
     [DllImport("user32.dll")] private static extern nint SendMessage(nint window, uint message, nint w, nint l);
 
 }

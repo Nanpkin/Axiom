@@ -58,7 +58,7 @@ public static class UsageAnalysis
         var afterEvents = SystemPairs(session).GroupBy(p => (p.First.Kind, p.Second.ObjectId)).Where(g => g.Count() >= 3).Select(g => new UsageSuggestion(
             "event:" + g.Key.Kind + ":" + g.Key.ObjectId, "existing", "系统事件后反复打开同一程序",
             $"{g.Count()} 次在 {SystemName(g.Key.Kind)} 后一分钟内启动；此事件共出现 {session.Events.Count(e => e.Kind == g.Key.Kind)} 次。",
-            "来源未知，不证明是手动操作或因果。先确认这是你希望自动完成的步骤。候选只启动一次，已运行则跳过；之后不自动关闭。缺口或 Axiom 动作会中断序列，已知动作目标不参加分析。",
+            "来源未知，不证明是手动操作或因果。先确认这是你希望自动完成的步骤。候选只启动一次，已运行则跳过；之后不自动关闭。缺口或 Axiom 动作会中断序列，已知动作目标不参加分析。" + (g.Key.Kind == "system-usb-arrived" ? "触发范围是任意USB设备接入通知，不能筛选某个设备；复合设备或系统重枚举可能产生多次。" : ""),
             [g.Key.ObjectId!], g.Count(), session.Events.Count(e => e.Kind == g.Key.Kind), g.Key.Kind[7..], Evidence(session, g)));
         return [.. environmentWindows.Concat(afterEvents).Concat(starts).Concat(exits).Concat(windowCleanup).Concat(windows).Concat(switches).OrderByDescending(s => s.Occurrences).Take(12).Select(s =>
             s.Kind == "existing" && !s.ObjectIds.All(id => CanUse(session.Objects.Single(o => o.Id == id).Executable))
@@ -108,7 +108,7 @@ public static class UsageAnalysis
         }
     }
     private static bool CanUse(string path) { try { ExecutablePaths.ValidatePath(path); return true; } catch (ArgumentException) { return false; } }
-    private static string SystemName(string kind) => kind switch { "system-unlocked" => "解锁", "system-resumed" => "唤醒", "system-ac" => "接通交流电", "system-battery" => "切换电池", "system-network-up" => "网络可用", "system-battery-low20" => "电量降至20%或以下", "system-battery-low10" => "电量降至10%或以下", _ => "系统变化" };
+    private static string SystemName(string kind) => kind switch { "system-unlocked" => "解锁", "system-resumed" => "唤醒", "system-ac" => "接通交流电", "system-battery" => "切换电池", "system-network-up" => "网络可用", "system-usb-arrived" => "USB接入通知", "system-battery-low20" => "电量降至20%或以下", "system-battery-low10" => "电量降至10%或以下", _ => "系统变化" };
     private static UsageEvidence[] Evidence(UsageSession session, IEnumerable<(UsageEvent First, UsageEvent Second)> pairs) =>
         [.. pairs.Take(3).Select(p => new UsageEvidence((int)(p.First.AtUtc - session.StartedUtc).TotalSeconds, (int)(p.Second.AtUtc - session.StartedUtc).TotalSeconds))];
     private static IEnumerable<(UsageEvent First, UsageEvent Second)> SystemPairs(UsageSession session)
@@ -120,7 +120,7 @@ public static class UsageAnalysis
             if (item.Kind is "gap" or "axiom-action") { trigger = null; continue; }
             if (item.Kind.StartsWith("system-", StringComparison.Ordinal))
             {
-                trigger = item.Kind is "system-unlocked" or "system-resumed" or "system-ac" or "system-battery" or "system-network-up" or "system-battery-low20" or "system-battery-low10" ? item : null;
+                trigger = item.Kind is "system-unlocked" or "system-resumed" or "system-ac" or "system-battery" or "system-network-up" or "system-battery-low20" or "system-battery-low10" or "system-usb-arrived" ? item : null;
                 seen.Clear(); continue;
             }
             if (trigger is null || item.Kind != "process-start" || item.ObjectId is null || automated.Contains(item.ObjectId)) continue;
