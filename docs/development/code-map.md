@@ -73,3 +73,5 @@ Host 自身生命周期检测位于 Host：`AxiomStartupPlugin → PluginTaskRun
 常用场景：`AutomationTemplates` 从当前能力目录组合暂停草稿，`WorkbenchWindow.Templates` 选择并进入通用编辑器；`AutomationTemplateTests` 用实际插件注册验证补齐对象后可编译，缺能力/组合/枚举项时不展示。
 
 低电量事件：`WindowsSessionEvents` 注册/注销电量百分比系统通知；`BatteryThresholdEvents` 只从连续已知读数发出20%/10%向下穿越。复用 `SystemEventCapabilities`、观察与建议链，`BatteryThresholdTests` 验证未知/重启基线/重复/跨阈值，`WindowsSessionEventTests` 合成原生电量消息验证共享投递。
+
+窗口消失：`WindowAbsenceTaskDetection` 将用户的“全部消失”配置编译为现有 `window.visible` 资源的全否条件，不另开原生订阅；`WindowPresenceTests` 覆盖多选/未知及真实Engine的首次、重连、暂停、恢复边沿。
