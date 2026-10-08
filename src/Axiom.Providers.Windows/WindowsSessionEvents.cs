@@ -17,6 +17,7 @@ public sealed class WindowsSessionEvents : IDisposable
     private readonly Hub owner;
     public static int ActiveConsumers { get { lock (Gate) return shared?.Clients.Count ?? 0; } }
     public ChannelReader<string> Events => queue.Reader;
+    internal nint NotificationWindow => owner.Window;
     public WindowsSessionEvents()
     {
         lock (Gate)
@@ -55,6 +56,8 @@ public sealed class WindowsSessionEvents : IDisposable
         internal nint Window;
         private readonly Procedure procedure;
         private byte supply = 255;
+        private readonly BatteryThresholdEvents battery = new();
+        private static readonly Guid BatteryPercentage = new("A7AD8041-B45A-4CAE-87A3-EECBB468A9E1");
         private bool network;
         internal Hub() { procedure = Handle; new Thread(Run) { IsBackground = true, Name = "Axiom session and power events" }.Start(); }
         private void Run()
@@ -62,13 +65,16 @@ public sealed class WindowsSessionEvents : IDisposable
             var name = "AxiomSystemEvents-" + Guid.NewGuid().ToString("N");
             var instance = GetModuleHandle(null);
             var cls = new WindowClass { Size = (uint)Marshal.SizeOf<WindowClass>(), Procedure = procedure, Name = name, Instance = instance };
-            var registered = false; var notified = false; var networkSubscribed = false;
+            var registered = false; var notified = false; var networkSubscribed = false; nint powerNotification = 0;
             try
             {
                 if (RegisterClassEx(ref cls) == 0) throw new Win32Exception(Marshal.GetLastWin32Error()); registered = true;
                 Window = CreateWindowEx(0, name, "", 0, 0, 0, 0, 0, 0, 0, instance, 0);
                 if (Window == 0) throw new Win32Exception(Marshal.GetLastWin32Error());
                 if (!WTSRegisterSessionNotification(Window, 0)) throw new Win32Exception(Marshal.GetLastWin32Error()); notified = true;
+                var setting = BatteryPercentage;
+                powerNotification = RegisterPowerSettingNotification(Window, ref setting, 0);
+                if (powerNotification == 0) throw new Win32Exception(Marshal.GetLastWin32Error(), "无法订阅电量变化通知。");
                 if (GetSystemPowerStatus(out var initial)) supply = initial.AcLine;
                 network = NetworkInterface.GetIsNetworkAvailable();
                 NetworkChange.NetworkAvailabilityChanged += NetworkChanged; networkSubscribed = true;
@@ -85,6 +91,7 @@ public sealed class WindowsSessionEvents : IDisposable
             finally
             {
                 if (networkSubscribed) NetworkChange.NetworkAvailabilityChanged -= NetworkChanged;
+                if (powerNotification != 0) UnregisterPowerSettingNotification(powerNotification);
                 if (notified) WTSUnRegisterSessionNotification(Window);
                 if (Window != 0) DestroyWindow(Window);
                 if (registered) UnregisterClass(name, instance);
@@ -109,6 +116,8 @@ public sealed class WindowsSessionEvents : IDisposable
             }
             if (message == 0x0218)
             {
+                if (w == 0x8013 && l != 0 && Marshal.PtrToStructure<Guid>(l) == BatteryPercentage && Marshal.ReadInt32(l, 16) == sizeof(uint))
+                    foreach (var kind in battery.Update(unchecked((uint)Marshal.ReadInt32(l, 20)))) Publish(kind);
                 if (w == 0x12) Publish("resumed"); // automatic resume; do not also emit the interactive-resume broadcast
                 if (w == 0x0A && GetSystemPowerStatus(out var status))
                 {
@@ -141,6 +150,8 @@ public sealed class WindowsSessionEvents : IDisposable
     [DllImport("user32.dll")] private static extern bool PostMessage(nint window,uint message,nint w,nint l);
     [DllImport("user32.dll")] private static extern void PostQuitMessage(int code);
     [DllImport("kernel32.dll",CharSet=CharSet.Unicode)] private static extern nint GetModuleHandle(string? module);
+    [DllImport("user32.dll",SetLastError=true)] private static extern nint RegisterPowerSettingNotification(nint recipient,ref Guid setting,uint flags);
+    [DllImport("user32.dll")] private static extern bool UnregisterPowerSettingNotification(nint handle);
     [DllImport("kernel32.dll")] private static extern bool GetSystemPowerStatus(out PowerStatus status);
     [DllImport("wtsapi32.dll",SetLastError=true)] private static extern bool WTSRegisterSessionNotification(nint window,uint flags);
     [DllImport("wtsapi32.dll")] private static extern bool WTSUnRegisterSessionNotification(nint window);

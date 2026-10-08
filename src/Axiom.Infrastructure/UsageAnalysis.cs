@@ -71,7 +71,7 @@ public static class UsageAnalysis
         }
     }
     private static bool CanUse(string path) { try { ExecutablePaths.ValidatePath(path); return true; } catch (ArgumentException) { return false; } }
-    private static string SystemName(string kind) => kind switch { "system-unlocked" => "解锁", "system-resumed" => "唤醒", "system-ac" => "接通交流电", "system-battery" => "切换电池", "system-network-up" => "网络可用", _ => "系统变化" };
+    private static string SystemName(string kind) => kind switch { "system-unlocked" => "解锁", "system-resumed" => "唤醒", "system-ac" => "接通交流电", "system-battery" => "切换电池", "system-network-up" => "网络可用", "system-battery-low20" => "电量降至20%或以下", "system-battery-low10" => "电量降至10%或以下", _ => "系统变化" };
     private static UsageEvidence[] Evidence(UsageSession session, IEnumerable<(UsageEvent First, UsageEvent Second)> pairs) =>
         [.. pairs.Take(3).Select(p => new UsageEvidence((int)(p.First.AtUtc - session.StartedUtc).TotalSeconds, (int)(p.Second.AtUtc - session.StartedUtc).TotalSeconds))];
     private static IEnumerable<(UsageEvent First, UsageEvent Second)> SystemPairs(UsageSession session)
@@ -83,7 +83,7 @@ public static class UsageAnalysis
             if (item.Kind is "gap" or "axiom-action") { trigger = null; continue; }
             if (item.Kind.StartsWith("system-", StringComparison.Ordinal))
             {
-                trigger = item.Kind is "system-unlocked" or "system-resumed" or "system-ac" or "system-battery" or "system-network-up" ? item : null;
+                trigger = item.Kind is "system-unlocked" or "system-resumed" or "system-ac" or "system-battery" or "system-network-up" or "system-battery-low20" or "system-battery-low10" ? item : null;
                 seen.Clear(); continue;
             }
             if (trigger is null || item.Kind != "process-start" || item.ObjectId is null || automated.Contains(item.ObjectId)) continue;

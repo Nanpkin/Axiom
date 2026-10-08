@@ -101,22 +101,25 @@ public sealed class UsageObservationTests
         recorder.State("recording"); Assert.False(recorder.Add(new(Now.AddMinutes(5), "foreground", App("Other"))));
         Assert.Equal("stopped", recorder.Session.State); Assert.Single(recorder.Session.Events); Assert.Single(recorder.Session.Objects);
     }
-    [Fact]
-    public void RepeatedPostUnlockStartsHaveRepresentativeEvidenceAndOnlyOneCountPerOpportunity()
+    [Theory]
+    [InlineData("unlocked")]
+    [InlineData("battery-low20")]
+    [InlineData("battery-low10")]
+    public void RepeatedSystemEventStartsHaveRepresentativeEvidenceAndOnlyOneCountPerOpportunity(string kind)
     {
         var recorder = new UsageRecorder(new(5, false, true, [], SystemEvents: true), Now);
         for (var i = 0; i < 3; i++)
         {
-            recorder.Add(new(Now.AddSeconds(i * 70), "system-unlocked"));
+            recorder.Add(new(Now.AddSeconds(i * 70), "system-" + kind));
             recorder.Add(new(Now.AddSeconds(i * 70 + 5), "process-start", App("Editor")));
             recorder.Add(new(Now.AddSeconds(i * 70 + 6), "process-start", App("Editor")));
         }
         var suggestion = Assert.Single(UsageAnalysis.Analyze(recorder.Session));
-        Assert.Equal(3, suggestion.Occurrences); Assert.Equal(3, suggestion.Opportunities); Assert.Equal("unlocked", suggestion.EventKind);
+        Assert.Equal(3, suggestion.Occurrences); Assert.Equal(3, suggestion.Opportunities); Assert.Equal(kind, suggestion.EventKind);
         Assert.Equal(new UsageEvidence(0, 5), suggestion.EvidenceSamples![0]);
         var draft = UsageAnalysis.Draft(recorder.Session, suggestion, Catalog()); Assert.True(draft.Paused);
-        Assert.Equal(SystemEventCapabilities.Event, draft.Detection.CapabilityId); Assert.Equal("unlocked", draft.Detection.Parameters["event"]);
-        var missing = recorder.Session with { Events = [.. recorder.Session.Events.SelectMany(e => e.Kind == "system-unlocked" ? new[] { e, new UsageEvent(e.AtUtc, "gap", null, "unknown") } : new[] { e })] };
+        Assert.Equal(SystemEventCapabilities.Event, draft.Detection.CapabilityId); Assert.Equal(kind, draft.Detection.Parameters["event"]);
+        var missing = recorder.Session with { Events = [.. recorder.Session.Events.SelectMany(e => e.Kind == "system-" + kind ? new[] { e, new UsageEvent(e.AtUtc, "gap", null, "unknown") } : new[] { e })] };
         Assert.Empty(UsageAnalysis.Analyze(missing));
     }
     [Fact]
