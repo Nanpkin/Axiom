@@ -14,7 +14,7 @@ public sealed class WindowStateTests
     public void StateActionCompilesWithDelayAndMultipleTargets(string state)
     {
         var action = new TaskInvocation(WindowCapabilities.State, 1, ImmutableDictionary<string, string>.Empty
-            .Add("executable", Path.Combine(Path.GetTempPath(), "Editor.exe") + "\n" + Path.Combine(Path.GetTempPath(), "Chat.exe")).Add("state", state).Add("delaySeconds", "2"));
+            .Add("executable", Path.Combine(Path.GetTempPath(), "Editor.exe") + "\n" + Path.Combine(Path.GetTempPath(), "Chat.exe")).Add("state", state).Add("waitSeconds", "30").Add("delaySeconds", "2"));
         var compiler = new WindowStateTaskAction();
         Assert.Equal(2, WindowCapabilities.ValidateTargets(action).Length);
         var rule = compiler.Compile(action, ResourceScope.Session("owner", 1));
