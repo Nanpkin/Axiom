@@ -403,6 +403,22 @@ public sealed class UsageObservationTests
         Assert.Contains("整数", invalidAudio.Message);
     }
     [Fact]
+    public void ImportedReminderRequiresManualTextButStillRejectsFractionalDelay()
+    {
+        var recorder = Recorder(); var catalog = Catalog();
+        var proposal = new UsageImport(1, recorder.Session.Id, "existing", "定期提醒", "合成候选",
+            new(IntervalCapabilities.Elapsed, 1, ImmutableDictionary<string, string>.Empty.Add("minutes", "30")),
+            new(NotificationCapabilities.Show, 1, new Dictionary<string, string> { ["title"] = "", ["body"] = "", ["sound"] = "false", ["delaySeconds"] = "0" }.ToImmutableDictionary()));
+        var draft = UsageAnalysis.Import(JsonSerializer.Serialize(proposal), recorder.Session, catalog).Draft!;
+        Assert.True(draft.Paused); Assert.Equal(2, UsageAnalysis.MissingManualFields(draft, catalog).Length);
+        var compiler = new AutomationTaskCompiler(); compiler.Register(new IntervalTaskDetection()); compiler.Register(new NotificationTaskAction());
+        Assert.Throws<ArgumentException>(() => compiler.Compile(draft, "owner", ResourceScope.Session("owner", 1)));
+        var completed = draft with { Action = draft.Action with { Parameters = draft.Action.Parameters.SetItem("title", "提醒").SetItem("body", "请休息片刻") } };
+        Assert.NotNull(compiler.Compile(completed, "owner", ResourceScope.Session("owner", 1)));
+        foreach (var (field, value) in new[] { ("body", "imported text"), ("title", "imported title"), ("delaySeconds", "0.5") })
+            Assert.Throws<ArgumentException>(() => UsageAnalysis.Import(JsonSerializer.Serialize(proposal with { Action = proposal.Action! with { Parameters = proposal.Action.Parameters.SetItem(field, value) } }), recorder.Session, catalog));
+    }
+    [Fact]
     public void ImportedHdrCandidateCanLeaveDeviceSelectionForTheUserWithoutExposingIdentifiers()
     {
         var recorder = Recorder(); recorder.Add(new(Now, "process-start", App("WorkTool"))); var catalog = Catalog();

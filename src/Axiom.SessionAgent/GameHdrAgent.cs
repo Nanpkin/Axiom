@@ -25,7 +25,7 @@ internal sealed class GameHdrAgent : IAsyncDisposable
     internal GameHdrAgent(string sid)
     {
         this.sid = sid; shortcuts = new(sid);
-        providers = new(sid, [new ProgramCapabilityProvider(), new WindowCapabilityProvider(), new TrayCapabilityProvider(), new KeyboardCapabilityProvider(shortcuts), new SystemEventCapabilityProvider(), new IntervalCapabilityProvider(), new DailyTimeCapabilityProvider(), new FileArrivalCapabilityProvider(), new OnceTimeCapabilityProvider(), new AudioCapabilityProvider(), new AudioPlaybackCapabilityProvider(), new MicrophoneCapabilityProvider(), new OpenTargetCapabilityProvider(), new ForegroundCapabilityProvider(), new WindowPresenceCapabilityProvider()]);
+        providers = new(sid, [new ProgramCapabilityProvider(), new WindowCapabilityProvider(), new TrayCapabilityProvider(), new KeyboardCapabilityProvider(shortcuts), new SystemEventCapabilityProvider(), new IntervalCapabilityProvider(), new DailyTimeCapabilityProvider(), new FileArrivalCapabilityProvider(), new OnceTimeCapabilityProvider(), new AudioCapabilityProvider(), new AudioPlaybackCapabilityProvider(), new MicrophoneCapabilityProvider(), new NotificationCapabilityProvider(), new OpenTargetCapabilityProvider(), new ForegroundCapabilityProvider(), new WindowPresenceCapabilityProvider()]);
     }
 
     public async Task RunAsync()
@@ -209,6 +209,7 @@ internal sealed class GameHdrAgent : IAsyncDisposable
         if (sender is not null) try { await sender; } catch (OperationCanceledException) { }
         if (shortcutServer is not null) try { await shortcutServer; } catch (OperationCanceledException) { }
         if (providerServer is not null) try { await providerServer; } catch (OperationCanceledException) { }
+        try { await WindowsDesktopNotification.DrainAsync(); } catch (TimeoutException) { }
         shortcuts.Dispose();
         stopping.Dispose(); watchGate.Dispose();
     }

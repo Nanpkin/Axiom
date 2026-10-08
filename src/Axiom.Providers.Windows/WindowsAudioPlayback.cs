@@ -6,7 +6,7 @@ namespace Axiom.Providers.Windows;
 [SupportedOSPlatform("windows")]
 public static class WindowsAudioPlayback
 {
-    private static readonly BoundedAudioCommand Commands = new();
+    private static readonly BoundedNativeCommand Commands = new("音频", TimeSpan.FromSeconds(5));
     public static Task<(bool Success, string Reason)> SetAsync(string operation, int percent, CancellationToken token)
     {
         if (operation is not ("volume" or "mute" or "unmute") || percent is < 0 or > 100) throw new ArgumentException("音量操作无效。");

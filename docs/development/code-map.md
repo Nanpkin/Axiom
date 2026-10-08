@@ -88,7 +88,7 @@ USB类别通知：`WindowsSessionEvents` 注册USB接口GUID、处理接入/移�
 
 单次日期：`OnceTimeCapabilities` 校验真实日期/资源与DST，`OnceTimePlugin` 编译，Agent `OnceTimeCapabilityProvider`/`OnceEventSource` 共享时钟通知和最近deadline；过期/已到期状态由Host转为可读检测原因。`OnceTimeTests` 覆盖时区重算、远期分块、终止不重发与取消；导入继续强制校验后才提供暂停草稿。
 
-播放音量：`AudioPlaybackCapabilities` 参数/边界，`AudioPlaybackPlugin` 共用默认播放资源仲裁，`AudioPlaybackCapabilityProvider` 调用 `WindowsAudioPlayback` 的Core Audio COM适配。`AudioPlaybackOperation` 只写所选字段并读回；`BoundedAudioCommand` 以单个准入保护原生阻塞，调用者超时不提前释放准入。`AudioPlaybackTests` 为合成端点逻辑，不替代真实设备验收。
+播放音量：`AudioPlaybackCapabilities` 参数/边界，`AudioPlaybackPlugin` 共用默认播放资源仲裁，`AudioPlaybackCapabilityProvider` 调用 `WindowsAudioPlayback` 的Core Audio COM适配。`AudioPlaybackOperation` 只写所选字段并读回；`BoundedNativeCommand` 以单个准入保护原生阻塞，调用者超时不提前释放准入。`AudioPlaybackTests` 为合成端点逻辑，不替代真实设备验收。
 
 通信麦克风：`MicrophoneCapabilities`/`MicrophonePlugin`/`MicrophoneCapabilityProvider`，资源与播放分开，沿用 `WindowsAudioPlayback.SetMicrophoneAsync` 的单个原生入口、eCapture/eCommunications默认角色及立即静音读回；不改输入音量。合成逻辑与导入验证位于 `AudioPlaybackTests`/`UsageObservationTests`。
 
@@ -97,3 +97,5 @@ USB类别通知：`WindowsSessionEvents` 注册USB接口GUID、处理接入/移�
 文件到达：`FileArrivalCapabilities`/`FileArrivalPlugin` 声明与事件编译，`FileArrivalCapabilityProvider` 提供计数和独立Unknown隔离；`FileArrivalSource` 按目录共享 `FileSystemWatcher`，只开FileName通知、非递归、固定一秒事件批次，无扫描或内容读取。`FileArrivalTests` 覆盖真实临时目录新建/重命名、按类型匹配、初始不补发、取消释放和16组合上限。
 
 完整插件注册入口为 `Infrastructure/BuiltInAutomationPlugins`，Host组合根与模板/导出检查共用；HDR仍走独立生命周期。完整摘要回归另并入HDR和合成设备选择，验证64 KiB、匿名字典上限与完整参数/组合保留。扩展任务包同时指向此入口和Agent注册。
+
+桌面提醒：`NotificationCapabilities` / `NotificationPlugin` / `NotificationCapabilityProvider` 使用通用动作链；`WindowsDesktopNotification` 以消息窗口、原生清理计时器和临时通知区图标完成一次请求，`BoundedNativeCommand` 拒绝并发且调用者超时不释放原生准入。`WindowsNotificationTests` 使用真实HWND和合成Shell验证生命周期，不声称真实通知显示。

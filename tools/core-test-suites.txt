@@ -47,3 +47,4 @@ DailyTimeTests
 OnceTimeTests
 AudioPlaybackTests
 FileArrivalTests
+NotificationTests
