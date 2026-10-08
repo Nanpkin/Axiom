@@ -186,21 +186,54 @@ public sealed partial class WorkbenchWindow
     }
     private async Task PreviewUsageTextAsync(string title, string text)
     {
-        var input = new TextBox { Text = text, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MaxLength = 65536, Height = 380 };
-        var body = Column(8); body.Children.Add(Text("可删除不愿分享的段落。只有点击复制才写入剪贴板；不会上传。对象映射与完整路径仍留本机。", 12, Muted)); body.Children.Add(input);
+        var input = new TextBox { Text = text, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MaxLength = 65536, Height = Math.Clamp(shell.ActualHeight - 330, 140, 380) };
+        var size = Text("", 12, Muted); var error = Text("", 12, Amber);
+        var body = Column(8); body.Children.Add(Text("可删除不愿分享的段落。只有点击复制才写入剪贴板；不会上传。对象映射与完整路径仍留本机。", 12, Muted)); body.Children.Add(size); body.Children.Add(input); body.Children.Add(error);
         var dialog = new ContentDialog { Title = title, Content = body, PrimaryButtonText = "复制确认后的内容", CloseButtonText = "取消", XamlRoot = shell.XamlRoot };
-        if (await ShowDialogAsync(dialog) != ContentDialogResult.Primary) return;
-        if (Encoding.UTF8.GetByteCount(input.Text) > UsageValidation.MaximumExportBytes) throw new ArgumentException("内容超过 64 KiB，请继续删减。");
-        var data = new DataPackage(); data.SetText(input.Text); Clipboard.SetContent(data); ShowNotice("已复制你确认的内容。", true);
+        void UpdateSize()
+        {
+            var bytes = Encoding.UTF8.GetByteCount(input.Text);
+            size.Text = $"UTF-8 大小：{bytes:N0} / {UsageValidation.MaximumExportBytes:N0} 字节";
+            dialog.IsPrimaryButtonEnabled = bytes <= UsageValidation.MaximumExportBytes;
+            error.Text = bytes > UsageValidation.MaximumExportBytes ? "内容超过64 KiB，请继续删减；尚未复制。" : "";
+        }
+        input.TextChanged += (_, _) => UpdateSize(); UpdateSize();
+        dialog.PrimaryButtonClick += (_, args) =>
+        {
+            try
+            {
+                if (Encoding.UTF8.GetByteCount(input.Text) > UsageValidation.MaximumExportBytes) throw new ArgumentException("内容超过64 KiB，请继续删减。");
+                var data = new DataPackage(); data.SetText(input.Text); Clipboard.SetContent(data);
+            }
+            catch (Exception failure) { args.Cancel = true; error.Text = "未确认复制成功：" + failure.Message; }
+        };
+        if (await ShowDialogAsync(dialog) == ContentDialogResult.Primary) ShowNotice("已复制你确认的内容。", true);
     }
     private async Task ImportUsageAsync(string id)
     {
-        var input = new TextBox { AcceptsReturn = true, Height = 320, MaxLength = 65536, PlaceholderText = "粘贴结构化 JSON 建议" };
-        var dialog = new ContentDialog { Title = "导入建议（不执行）", Content = input, PrimaryButtonText = "校验并预览", CloseButtonText = "取消", XamlRoot = shell.XamlRoot };
-        if (await ShowDialogAsync(dialog) != ContentDialogResult.Primary) return;
+        var input = new TextBox { AcceptsReturn = true, Height = Math.Clamp(shell.ActualHeight - 300, 140, 320), MaxLength = 65536, PlaceholderText = "粘贴结构化 JSON 建议" };
+        var size = Text("", 12, Muted); var error = Text("", 12, Amber); var body = Column(8);
+        body.Children.Add(size); body.Children.Add(input); body.Children.Add(error);
+        var dialog = new ContentDialog { Title = "导入建议（不执行）", Content = body, PrimaryButtonText = "校验并预览", CloseButtonText = "取消", XamlRoot = shell.XamlRoot };
+        AutomationMessage? response = null;
+        void UpdateSize()
+        {
+            var bytes = Encoding.UTF8.GetByteCount(input.Text);
+            size.Text = $"UTF-8 大小：{bytes:N0} / {UsageValidation.MaximumExportBytes:N0} 字节";
+            dialog.IsPrimaryButtonEnabled = bytes > 0 && bytes <= UsageValidation.MaximumExportBytes;
+            error.Text = bytes > UsageValidation.MaximumExportBytes ? "内容超过64 KiB，请删减后再校验。" : "";
+        }
+        input.TextChanged += (_, _) => UpdateSize(); UpdateSize();
+        dialog.PrimaryButtonClick += async (_, args) =>
+        {
+            var deferral = args.GetDeferral(); input.IsEnabled = false; error.Text = "正在校验，尚未创建或启用规则…";
+            try { response = await UsageAsync(new("import", SessionId: id, Text: input.Text)); }
+            catch (Exception failure) { args.Cancel = true; error.Text = "校验未通过，请修正后重试：" + failure.Message; }
+            finally { input.IsEnabled = true; deferral.Complete(); }
+        };
+        if (await ShowDialogAsync(dialog) != ContentDialogResult.Primary || response is null) return;
         try
         {
-            var response = await UsageAsync(new("import", SessionId: id, Text: input.Text));
             if (response.Task is { } draft)
             {
                 if (!await ConfirmAsync("审阅候选规则", response.ExportText + "\n将进入规则编辑器，默认暂停；必须保存并启用才可能执行。", "打开编辑器")) return;
