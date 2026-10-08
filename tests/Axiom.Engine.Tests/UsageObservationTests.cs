@@ -13,7 +13,7 @@ public sealed class UsageObservationTests
     private static UsageRecorder Recorder() => new(new(5, true, true, ["Private.exe"]), Now);
     private static AutomationSnapshot Catalog()
     {
-        var modules = new IAutomationPlugin[] { new ProgramPlugin(), new WindowPlugin(), new SystemEventPlugin(), new IntervalPlugin(), new DailyTimePlugin(), new AudioPlaybackPlugin(), new MicrophonePlugin(), new OnceTimePlugin(), new AudioPlugin(), new WindowPresencePlugin() };
+        var modules = new IAutomationPlugin[] { new ProgramPlugin(), new WindowPlugin(), new SystemEventPlugin(), new IntervalPlugin(), new DailyTimePlugin(), new FileArrivalPlugin(), new AudioPlaybackPlugin(), new MicrophonePlugin(), new OnceTimePlugin(), new AudioPlugin(), new WindowPresencePlugin() };
         return new([], [.. modules.SelectMany(m => m.Detections.Select(d => d.Descriptor).Concat(m.Actions.Select(a => a.Descriptor)))],
             [.. modules.SelectMany(m => m.Combinations)], true, "ready", "", Now, []);
     }
@@ -299,7 +299,7 @@ public sealed class UsageObservationTests
     [Fact]
     public void FullRegisteredCatalogFitsExportAndOversizedDescriptionsAreSummarized()
     {
-        var modules = new IAutomationPlugin[] { new ProgramPlugin(), new WindowPlugin(), new SystemEventPlugin(), new IntervalPlugin(), new DailyTimePlugin(), new AudioPlaybackPlugin(), new MicrophonePlugin(), new OnceTimePlugin(), new AudioPlugin(), new AxiomStartupPlugin(), new KeyboardPlugin(), new TrayPlugin(), new OpenTargetPlugin(), new ForegroundPlugin(), new WindowPresencePlugin() };
+        var modules = new IAutomationPlugin[] { new ProgramPlugin(), new WindowPlugin(), new SystemEventPlugin(), new IntervalPlugin(), new DailyTimePlugin(), new FileArrivalPlugin(), new AudioPlaybackPlugin(), new MicrophonePlugin(), new OnceTimePlugin(), new AudioPlugin(), new AxiomStartupPlugin(), new KeyboardPlugin(), new TrayPlugin(), new OpenTargetPlugin(), new ForegroundPlugin(), new WindowPresencePlugin() };
         var catalog = Catalog() with { Capabilities = [.. modules.SelectMany(m => m.Detections.Select(d => d.Descriptor).Concat(m.Actions.Select(a => a.Descriptor))).DistinctBy(c => (c.Kind, c.Id))], Combinations = [.. modules.SelectMany(m => m.Combinations)] };
         var recorder = Recorder(); recorder.Add(new(Now, "foreground", App("Editor")));
         var normal = UsageAnalysis.Prompt + UsageAnalysis.Summary(recorder.Session, catalog);
@@ -320,6 +320,18 @@ public sealed class UsageObservationTests
         var second = Recorder(); second.Add(new(Now, "foreground", App("Editor")));
         Assert.NotEqual(recorder.Session.Objects[0].Id, second.Session.Objects[0].Id);
     }
+    [Fact]
+    public void ImportedFileWatchCannotIntroduceAnUnobservedFilesystemPath()
+    {
+        var recorder = Recorder(); recorder.Add(new(Now, "process-start", App("WorkTool")));
+        var proposal = new UsageImport(1, recorder.Session.Id, "existing", "文件准备", "合成测试候选",
+            new(FileArrivalCapabilities.Arrived, 1, new Dictionary<string, string> { ["directory"] = Path.GetTempPath(), ["kind"] = "pdf" }.ToImmutableDictionary()),
+            new("program.start", 1, ProgramCapabilities.Describe(true).Fields.Where(f => f.DefaultValue is not null)
+                .ToImmutableDictionary(f => f.Id, f => f.DefaultValue!).Add("executable", recorder.Session.Objects[0].Id)));
+        var error = Assert.Throws<ArgumentException>(() => UsageAnalysis.Import(JsonSerializer.Serialize(proposal), recorder.Session, Catalog()));
+        Assert.Contains("手工填写", error.Message);
+    }
+
     [Fact]
     public void ImportedMicrophoneActionCannotToggleAndNeedsExplicitPausedReview()
     {

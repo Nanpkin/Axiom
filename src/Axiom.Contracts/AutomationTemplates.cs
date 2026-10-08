@@ -20,6 +20,7 @@ public static class AutomationTemplates
         new("window-prepare", "窗口出现后整理", "选择检测和目标程序，再选择布局；初始已有窗口不补执行，多窗口时只处理一个匹配窗口。", WindowPresenceCapabilities.Visible, WindowCapabilities.State, [], [("state", "maximize")]),
         new("focus-layout", "切到应用时摆到左半屏", "选择前台应用与目标程序；按触发时的显示器工作区整理一次，之后手动调整不会被持续干预。", ForegroundCapabilities.Active, WindowCapabilities.State, [], [("state", "left")]),
         new("display-layout", "显示变化后整理窗口", "选择目标程序和布局；显示模式通知后整理一次，按该窗口当前显示器处理，不识别特定屏幕组合、不恢复旧布局。", SystemEventCapabilities.Event, WindowCapabilities.State, [("event", "display-changed")], [("state", "left")]),
+        new("pdf-arrival", "文件夹出现PDF后打开工具", "填写本机文件夹和配套程序；新建或重命名出现PDF后一秒合并触发，不读取内容、不证明下载完成、不传递文件名。可给动作增加延迟。", FileArrivalCapabilities.Arrived, "program.start", [("kind", "pdf")], []),
         new("microphone-shortcut", "按快捷键静音默认通信麦克风", "选择快捷键；只静音Windows默认通信麦克风一次，不自动取消静音。应用选择的其他输入设备可能仍收音，请核对应用。", HotkeyCapabilities.Pressed, MicrophoneCapabilities.Set, [], [("operation", "mute")]),
         new("lock-mute", "锁屏后静音默认播放设备", "锁屏时静音一次，不停止播放、不改麦克风，解锁不自动恢复。之后可手动取消静音；请审阅后启用。", SystemEventCapabilities.Event, AudioPlaybackCapabilities.Set, [("event", "locked")], [("operation", "mute")]),
         new("once-meeting", "指定日期打开会议页面", "填写日期、本地时刻和http/https会议网址；只等待未来时刻，不补发已错过的会议，不自动加入或操作会议。", OnceTimeCapabilities.Due, OpenTargetCapabilities.Open, [], [("kind", "url")]),
