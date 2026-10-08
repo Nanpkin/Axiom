@@ -75,11 +75,12 @@ internal sealed class UsageObservationController(UsageJournal journal, IUsageObs
             {
                 var sessions = journal.Read(clock.GetUtcNow());
                 var selected = sessions.FirstOrDefault(s => s.Id == request.SessionId) ?? (request.SessionId is null ? sessions.FirstOrDefault() : null);
-                var suggestions = selected is null ? [] : UsageAnalysis.Analyze(selected);
+                var suggestions = selected is null ? [] : UsageAnalysis.AnalyzeCandidates(selected);
                 if (request.Operation == "restore-suggestions")
                 {
                     if (selected is null) throw new ArgumentException("观察记录不存在。");
-                    journal.RestoreFeedback([.. suggestions.Select(s => UsageAnalysis.FeedbackKey(selected, s))]);
+                    var handled = journal.Dismissed(null);
+                    journal.RestoreFeedback([.. suggestions.Select(s => UsageAnalysis.FeedbackKey(selected, s)).Where(handled.Contains).Take(12)]);
                 }
                 if (request.Operation == "feedback")
                 {
@@ -119,8 +120,8 @@ internal sealed class UsageObservationController(UsageJournal journal, IUsageObs
                 var snapshot = new UsageSnapshot([.. sessions.Select(s => s with { Objects = [], Events = [], Options = s.Options with { ExcludedApplications = [] } })],
                     current?.Session.State is "recording" or "paused" ? current.Session.Id : null, clock.GetUtcNow(),
                     selected is null ? null : selected with { Events = [.. selected.Events.Skip(request.Offset).Take(64)] }, selected?.Events.Length ?? 0,
-                    selected is null ? [] : [.. suggestions.Where(s => !dismissed.Contains(UsageAnalysis.FeedbackKey(selected, s)))],
-                    selected is null ? 0 : suggestions.Count(s => dismissed.Contains(UsageAnalysis.FeedbackKey(selected, s))));
+                    selected is null ? [] : [.. suggestions.Where(s => !dismissed.Contains(UsageAnalysis.FeedbackKey(selected, s))).Take(12)],
+                    selected is null ? 0 : Math.Min(12, suggestions.Count(s => dismissed.Contains(UsageAnalysis.FeedbackKey(selected, s)))));
                 return new(1, "usage", message.RequestId, Task: draft, UsageSnapshot: snapshot, ExportText: export);
             }
         }

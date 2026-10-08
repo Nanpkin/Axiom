@@ -293,6 +293,22 @@ public sealed class UsageObservationTests
         var summary = UsageAnalysis.Summary(recorder.Session, Catalog()); Assert.Contains("stoppedAfterSeconds", summary); Assert.Contains("plannedMinutes", summary);
     }
     [Fact]
+    public void TransientCandidateCollectionAndVisibleCardsHaveSeparateHardBounds()
+    {
+        var recorder = new UsageRecorder(new(5, false, false, [], WindowStates: true), Now); var tick = 0;
+        for (var app = 0; app < 64; app++)
+            foreach (var state in new[] { "minimized", "maximized", "left", "right", "center" })
+                for (var repeat = 0; repeat < 3; repeat++)
+                {
+                    var executable = App("SyntheticBound" + app);
+                    recorder.Add(new(Now.AddMilliseconds(tick++), "window-shown", executable));
+                    recorder.Add(new(Now.AddMilliseconds(tick++), "window-" + state, executable));
+                }
+        Assert.Equal(256, UsageAnalysis.AnalyzeCandidates(recorder.Session).Length);
+        Assert.Equal(12, UsageAnalysis.Analyze(recorder.Session).Length);
+    }
+
+    [Fact]
     public void FrequentUnexplainedSwitchesCannotCrowdOutAnActionablePreparationPattern()
     {
         var recorder = new UsageRecorder(new(120, true, true, []), Now);
@@ -354,6 +370,14 @@ public sealed class UsageObservationTests
             }
         }
         Assert.Equal(catalog.Combinations.Length, document.RootElement.GetProperty("combinations").GetArrayLength());
+        var handledKeys = UsageAnalysis.AnalyzeCandidates(recorder.Session).Take(12).Select(s => UsageAnalysis.FeedbackKey(recorder.Session, s)).ToHashSet();
+        var withFeedback = UsageAnalysis.Summary(recorder.Session, catalog, handledKeys);
+        Assert.True(System.Text.Encoding.UTF8.GetByteCount(UsageAnalysis.Prompt + withFeedback.Replace("\r\n", "\n").Replace("\n", "\r\n")) <= UsageValidation.MaximumExportBytes);
+        using var feedbackDocument = JsonDocument.Parse(withFeedback);
+        Assert.Equal(12, feedbackDocument.RootElement.GetProperty("handledPatterns").GetArrayLength());
+        Assert.InRange(feedbackDocument.RootElement.GetProperty("patterns").GetArrayLength(), 1, 12);
+        Assert.Equal(catalog.Capabilities.Length, feedbackDocument.RootElement.GetProperty("capabilities").GetArrayLength());
+        Assert.All(handledKeys, key => Assert.DoesNotContain(key, withFeedback));
         Assert.DoesNotContain("synthetic-private", UsageAnalysis.CapabilityCatalog(catalog, false));
     }
 
