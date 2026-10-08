@@ -7,7 +7,7 @@ namespace Axiom.Engine.Tests;
 
 public sealed class AutomationTemplateTests
 {
-    private static IAutomationPlugin[] Modules() => [new ProgramPlugin(), new WindowPlugin(), new SystemEventPlugin(), new IntervalPlugin(), new DailyTimePlugin(), new FileArrivalPlugin(), new AudioPlaybackPlugin(), new MicrophonePlugin(), new OnceTimePlugin(), new ForegroundPlugin(), new WindowPresencePlugin(), new KeyboardPlugin(), new OpenTargetPlugin()];
+    private static IAutomationPlugin[] Modules() => BuiltInAutomationPlugins.Create();
     private static AutomationSnapshot Catalog() => new([], [.. Modules().SelectMany(m => m.Detections.Select(d => d.Descriptor).Concat(m.Actions.Select(a => a.Descriptor)))], [.. Modules().SelectMany(m => m.Combinations)], true, "ready", "", DateTimeOffset.UtcNow, []);
     [Fact]
     public void EveryAvailableRecipeIsPausedUnsavedAndCompilesAfterTheUserSelectsItsRequiredObjects()

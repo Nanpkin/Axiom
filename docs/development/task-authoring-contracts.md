@@ -53,7 +53,7 @@ WinUI 经 `AutomationProtocol` 的受权本地管道读取目录及任务，提�
 
 1. 在 Infrastructure 实现 `IAutomationPlugin`，提供纯检测/动作编译器、支持组合和运行时 `CapabilityBinding`。可参考 `ProgramPlugin`。会话命令使用 `TaskInvocationCommands.Compile` 和其 `axiom.task-invocation` 参数 schema；动作编译器的 `Timing` 可映射到 Engine 时间策略，不能在 Provider 内 sleep 实现延迟。
 2. 在 SessionAgent 实现 `ISessionCapabilityProvider`：稳定能力 ID、按需 `ObserveAsync`（首个完整快照，后续有界事件）、`InvokeAsync`（再次验证参数，再调用 Windows 适配器）。OS 代码留在 Providers.Windows。
-3. 在 Host `Program` 的模块列表和 Agent `GameHdrAgent` 的 Provider 列表各登记一次。复用任务数据库、路由、权限、传输、调度和字段渲染器；无需改专用 UI、通用表结构或为能力新增 pipe 类型。
+3. 在 `Infrastructure/BuiltInAutomationPlugins` 的模块列表和 Agent `GameHdrAgent` 的 Provider 列表各登记一次；Host `Program` 消费同一模块列表。复用任务数据库、路由、权限、传输、调度和字段渲染器；无需改专用 UI、通用表结构或为能力新增 pipe 类型。
 4. 明确真实事件来源、权限与故障语义；验证配置保存/读回、真实触发/动作、活动记录、暂停/退出 UI。命令结果未知时不重试。
 
 当前通用插件运行时接受上述会话 Command contract；Desired State 的接管/恢复沿用 HDR 独立生命周期适配器。新 Desired State 场景需自己的真实恢复语义，不能伪装成命令。外部 DLL 安装、卸载、热加载、版本隔离尚未实现，不宣称是已开放的第三方插件平台。
