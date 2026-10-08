@@ -75,24 +75,30 @@ internal sealed class UsageObservationController(UsageJournal journal, IUsageObs
             {
                 var sessions = journal.Read(clock.GetUtcNow());
                 var selected = sessions.FirstOrDefault(s => s.Id == request.SessionId) ?? (request.SessionId is null ? sessions.FirstOrDefault() : null);
+                var suggestions = selected is null ? [] : UsageAnalysis.Analyze(selected);
+                if (request.Operation == "restore-suggestions")
+                {
+                    if (selected is null) throw new ArgumentException("观察记录不存在。");
+                    journal.RestoreFeedback([.. suggestions.Select(s => UsageAnalysis.FeedbackKey(selected, s))]);
+                }
                 if (request.Operation == "feedback")
                 {
-                    if (selected is null || !UsageAnalysis.Analyze(selected).Any(s => s.Id == request.FeedbackId)) throw new ArgumentException("建议已不存在。");
-                    journal.Feedback(selected.Id, UsageAnalysis.FeedbackKey(selected, UsageAnalysis.Analyze(selected).Single(s => s.Id == request.FeedbackId)), request.Text!);
+                    if (selected is null || !suggestions.Any(s => s.Id == request.FeedbackId)) throw new ArgumentException("建议已不存在。");
+                    journal.Feedback(selected.Id, UsageAnalysis.FeedbackKey(selected, suggestions.Single(s => s.Id == request.FeedbackId)), request.Text!);
                 }
                 string? export = null; AutomationTask? draft = null;
                 if (request.Operation is "catalog" or "catalog-readable") export = UsageAnalysis.CapabilityCatalog(catalog, request.Operation == "catalog-readable");
                 if (request.Operation == "draft")
                 {
                     if (selected is null) throw new ArgumentException("记录不存在。");
-                    var suggestion = UsageAnalysis.Analyze(selected).Single(s => s.Id == request.FeedbackId);
+                    var suggestion = suggestions.Single(s => s.Id == request.FeedbackId);
                     draft = UsageAnalysis.Draft(selected, suggestion, catalog);
                     journal.Feedback(selected.Id, UsageAnalysis.FeedbackKey(selected, suggestion), "accepted");
                 }
                 if (request.Operation is "export" or "import" or "extension")
                 {
                     if (selected is null) throw new ArgumentException("观察已不存在。");
-                    if (request.Operation == "export") export = UsageAnalysis.Prompt + UsageAnalysis.Summary(selected, catalog);
+                    if (request.Operation == "export") export = UsageAnalysis.Prompt + UsageAnalysis.Summary(selected, catalog, journal.Dismissed(null));
                     else
                     {
                         var imported = UsageAnalysis.Import(request.Text ?? "", selected, catalog);
@@ -108,7 +114,8 @@ internal sealed class UsageObservationController(UsageJournal journal, IUsageObs
                 var snapshot = new UsageSnapshot([.. sessions.Select(s => s with { Objects = [], Events = [], Options = s.Options with { ExcludedApplications = [] } })],
                     current?.Session.State is "recording" or "paused" ? current.Session.Id : null, clock.GetUtcNow(),
                     selected is null ? null : selected with { Events = [.. selected.Events.Skip(request.Offset).Take(64)] }, selected?.Events.Length ?? 0,
-                    selected is null ? [] : [.. UsageAnalysis.Analyze(selected).Where(s => !dismissed.Contains(UsageAnalysis.FeedbackKey(selected, s)))]);
+                    selected is null ? [] : [.. suggestions.Where(s => !dismissed.Contains(UsageAnalysis.FeedbackKey(selected, s)))],
+                    selected is null ? 0 : suggestions.Count(s => dismissed.Contains(UsageAnalysis.FeedbackKey(selected, s))));
                 return new(1, "usage", message.RequestId, Task: draft, UsageSnapshot: snapshot, ExportText: export);
             }
         }

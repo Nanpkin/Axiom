@@ -27,6 +27,49 @@ public sealed class UsageLifecycleTests
         controller.HandleAsync(new(1, "usage", "test", Usage: new(operation, options)), Catalog, default);
 
     [Fact(Timeout = 10000)]
+    public async Task RestoringHandledPatternsKeepsRecordsAndUnrelatedFeedbackWhileExportMarksThem()
+    {
+        var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".db");
+        var now = DateTimeOffset.UtcNow;
+        UsageSession Session()
+        {
+            var recorder = new UsageRecorder(new(5, false, true, []), now.AddMinutes(-3));
+            for (var i = 0; i < 3; i++)
+            {
+                recorder.Add(new(recorder.Session.StartedUtc.AddSeconds(i * 30), "process-start", Path.Combine(Path.GetTempPath(), "SyntheticWork.exe")));
+                recorder.Add(new(recorder.Session.StartedUtc.AddSeconds(i * 30 + 5), "process-start", Path.Combine(Path.GetTempPath(), "SyntheticCompanion.exe")));
+            }
+            recorder.State("stopped", atUtc: now); return recorder.Session;
+        }
+        try
+        {
+            using var journal = new UsageJournal(path); var source = new Source(); var one = Session(); var two = Session(); journal.Save(one); journal.Save(two);
+            await using var controller = new UsageObservationController(journal, source);
+            var suggestion = Assert.Single(UsageAnalysis.Analyze(one)); var key = UsageAnalysis.FeedbackKey(one, suggestion);
+            journal.Feedback(two.Id, key, "ignored"); journal.Feedback(one.Id, "unrelated-synthetic-feedback", "irrelevant");
+            Task<AutomationMessage> Request(string operation, string? id = null) => controller.HandleAsync(new(1, "usage", "synthetic",
+                Usage: new(operation, SessionId: id ?? one.Id)), Catalog, default);
+            var hidden = (await Request("read")).UsageSnapshot!;
+            Assert.Empty(hidden.Suggestions!); Assert.Equal(1, hidden.DismissedSuggestions);
+            var exported = (await Request("export")).ExportText!;
+            Assert.DoesNotContain(key, exported); Assert.DoesNotContain(one.Objects[0].Executable, exported);
+            using (var json = System.Text.Json.JsonDocument.Parse(exported[UsageAnalysis.Prompt.Length..]))
+            {
+                Assert.Equal(0, json.RootElement.GetProperty("patterns").GetArrayLength());
+                Assert.Equal(1, json.RootElement.GetProperty("handledPatterns").GetArrayLength());
+            }
+            var restored = (await Request("restore-suggestions")).UsageSnapshot!;
+            Assert.Single(restored.Suggestions!); Assert.Equal(0, restored.DismissedSuggestions);
+            Assert.Equal(one.Events.Length, restored.TotalEvents); Assert.Equal(2, restored.Sessions.Length);
+            Assert.Equal(new[] { "unrelated-synthetic-feedback" }, journal.Dismissed(null));
+            Assert.Equal(0, source.Starts); Assert.Null(restored.ActiveId);
+            await Assert.ThrowsAsync<ArgumentException>(() => Request("restore-suggestions", Guid.NewGuid().ToString("D")));
+            Assert.Throws<ArgumentException>(() => UsageValidation.Request(new("restore-suggestions")));
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact(Timeout = 10000)]
     public async Task DuplicateAndOutOfScopeSamplesDoNotRewriteStorageButGapsAndExpiryStillPersist()
     {
         var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".db");
