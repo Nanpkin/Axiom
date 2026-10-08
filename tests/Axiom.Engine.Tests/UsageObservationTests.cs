@@ -17,20 +17,24 @@ public sealed class UsageObservationTests
         return new([], [.. modules.SelectMany(m => m.Detections.Select(d => d.Descriptor).Concat(m.Actions.Select(a => a.Descriptor)))],
             [.. modules.SelectMany(m => m.Combinations)], true, "ready", "", Now, []);
     }
-    [Fact]
-    public void RepeatedWindowPreparationOffersSingleReviewedStateCommandAndHonorsMissingEvidence()
+    [Theory]
+    [InlineData("maximized", "maximize")]
+    [InlineData("left", "left")]
+    [InlineData("right", "right")]
+    [InlineData("center", "center")]
+    public void RepeatedWindowPreparationOffersSingleReviewedStateCommandAndHonorsMissingEvidence(string observedState, string command)
     {
         var recorder = new UsageRecorder(new(5, false, false, [], WindowStates: true), Now);
         for (var i = 0; i < 3; i++)
         {
             recorder.Add(new(Now.AddSeconds(i * 60), "window-shown", App("Editor")));
-            recorder.Add(new(Now.AddSeconds(i * 60 + 5), "window-maximized", App("Editor")));
+            recorder.Add(new(Now.AddSeconds(i * 60 + 5), "window-" + observedState, App("Editor")));
             recorder.Add(new(Now.AddSeconds(i * 60 + 10), "window-hidden", App("Editor")));
         }
         var suggestion = Assert.Single(UsageAnalysis.Analyze(recorder.Session)); Assert.Equal(3, suggestion.Occurrences); Assert.Equal(3, suggestion.Opportunities);
         var draft = UsageAnalysis.Draft(recorder.Session, suggestion, Catalog()); Assert.True(draft.Paused);
         Assert.Equal(WindowPresenceCapabilities.Visible, draft.Detection.CapabilityId); Assert.Equal(WindowCapabilities.State, draft.Action.CapabilityId);
-        Assert.Equal("maximize", draft.Action.Parameters["state"]); Assert.Equal(App("Editor"), draft.Action.Parameters["executable"]);
+        Assert.Equal(command, draft.Action.Parameters["state"]); Assert.Equal(App("Editor"), draft.Action.Parameters["executable"]);
         Assert.NotEqual(UsageAnalysis.FeedbackKey(recorder.Session, suggestion), UsageAnalysis.FeedbackKey(recorder.Session, suggestion with { WindowState = "minimize" }));
         var missing = recorder.Session with { Events = [.. recorder.Session.Events.SelectMany(e => new[] { e, new UsageEvent(e.AtUtc, "gap", null, "unknown") })] };
         Assert.Empty(UsageAnalysis.Analyze(missing));

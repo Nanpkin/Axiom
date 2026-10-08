@@ -31,11 +31,11 @@ public static class WindowsUsageWindows
                 return;
             }
             GetWindowThreadProcessId(window, out var pid);
-            var state = IsIconic(window) ? "minimized" : IsZoomed(window) ? "maximized" : "normal";
-            // Moving/resizing a known window does not require another process metadata read.
-            if (!baseline && history.Unchanged(window, (int)pid, state)) return;
             try
             {
+                var state = IsIconic(window) ? "minimized" : IsZoomed(window) ? "maximized" : WindowsWindowLayout.ReadLayout(window);
+                // Coordinates stay transient: only category changes require process metadata or produce records.
+                if (!baseline && history.Unchanged(window, (int)pid, state)) return;
                 using var process = Process.GetProcessById((int)pid);
                 if (process.SessionId != session) { history.Forget(window); return; }
                 var path = WindowsForegroundIdentity.Resolve(new((int)pid, at.ToFileTime()), sid, session);

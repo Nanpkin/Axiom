@@ -37,6 +37,15 @@ public sealed class WindowStateTests
         Assert.Equal((192, 104, 1536, 832), Axiom.Providers.Windows.WindowLayoutGeometry.Calculate("center", 0, 0, 1920, 1040));
         Assert.Throws<ArgumentException>(() => Axiom.Providers.Windows.WindowLayoutGeometry.Calculate("left", 0, 0, 0, 10));
     }
+    [Fact]
+    public void LayoutCategoriesAllowFrameMarginsButDoNotInventAMatchForArbitraryPlacement()
+    {
+        Assert.Equal("left", Axiom.Providers.Windows.WindowLayoutGeometry.Classify(-1928, 32, 976, 1056, -1920, 40, 1921, 1040, 16));
+        Assert.Equal("right", Axiom.Providers.Windows.WindowLayoutGeometry.Classify(-960, 40, 961, 1040, -1920, 40, 1921, 1040, 16));
+        Assert.Equal("center", Axiom.Providers.Windows.WindowLayoutGeometry.Classify(192, 104, 1536, 832, 0, 0, 1920, 1040, 16));
+        Assert.Equal("normal", Axiom.Providers.Windows.WindowLayoutGeometry.Classify(100, 100, 500, 300, 0, 0, 1920, 1040, 16));
+        Assert.Throws<ArgumentException>(() => Axiom.Providers.Windows.WindowLayoutGeometry.Classify(0, 0, 0, 20, 0, 0, 1920, 1040, 16));
+    }
     [Theory]
     [InlineData("state", "unsupported-state")]
     [InlineData("waitSeconds", "31")]

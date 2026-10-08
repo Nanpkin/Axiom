@@ -176,6 +176,11 @@ public sealed class WindowActionTests
             target.SetState(6); await ReadKind("window-minimized");
             target.SetState(9); await ReadKind("window-maximized");
             target.SetState(9); await ReadKind("window-normal");
+            foreach (var layout in new[] { "left", "right", "center" })
+            {
+                Assert.True((await WindowsWindowActions.CloseAsync(Environment.ProcessPath!, target.Title, TimeSpan.FromSeconds(2), default, layout)).Success);
+                await ReadKind("window-" + layout);
+            }
             Assert.True((await WindowsWindowActions.CloseAsync(Environment.ProcessPath!, target.Title, TimeSpan.FromSeconds(2), default)).Success);
             await ReadKind("window-hidden");
         }
