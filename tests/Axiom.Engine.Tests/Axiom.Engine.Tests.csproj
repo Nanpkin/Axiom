@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <Compile Include="../../src/Axiom.SessionAgent/DailyEventSource.cs" Link="DailyEventSource.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/SessionCapabilityProvider.cs" Link="SessionCapabilityProvider.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/AudioCapabilityProvider.cs" Link="AudioCapabilityProvider.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsAudioEvents.cs" Link="WindowsAudioEvents.cs" />

@@ -7,12 +7,12 @@ namespace Axiom.Engine.Tests;
 
 public sealed class AutomationTemplateTests
 {
-    private static IAutomationPlugin[] Modules() => [new ProgramPlugin(), new WindowPlugin(), new SystemEventPlugin(), new IntervalPlugin(), new ForegroundPlugin(), new WindowPresencePlugin(), new KeyboardPlugin(), new OpenTargetPlugin()];
+    private static IAutomationPlugin[] Modules() => [new ProgramPlugin(), new WindowPlugin(), new SystemEventPlugin(), new IntervalPlugin(), new DailyTimePlugin(), new ForegroundPlugin(), new WindowPresencePlugin(), new KeyboardPlugin(), new OpenTargetPlugin()];
     private static AutomationSnapshot Catalog() => new([], [.. Modules().SelectMany(m => m.Detections.Select(d => d.Descriptor).Concat(m.Actions.Select(a => a.Descriptor)))], [.. Modules().SelectMany(m => m.Combinations)], true, "ready", "", DateTimeOffset.UtcNow, []);
     [Fact]
     public void EveryAvailableRecipeIsPausedUnsavedAndCompilesAfterTheUserSelectsItsRequiredObjects()
     {
-        var catalog = Catalog(); var templates = AutomationTemplates.Build(catalog); Assert.Equal(10, templates.Length);
+        var catalog = Catalog(); var templates = AutomationTemplates.Build(catalog); Assert.Equal(11, templates.Length);
         var compiler = new AutomationTaskCompiler();
         foreach (var module in Modules()) { foreach (var d in module.Detections) compiler.Register(d); foreach (var a in module.Actions) compiler.Register(a); }
         foreach (var template in templates)
