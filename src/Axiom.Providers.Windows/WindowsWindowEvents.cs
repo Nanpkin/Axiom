@@ -5,16 +5,19 @@ using System.Threading.Channels;
 
 namespace Axiom.Providers.Windows;
 
-// One temporary desktop event source shared by pending window commands, never a process detector.
+// Desktop events shared by window-presence rules and pending window commands.
 [SupportedOSPlatform("windows")]
-internal sealed class WindowsWindowEvents : IDisposable
+public sealed class WindowsWindowEvents : IDisposable
 {
     private static readonly object Gate = new();
     private static Hub? shared;
     internal readonly Channel<nint> Events = Channel.CreateBounded<nint>(256);
+    public ChannelReader<nint> Reader => Events.Reader;
+    private readonly bool lifecycleOnly;
     private bool disposed;
-    public WindowsWindowEvents()
+    public WindowsWindowEvents(bool lifecycleOnly = false)
     {
+        this.lifecycleOnly = lifecycleOnly;
         lock (Gate)
         {
             shared ??= new Hub();
@@ -53,7 +56,7 @@ internal sealed class WindowsWindowEvents : IDisposable
             if (hook == 0) { Ready.TrySetException(new Win32Exception(Marshal.GetLastWin32Error())); Stopped.TrySetResult(); return; }
             Ready.TrySetResult();
             try { while (GetMessage(out _, 0, 0, 0) > 0) { } }
-            finally { UnhookWinEvent(hook); Stopped.TrySetResult(); }
+            finally { UnhookWinEvent(hook); lock (Gate) foreach (var client in Clients) client.Events.Writer.TryComplete(new IOException("窗口通知已停止。")); Stopped.TrySetResult(); }
         }
         private void OnEvent(nint hook, uint kind, nint window, int objectId, int childId, uint thread, uint time)
         {
@@ -61,7 +64,7 @@ internal sealed class WindowsWindowEvents : IDisposable
             if (window == 0 || objectId != 0 || childId != 0 || kind is 0x8000 or 0x8002 or 0x800A or 0x800B && GetAncestor(window, 2) != window) return;
             lock (Gate)
                 foreach (var client in Clients)
-                    if (!client.Events.Writer.TryWrite(window)) client.Events.Writer.TryComplete(new IOException("窗口事件队列已满，无法确认窗口操作；不会自动重试。"));
+                    if ((!client.lifecycleOnly || kind is 0x8000 or 0x8001 or 0x8002 or 0x8003) && !client.Events.Writer.TryWrite(window)) client.Events.Writer.TryComplete(new IOException("窗口事件队列已满，无法确认窗口操作；不会自动重试。"));
         }
     }
     private delegate void Callback(nint hook, uint kind, nint window, int objectId, int childId, uint thread, uint time);

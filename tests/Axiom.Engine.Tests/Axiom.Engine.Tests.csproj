@@ -1,5 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowPresenceState.cs" Link="WindowPresenceState.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsWindowPresence.cs" Link="WindowsWindowPresence.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsForegroundIdentity.cs" Link="WindowsForegroundIdentity.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsProcessIdentity.cs" Link="WindowsProcessIdentity.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsForegroundEvents.cs" Link="WindowsForegroundEvents.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsWindowLayout.cs" Link="WindowsWindowLayout.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsSessionEvents.cs" Link="WindowsSessionEvents.cs" />
