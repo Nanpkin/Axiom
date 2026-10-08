@@ -3,7 +3,6 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Security.Principal;
-using Microsoft.Win32.SafeHandles;
 
 namespace Axiom.Providers.Windows;
 
@@ -69,7 +68,7 @@ public static class WindowsUsageObservation
                     if (trackExit)
                     {
                         var owned = handle; handle = 0;
-                        var wait = new ManualResetEvent(false) { SafeWaitHandle = new SafeWaitHandle(owned, ownsHandle: true) };
+                        var wait = new OwnedProcessWaitHandle(owned);
                         exitTracker.Track(pid, created, wait, () =>
                         {
                             if (!GetProcessTimes(owned, out var actualCreated, out var exited, out _, out _) || actualCreated != created || exited <= 0)

@@ -100,7 +100,7 @@ public sealed class WindowsGameProcessObserver : IAsyncDisposable
         // Dedupe only after reading creation time: an exited PID can already have
         // been reused while its old wait callback is still being dispatched.
         Process? process = null;
-        ManualResetEvent? processExit = null;
+        OwnedProcessWaitHandle? processExit = null;
         try
         {
             process = Process.GetProcessById(pid);
@@ -110,10 +110,7 @@ public sealed class WindowsGameProcessObserver : IAsyncDisposable
             // SYNCHRONIZE allows an OS wait without scanning for exit.
             var handle = OpenProcess(0x00101000, false, pid);
             if (handle == IntPtr.Zero) throw new Win32Exception(Marshal.GetLastWin32Error());
-            processExit = new ManualResetEvent(false)
-            {
-                SafeWaitHandle = new SafeWaitHandle(handle, ownsHandle: true)
-            };
+            processExit = new OwnedProcessWaitHandle(handle);
             var path = WindowsProcessIdentity.ReadImagePath(handle);
             if (expectedPath is not null && !string.Equals(expectedPath, path, StringComparison.OrdinalIgnoreCase)) return;
             if (!string.Equals(WindowsProcessIdentity.ReadOwnerSid(handle), ownerSid, StringComparison.Ordinal))
