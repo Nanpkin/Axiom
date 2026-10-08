@@ -2,7 +2,7 @@ namespace Axiom.Contracts;
 
 // Only these metadata events cross the Agent boundary. Titles, arguments and content have no field.
 public sealed record UsageSample(DateTimeOffset AtUtc, string Kind, string? Executable = null, string Origin = "unknown");
-public sealed record UsageOptions(int Minutes, bool Foreground, bool ProcessStarts, string[] ExcludedApplications, string Purpose = "", bool SystemEvents = false, bool ProcessExits = false);
+public sealed record UsageOptions(int Minutes, bool Foreground, bool ProcessStarts, string[] ExcludedApplications, string Purpose = "", bool SystemEvents = false, bool ProcessExits = false, bool WindowStates = false);
 public sealed record UsageEvent(DateTimeOffset AtUtc, string Kind, string? ObjectId, string Origin, int Count = 1, double? DwellSeconds = null);
 public sealed record UsageObject(string Id, string Executable);
 public sealed record UsageSession(string Id, DateTimeOffset StartedUtc, DateTimeOffset EndsUtc, string State,
@@ -11,7 +11,7 @@ public sealed record UsageSnapshot(UsageSession[] Sessions, string? ActiveId, Da
 public sealed record UsageRequest(string Operation, UsageOptions? Options = null, string? SessionId = null, string? Text = null, string? FeedbackId = null, int Offset = 0);
 public sealed record UsageEvidence(int FromOffsetSeconds, int ToOffsetSeconds);
 public sealed record UsageSuggestion(string Id, string Kind, string Title, string Evidence, string Limitation,
-    string[] ObjectIds, int Occurrences, int Opportunities, string? EventKind = null, UsageEvidence[]? EvidenceSamples = null);
+    string[] ObjectIds, int Occurrences, int Opportunities, string? EventKind = null, UsageEvidence[]? EvidenceSamples = null, string? WindowState = null);
 
 public static class UsageValidation
 {
@@ -21,7 +21,7 @@ public static class UsageValidation
     public const int MaximumExportBytes = 65536;
     public static void Options(UsageOptions options)
     {
-        if (options.Minutes is < 1 or > 120 || !options.Foreground && !options.ProcessStarts && !options.SystemEvents && !options.ProcessExits ||
+        if (options.Minutes is < 1 or > 120 || !options.Foreground && !options.ProcessStarts && !options.SystemEvents && !options.ProcessExits && !options.WindowStates ||
             options.ExcludedApplications is null || options.ExcludedApplications.Length > 128 || options.Purpose is null || options.Purpose.Length > 500 ||
             options.ExcludedApplications.Any(n => string.IsNullOrWhiteSpace(n) || n.Length > 132 || !n.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) || n.IndexOfAny(['/', '\\', ':', '\r', '\n']) >= 0))
             throw new ArgumentException("请选择观察范围、1–120 分钟及有效的排除程序名；目的最多 500 字。");

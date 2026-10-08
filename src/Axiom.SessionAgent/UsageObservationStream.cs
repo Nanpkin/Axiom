@@ -24,7 +24,7 @@ internal static class UsageObservationStream
         var queue = Channel.CreateBounded<UsageSample>(256);
         void Publish(UsageSample sample) { if (!queue.Writer.TryWrite(sample)) queue.Writer.TryComplete(new IOException("观察队列溢出，记录已停止。")); }
         ActionStarted += Publish;
-        var native = WindowsUsageObservation.RunAsync(request.UsageOptions!.Foreground, request.UsageOptions.ProcessStarts, request.UsageOptions.SystemEvents, request.UsageOptions.ProcessExits, request.UsageOptions.ExcludedApplications,
+        var native = WindowsUsageObservation.RunAsync(request.UsageOptions!.Foreground, request.UsageOptions.ProcessStarts, request.UsageOptions.SystemEvents, request.UsageOptions.ProcessExits, request.UsageOptions.WindowStates, request.UsageOptions.ExcludedApplications,
             sample => Publish(new(sample.AtUtc, sample.Kind, sample.Executable)), lifetime.Token);
         var disconnected = ProviderProtocol.ReadAsync(pipe, lifetime.Token);
         try

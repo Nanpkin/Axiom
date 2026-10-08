@@ -74,7 +74,7 @@ public sealed partial class WorkbenchWindow
         sessions.SelectionChanged += async (_, _) => { if (sessions.SelectedIndex < 0 || busy) return; usageSelection = usageSnapshot.Sessions[sessions.SelectedIndex].Id; usageOffset = 0; await UsageCommandAsync("read"); };
         content.Children.Add(sessions);
         if (selected is null) { content.Children.Add(Text("没有观察记录。先开启一次你愿意记录的使用过程。", 14, Muted)); return; }
-        content.Children.Add(Text("本次范围：" + string.Join("、", new[] { selected.Options.Foreground ? "前台应用" : null, selected.Options.ProcessStarts ? "程序启动" : null, selected.Options.ProcessExits ? "本次新进程退出" : null, selected.Options.SystemEvents ? "会话/供电/网络可用性" : null }.Where(x => x is not null)), 13, Muted));
+        content.Children.Add(Text("本次范围：" + string.Join("、", new[] { selected.Options.Foreground ? "前台应用" : null, selected.Options.ProcessStarts ? "程序启动" : null, selected.Options.ProcessExits ? "本次新进程退出" : null, selected.Options.WindowStates ? "窗口显示/隐藏/最小化/最大化" : null, selected.Options.SystemEvents ? "会话/供电/网络可用性" : null }.Where(x => x is not null)), 13, Muted));
         content.Children.Add(Text("排除应用：" + (selected.Options.ExcludedApplications.Length == 0 ? "无" : string.Join("、", selected.Options.ExcludedApplications)), 12, Muted));
         content.Children.Add(Text("本次目的：" + (selected.Options.Purpose.Length == 0 ? "未填写" : selected.Options.Purpose), 13, Muted));
         foreach (var gap in selected.Gaps) content.Children.Add(Text(gap, 12, Amber));
@@ -116,7 +116,7 @@ public sealed partial class WorkbenchWindow
         var clear = Action("清空记录"); clear.Click += async (_, _) => { if (await ConfirmAsync("清空使用观察？", "全部观察与相关反馈将被删除；现有规则保留。", "清空")) { usageOffset = 0; usageSelection = null; await UsageCommandAsync("clear"); } }; removal.Children.Add(clear); content.Children.Add(removal);
     }
     private static string StateName(string state) => state switch { "recording" => "观察中", "paused" => "已暂停", _ => "已结束" };
-    private static string EventName(string kind) => kind switch { "foreground" => "前台切换", "process-start" => "程序启动", "process-exit" => "进程退出", "axiom-action" => "Axiom 发起动作", "system-locked" => "锁屏", "system-unlocked" => "解锁", "system-resumed" => "睡眠恢复", "system-ac" => "交流电供电", "system-battery" => "电池供电", "system-network-up" => "网络可用", "system-network-down" => "网络不可用", _ => "记录间断" };
+    private static string EventName(string kind) => kind switch { "foreground" => "前台切换", "process-start" => "程序启动", "process-exit" => "进程退出", "window-shown" => "窗口显示", "window-hidden" => "窗口隐藏或销毁", "window-minimized" => "窗口最小化", "window-maximized" => "窗口最大化", "window-normal" => "窗口还原", "axiom-action" => "Axiom 发起动作", "system-locked" => "锁屏", "system-unlocked" => "解锁", "system-resumed" => "睡眠恢复", "system-ac" => "交流电供电", "system-battery" => "电池供电", "system-network-up" => "网络可用", "system-network-down" => "网络不可用", _ => "记录间断" };
     private static string LocalName(UsageSession session, string? id) => session.Objects.FirstOrDefault(o => o.Id == id) is { } item ? Path.GetFileName(item.Executable) : "—";
 
     private async Task AnnotateUsageAsync(UsageSession session)
@@ -134,11 +134,12 @@ public sealed partial class WorkbenchWindow
         if (busy || activeDialog is not null) return;
         var body = Column(12); var foreground = new CheckBox { Content = "前台应用切换（不含窗口标题）", IsChecked = true }; var starts = new CheckBox { Content = "程序启动（不含命令行）", IsChecked = true };
         var exits = new CheckBox { Content = "本次新进程退出（不推断是否手动关闭）", IsChecked = false };
+        var windows = new CheckBox { Content = "窗口显示/隐藏/最小化/最大化（不含标题）", IsChecked = false };
         var system = new CheckBox { Content = "锁屏、解锁、唤醒、供电及网络可用性（不含地址）", IsChecked = true };
         var duration = new ComboBox { Header = "持续时间", ItemsSource = new[] { "5 分钟", "15 分钟", "30 分钟", "60 分钟", "120 分钟" }, SelectedIndex = 1 };
         var exclusions = new TextBox { Header = "排除应用：每行一个 exe 文件名", AcceptsReturn = true, Height = 80, MaxLength = 17000 };
         var purpose = new TextBox { Header = "我准备做什么（选填，会进入导出预览）", MaxLength = 500 };
-        body.Children.Add(foreground); body.Children.Add(starts); body.Children.Add(exits); body.Children.Add(system); body.Children.Add(duration); body.Children.Add(exclusions); body.Children.Add(purpose);
+        body.Children.Add(foreground); body.Children.Add(starts); body.Children.Add(exits); body.Children.Add(windows); body.Children.Add(system); body.Children.Add(duration); body.Children.Add(exclusions); body.Children.Add(purpose);
         body.Children.Add(Text("记录只留本机；关闭窗口即停止，重启不会自动恢复。Axiom 动作会单独标记，其他事件来源未知。退出仅覆盖本次核验的新进程，最多同时 128 个；暂停期间和恢复前已有进程不补跟踪。", 12, Muted));
         var dialog = new ContentDialog { Title = "主动开启使用观察", Content = body, PrimaryButtonText = "开始", CloseButtonText = "取消", DefaultButton = ContentDialogButton.Close, XamlRoot = shell.XamlRoot };
         if (await ShowDialogAsync(dialog) != ContentDialogResult.Primary) return;
@@ -146,7 +147,7 @@ public sealed partial class WorkbenchWindow
         try
         {
             var options = new UsageOptions(new[] { 5, 15, 30, 60, 120 }[duration.SelectedIndex], foreground.IsChecked == true, starts.IsChecked == true,
-                exclusions.Text.Split(['\r', '\n'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries), purpose.Text, system.IsChecked == true, exits.IsChecked == true);
+                exclusions.Text.Split(['\r', '\n'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries), purpose.Text, system.IsChecked == true, exits.IsChecked == true, windows.IsChecked == true);
             UsageValidation.Options(options);
             usageLease?.Dispose(); var sid = WindowsIdentity.GetCurrent().User?.Value ?? throw new UnauthorizedAccessException();
             var lease = LocalUserPipe.Create(AutomationProtocol.PipeName(sid)); usageLease = lease;
