@@ -102,7 +102,7 @@ public sealed class WindowsSessionEventTests
             Marshal.WriteInt32(buffer, 28, 0); // no path or serial number is required or read
             foreach (var (nativeKind, expected) in new[] { (0x8000, "usb-arrived"), (0x8004, "usb-removed") })
             {
-                SendMessage(one.NotificationWindow, 0x0219, nativeKind, buffer);
+                Assert.Equal((nint)1, SendMessage(one.NotificationWindow, 0x0219, nativeKind, buffer));
                 foreach (var source in new[] { one, two })
                 {
                     string kind;
@@ -113,6 +113,6 @@ public sealed class WindowsSessionEventTests
         }
         finally { Marshal.FreeHGlobal(buffer); }
     }
-    [DllImport("user32.dll")] private static extern nint SendMessage(nint window, uint message, nint w, nint l);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern nint SendMessage(nint window, uint message, nint w, nint l);
 
 }
