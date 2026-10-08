@@ -24,7 +24,7 @@ public sealed class OpenTargetTaskAction : ITaskActionCompiler
     public RuleAction Compile(TaskInvocation configuration, ResourceScope scope)
     {
         var target = OpenTargetCapabilities.Validate(configuration);
-        return TaskInvocationCommands.Compile(configuration, Descriptor, scope, target.Kind + ":" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(target.Target))));
+        return TaskInvocationCommands.Compile(configuration, Descriptor, scope, target.Kind + ":" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(target.Kind == "url" ? target.Target : target.Target.ToUpperInvariant()))));
     }
     public RuleTiming Timing(TaskInvocation configuration) => new(minimumDuration: TimeSpan.FromSeconds(OpenTargetCapabilities.Validate(configuration).Delay));
 }

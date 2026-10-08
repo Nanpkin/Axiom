@@ -445,7 +445,7 @@ public sealed class UsageObservationTests
             new(SystemEventCapabilities.Event, 1, ImmutableDictionary<string, string>.Empty.Add("event", "unlocked")),
             new(OpenTargetCapabilities.Open, 1, new Dictionary<string, string> { ["kind"] = "url", ["target"] = "", ["delaySeconds"] = "0" }.ToImmutableDictionary()));
         var draft = UsageAnalysis.Import(JsonSerializer.Serialize(proposal), recorder.Session, catalog).Draft!;
-        Assert.Equal(new[] { "目录路径或网址" }, UsageAnalysis.MissingManualFields(draft, catalog));
+        Assert.Equal(new[] { "目录/文档路径或网址" }, UsageAnalysis.MissingManualFields(draft, catalog));
         var compiler = new AutomationTaskCompiler(); compiler.Register(new SystemEventTaskDetection()); compiler.Register(new OpenTargetTaskAction());
         Assert.Throws<ArgumentException>(() => compiler.Compile(draft, "owner", ResourceScope.Session("owner", 1)));
         var completed = draft with { Action = draft.Action with { Parameters = draft.Action.Parameters.SetItem("target", "https://example.invalid/reminder") } };
@@ -457,6 +457,21 @@ public sealed class UsageObservationTests
         var withCombination = catalog with { Combinations = catalog.Combinations.Add(new(FileArrivalCapabilities.Arrived, AudioPlaybackCapabilities.Set)) };
         var invalidAudio = Assert.Throws<ArgumentException>(() => UsageAnalysis.Import(JsonSerializer.Serialize(proposal with { Detection = partialDetection, Action = audio }), recorder.Session, withCombination));
         Assert.Contains("整数", invalidAudio.Message);
+    }
+    [Fact]
+    public void ImportedDocumentPlaceholderCannotSupplyLocalPathOrUnsupportedDocumentType()
+    {
+        var recorder = Recorder(); var catalog = Catalog();
+        var proposal = new UsageImport(1, recorder.Session.Id, "existing", "计划文档", "合成候选",
+            new(SystemEventCapabilities.Event, 1, ImmutableDictionary<string, string>.Empty.Add("event", "unlocked")),
+            new(OpenTargetCapabilities.Open, 1, new Dictionary<string, string> { ["kind"] = "document", ["target"] = "", ["delaySeconds"] = "0" }.ToImmutableDictionary()));
+        var draft = UsageAnalysis.Import(JsonSerializer.Serialize(proposal), recorder.Session, catalog).Draft!;
+        var compiler = new AutomationTaskCompiler(); compiler.Register(new SystemEventTaskDetection()); compiler.Register(new OpenTargetTaskAction());
+        Assert.True(draft.Paused); Assert.Throws<ArgumentException>(() => compiler.Compile(draft, "owner", ResourceScope.Session("owner", 1)));
+        var localPath = Path.Combine(Path.GetTempPath(), "SyntheticPlan.pdf");
+        Assert.NotNull(compiler.Compile(draft with { Action = draft.Action with { Parameters = draft.Action.Parameters.SetItem("target", localPath) } }, "owner", ResourceScope.Session("owner", 1)));
+        Assert.Throws<ArgumentException>(() => UsageAnalysis.Import(JsonSerializer.Serialize(proposal with { Action = proposal.Action! with { Parameters = proposal.Action.Parameters.SetItem("target", localPath) } }), recorder.Session, catalog));
+        Assert.Throws<ArgumentException>(() => compiler.Compile(draft with { Action = draft.Action with { Parameters = draft.Action.Parameters.SetItem("target", Path.ChangeExtension(localPath, ".cmd")) } }, "owner", ResourceScope.Session("owner", 1)));
     }
     [Fact]
     public void ImportedReminderRequiresManualTextButStillRejectsFractionalDelay()
