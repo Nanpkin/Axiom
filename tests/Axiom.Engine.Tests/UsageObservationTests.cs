@@ -42,6 +42,35 @@ public sealed class UsageObservationTests
         Assert.Empty(UsageAnalysis.Analyze(automated));
     }
 
+    [Theory]
+    [InlineData("left")]
+    [InlineData("right")]
+    [InlineData("center")]
+    public void RepeatedDisplayLayoutsUseSystemTriggerAndNeverAssumeAParticularMonitor(string layout)
+    {
+        var recorder = new UsageRecorder(new(5, false, false, [], SystemEvents: true, WindowStates: true), Now);
+        for (var i = 0; i < 3; i++)
+        {
+            recorder.Add(new(Now.AddSeconds(i * 70), "system-display-changed"));
+            recorder.Add(new(Now.AddSeconds(i * 70 + 5), "window-" + layout, App("Editor")));
+            recorder.Add(new(Now.AddSeconds(i * 70 + 6), "window-" + layout, App("Editor")));
+        }
+        var suggestion = Assert.Single(UsageAnalysis.Analyze(recorder.Session)); Assert.Equal(3, suggestion.Occurrences); Assert.Equal(3, suggestion.Opportunities);
+        Assert.Contains("不能识别特定屏幕组合", suggestion.Limitation);
+        var draft = UsageAnalysis.Draft(recorder.Session, suggestion, Catalog()); Assert.True(draft.Paused);
+        Assert.Equal("系统变化后整理窗口", draft.Title);
+        Assert.Equal(SystemEventCapabilities.Event, draft.Detection.CapabilityId); Assert.Equal("display-changed", draft.Detection.Parameters["event"]);
+        Assert.Equal(WindowCapabilities.State, draft.Action.CapabilityId); Assert.Equal(layout, draft.Action.Parameters["state"]);
+        var compiler = new AutomationTaskCompiler(); compiler.Register(new SystemEventTaskDetection()); compiler.Register(new WindowStateTaskAction());
+        Assert.NotNull(compiler.Compile(draft, "owner", ResourceScope.Session("owner", 1)));
+        var interrupted = recorder.Session with { Events = [.. recorder.Session.Events.SelectMany(e => e.Kind == "system-display-changed" ? new[] { e, new UsageEvent(e.AtUtc, "gap", null, "unknown") } : new[] { e })] };
+        Assert.Empty(UsageAnalysis.Analyze(interrupted));
+        var automated = recorder.Session with { Events = [new UsageEvent(Now, "axiom-action", recorder.Session.Objects[0].Id, "axiom"), .. recorder.Session.Events] };
+        Assert.Empty(UsageAnalysis.Analyze(automated));
+        var noWindowScope = new UsageRecorder(new(5, false, false, [], SystemEvents: true), Now);
+        Assert.False(noWindowScope.Add(new(Now, "window-" + layout, App("Editor"))));
+    }
+
     [Fact]
     public void RepeatedHiddenWindowCleanupKeepsEvidenceLimitsAndCompilesOnlyPausedGracefulDraft()
     {

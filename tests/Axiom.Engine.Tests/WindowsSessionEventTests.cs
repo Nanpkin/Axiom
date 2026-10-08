@@ -76,6 +76,19 @@ public sealed class WindowsSessionEventTests
             finally { Marshal.FreeHGlobal(buffer); }
         }
     }
+    [Fact(Timeout = 10000)]
+    public async Task SyntheticDisplayChangeUsesNativeSharedSourceWithoutRetainingItsPayload()
+    {
+        using var one = new WindowsSessionEvents(); using var two = new WindowsSessionEvents();
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+        SendMessage(one.NotificationWindow, 0x007E, 32, (900 << 16) | 1600);
+        foreach (var source in new[] { one, two })
+        {
+            string kind;
+            do { kind = await source.Events.ReadAsync(deadline.Token); } while (kind != "display-changed");
+            Assert.Equal("display-changed", kind);
+        }
+    }
     [DllImport("user32.dll")] private static extern nint SendMessage(nint window, uint message, nint w, nint l);
 
 }

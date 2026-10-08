@@ -17,6 +17,7 @@ public sealed class SystemEventTests
     [InlineData("network-down")]
     [InlineData("battery-low20")]
     [InlineData("battery-low10")]
+    [InlineData("display-changed")]
     public void SessionSignalsCompileToEventEdgesAndSaveAsOrdinaryRules(string kind)
     {
         var detection = new TaskInvocation(SystemEventCapabilities.Event, 1, ImmutableDictionary<string,string>.Empty.Add("event", kind));
@@ -48,6 +49,7 @@ public sealed class SystemEventTests
         Assert.Single(selected.Session.Events); Assert.Empty(selected.Session.Objects);
         Assert.True(selected.Add(new(now.AddSeconds(1), "system-battery-low20")));
         Assert.True(selected.Add(new(now.AddSeconds(2), "system-battery-low10")));
+        Assert.True(selected.Add(new(now.AddSeconds(3), "system-display-changed")));
         Assert.Empty(selected.Session.Objects);
         var other = new UsageRecorder(new(5, true, false, []), now);
         Assert.False(other.Add(new(now, "system-unlocked")));

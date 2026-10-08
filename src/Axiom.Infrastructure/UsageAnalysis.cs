@@ -50,14 +50,32 @@ public static class UsageAnalysis
             "来源未知，可能是应用自己调整，不证明手动操作。多窗口情况下不能确认是同一个窗口；候选仅在应用从无主窗口到有主窗口时整理一个匹配窗口，不会逐个处理后续窗口。请审阅目标和标题筛选。布局只分类当前显示器工作区的近似左右半屏/中央，不保存坐标或显示器标识；动作在触发时的显示器执行，不保证复原旧布局。一次操作，之后手动改变不干预，结束不恢复。Axiom 动作目标和数据缺口排除。",
             [g.Key.ObjectId!], g.Count(), session.Events.Count(e => e.Kind == "window-shown" && e.ObjectId == g.Key.ObjectId), EvidenceSamples: Evidence(session, g),
             WindowState: WindowCommand(g.Key.Kind)));
+        var environmentWindows = DisplayLayoutPairs(session).GroupBy(p => (p.Second.Kind, p.Second.ObjectId)).Where(g => g.Count() >= 3).Select(g => new UsageSuggestion(
+            "display-layout:" + g.Key.Kind + ":" + g.Key.ObjectId, "existing", "显示模式变化后反复整理窗口",
+            $"{g.Count()} 次在显示模式变化后一分钟内观察到同一应用{WindowKindName(g.Key.Kind)}；共观察到 {session.Events.Count(e => e.Kind == "system-display-changed")} 次显示变化机会。",
+            "来源未知，可能是应用或系统自行布局，不证明手动重复劳动。只记录显示变化类别，没有保存分辨率或显示器标识，不能识别特定屏幕组合；并非所有插拔都会通知。候选每次通知后整理一个匹配窗口，按执行时该窗口所在显示器工作区处理，不恢复原布局、不持续压制手动调整。多窗口时可能不是同一个窗口。缺口、其他系统边界和Axiom动作会中断序列。",
+            [g.Key.ObjectId!], g.Count(), session.Events.Count(e => e.Kind == "system-display-changed"), EventKind: "display-changed", EvidenceSamples: Evidence(session, g), WindowState: WindowCommand(g.Key.Kind)));
         var afterEvents = SystemPairs(session).GroupBy(p => (p.First.Kind, p.Second.ObjectId)).Where(g => g.Count() >= 3).Select(g => new UsageSuggestion(
             "event:" + g.Key.Kind + ":" + g.Key.ObjectId, "existing", "系统事件后反复打开同一程序",
             $"{g.Count()} 次在 {SystemName(g.Key.Kind)} 后一分钟内启动；此事件共出现 {session.Events.Count(e => e.Kind == g.Key.Kind)} 次。",
             "来源未知，不证明是手动操作或因果。先确认这是你希望自动完成的步骤。候选只启动一次，已运行则跳过；之后不自动关闭。缺口或 Axiom 动作会中断序列，已知动作目标不参加分析。",
             [g.Key.ObjectId!], g.Count(), session.Events.Count(e => e.Kind == g.Key.Kind), g.Key.Kind[7..], Evidence(session, g)));
-        return [.. afterEvents.Concat(starts).Concat(exits).Concat(windowCleanup).Concat(windows).Concat(switches).OrderByDescending(s => s.Occurrences).Take(12).Select(s =>
+        return [.. environmentWindows.Concat(afterEvents).Concat(starts).Concat(exits).Concat(windowCleanup).Concat(windows).Concat(switches).OrderByDescending(s => s.Occurrences).Take(12).Select(s =>
             s.Kind == "existing" && !s.ObjectIds.All(id => CanUse(session.Objects.Single(o => o.Id == id).Executable))
                 ? s with { Kind = "insufficient", Limitation = s.Limitation + "此对象不符合当前程序动作的安全范围，不能生成规则。" } : s)];
+    }
+    private static IEnumerable<(UsageEvent First, UsageEvent Second)> DisplayLayoutPairs(UsageSession session)
+    {
+        var automated = session.Events.Where(e => e.Kind == "axiom-action" && e.ObjectId is not null).Select(e => e.ObjectId).ToHashSet();
+        UsageEvent? changed = null; var seen = new HashSet<string>();
+        foreach (var item in session.Events.OrderBy(e => e.AtUtc))
+        {
+            if (item.Kind == "system-display-changed") { changed = item; seen.Clear(); continue; }
+            if (item.Kind is "gap" or "axiom-action" || item.Kind.StartsWith("system-", StringComparison.Ordinal)) { changed = null; continue; }
+            if (changed is null || item.ObjectId is null || automated.Contains(item.ObjectId)) continue;
+            if (item.AtUtc - changed.AtUtc > TimeSpan.FromMinutes(1)) { changed = null; continue; }
+            if (item.Kind is "window-left" or "window-right" or "window-center" && seen.Add(item.ObjectId)) yield return (changed, item);
+        }
     }
     private static IEnumerable<(UsageEvent First, UsageEvent Second)> WindowExitPairs(UsageSession session)
     {
@@ -129,14 +147,14 @@ public static class UsageAnalysis
         if (suggestion.Kind != "existing" || suggestion.ObjectIds.Length != (suggestion.EventKind is null && suggestion.WindowState is null ? 2 : 1)) throw new ArgumentException("此建议尚不足以生成规则。");
         var windowClosing = suggestion.Id.StartsWith("window-exit:", StringComparison.Ordinal);
         var closing = windowClosing || suggestion.Id.StartsWith("exit:", StringComparison.Ordinal);
-        var detection = catalog.Capabilities.Single(c => c.Id == (suggestion.WindowState is not null ? WindowPresenceCapabilities.Visible : windowClosing ? WindowPresenceCapabilities.Absent : suggestion.EventKind is null ? closing ? "process.exited" : "process.running" : SystemEventCapabilities.Event) && c.Kind == TaskCapabilityKind.Detection);
+        var detection = catalog.Capabilities.Single(c => c.Id == (suggestion.EventKind is not null ? SystemEventCapabilities.Event : suggestion.WindowState is not null ? WindowPresenceCapabilities.Visible : windowClosing ? WindowPresenceCapabilities.Absent : closing ? "process.exited" : "process.running") && c.Kind == TaskCapabilityKind.Detection);
         var action = catalog.Capabilities.Single(c => c.Id == (suggestion.WindowState is not null ? WindowCapabilities.State : closing ? "program.close" : "program.start") && c.Kind == TaskCapabilityKind.Action);
         TaskInvocation Make(TaskCapability capability, string field, string alias) => new(capability.Id, capability.SchemaVersion,
             capability.Fields.Where(f => f.DefaultValue is not null).ToImmutableDictionary(f => f.Id, f => f.DefaultValue!).SetItem(field, alias));
         var actionInvocation = Make(action, "executable", suggestion.ObjectIds[^1]);
         if (suggestion.WindowState is not null) actionInvocation = actionInvocation with { Parameters = actionInvocation.Parameters.SetItem("state", suggestion.WindowState) };
         if (closing) actionInvocation = actionInvocation with { Parameters = actionInvocation.Parameters.SetItem("mode", "graceful").SetItem("instances", "latest") };
-        var candidate = new UsageImport(1, session.Id, "existing", suggestion.WindowState is not null ? "窗口出现后整理" : closing ? "退出后关闭配套程序" : "启动配套程序", suggestion.Evidence,
+        var candidate = new UsageImport(1, session.Id, "existing", suggestion.WindowState is not null ? suggestion.EventKind is null ? "窗口出现后整理" : "系统变化后整理窗口" : closing ? "退出后关闭配套程序" : "启动配套程序", suggestion.Evidence,
             suggestion.EventKind is null ? Make(detection, detection.Fields.Single(f => f.Kind == TaskFieldKind.ProcessSelection).Id, suggestion.ObjectIds[0]) : Make(detection, "event", suggestion.EventKind), actionInvocation);
         return Import(JsonSerializer.Serialize(candidate), session, catalog).Draft!;
     }
