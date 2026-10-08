@@ -45,3 +45,4 @@ AudioCapabilityTests
 
 DailyTimeTests
 OnceTimeTests
+AudioPlaybackTests

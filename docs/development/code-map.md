@@ -87,3 +87,5 @@ USB类别通知：`WindowsSessionEvents` 注册USB接口GUID、处理接入/移�
 日历定时：`DailyTimeCapabilities` 声明、星期掩码和DST计算，`DailyTimePlugin` 编译，Agent 的 `DailyTimeCapabilityProvider`/`DailyEventSource` 管理最近deadline和失败隔离；`WindowsSessionEvents(clockOnly: true)` 仅交付时钟/设置/恢复信号，不积累普通系统事件。`DailyTimeTests` 验证合成时区与可控时钟，`WindowsSessionEventTests` 验证真实隐藏窗口消息与租约。
 
 单次日期：`OnceTimeCapabilities` 校验真实日期/资源与DST，`OnceTimePlugin` 编译，Agent `OnceTimeCapabilityProvider`/`OnceEventSource` 共享时钟通知和最近deadline；过期/已到期状态由Host转为可读检测原因。`OnceTimeTests` 覆盖时区重算、远期分块、终止不重发与取消；导入继续强制校验后才提供暂停草稿。
+
+播放音量：`AudioPlaybackCapabilities` 参数/边界，`AudioPlaybackPlugin` 共用默认播放资源仲裁，`AudioPlaybackCapabilityProvider` 调用 `WindowsAudioPlayback` 的Core Audio COM适配。`AudioPlaybackOperation` 只写所选字段并读回；`BoundedAudioCommand` 以单个准入保护原生阻塞，调用者超时不提前释放准入。`AudioPlaybackTests` 为合成端点逻辑，不替代真实设备验收。

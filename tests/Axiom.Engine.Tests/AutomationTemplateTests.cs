@@ -7,18 +7,19 @@ namespace Axiom.Engine.Tests;
 
 public sealed class AutomationTemplateTests
 {
-    private static IAutomationPlugin[] Modules() => [new ProgramPlugin(), new WindowPlugin(), new SystemEventPlugin(), new IntervalPlugin(), new DailyTimePlugin(), new OnceTimePlugin(), new ForegroundPlugin(), new WindowPresencePlugin(), new KeyboardPlugin(), new OpenTargetPlugin()];
+    private static IAutomationPlugin[] Modules() => [new ProgramPlugin(), new WindowPlugin(), new SystemEventPlugin(), new IntervalPlugin(), new DailyTimePlugin(), new AudioPlaybackPlugin(), new OnceTimePlugin(), new ForegroundPlugin(), new WindowPresencePlugin(), new KeyboardPlugin(), new OpenTargetPlugin()];
     private static AutomationSnapshot Catalog() => new([], [.. Modules().SelectMany(m => m.Detections.Select(d => d.Descriptor).Concat(m.Actions.Select(a => a.Descriptor)))], [.. Modules().SelectMany(m => m.Combinations)], true, "ready", "", DateTimeOffset.UtcNow, []);
     [Fact]
     public void EveryAvailableRecipeIsPausedUnsavedAndCompilesAfterTheUserSelectsItsRequiredObjects()
     {
-        var catalog = Catalog(); var templates = AutomationTemplates.Build(catalog); Assert.Equal(12, templates.Length);
+        var catalog = Catalog(); var templates = AutomationTemplates.Build(catalog); Assert.Equal(13, templates.Length);
         var compiler = new AutomationTaskCompiler();
         foreach (var module in Modules()) { foreach (var d in module.Detections) compiler.Register(d); foreach (var a in module.Actions) compiler.Register(a); }
         foreach (var template in templates)
         {
             Assert.True(template.Draft.Paused); Assert.Equal(0, template.Draft.Version);
-            Assert.Throws<ArgumentException>(() => compiler.Compile(template.Draft, "owner", ResourceScope.Session("owner", 1)));
+            if (template.Id != "lock-mute") Assert.Throws<ArgumentException>(() => compiler.Compile(template.Draft, "owner", ResourceScope.Session("owner", 1)));
+            else Assert.NotNull(compiler.Compile(template.Draft, "owner", ResourceScope.Session("owner", 1)));
             var completed = template.Draft with { Detection = Complete(template.Draft.Detection), Action = Complete(template.Draft.Action) };
             Assert.NotNull(compiler.Compile(completed, "owner", ResourceScope.Session("owner", 1)));
             var editor = new Axiom.WinUI.TaskEditorState(); editor.LoadDraft(template.Draft); Assert.True(editor.Dirty);
