@@ -1,0 +1,53 @@
+using System.Collections.Immutable;
+using Axiom.Contracts;
+using Axiom.Domain;
+using Axiom.Infrastructure;
+
+namespace Axiom.Engine.Tests;
+
+public sealed class AutomationTemplateTests
+{
+    private static IAutomationPlugin[] Modules() => [new ProgramPlugin(), new WindowPlugin(), new SystemEventPlugin(), new ForegroundPlugin(), new WindowPresencePlugin(), new KeyboardPlugin(), new OpenTargetPlugin()];
+    private static AutomationSnapshot Catalog() => new([], [.. Modules().SelectMany(m => m.Detections.Select(d => d.Descriptor).Concat(m.Actions.Select(a => a.Descriptor)))], [.. Modules().SelectMany(m => m.Combinations)], true, "ready", "", DateTimeOffset.UtcNow, []);
+    [Fact]
+    public void EveryAvailableRecipeIsPausedUnsavedAndCompilesAfterTheUserSelectsItsRequiredObjects()
+    {
+        var catalog = Catalog(); var templates = AutomationTemplates.Build(catalog); Assert.Equal(7, templates.Length);
+        var compiler = new AutomationTaskCompiler();
+        foreach (var module in Modules()) { foreach (var d in module.Detections) compiler.Register(d); foreach (var a in module.Actions) compiler.Register(a); }
+        foreach (var template in templates)
+        {
+            Assert.True(template.Draft.Paused); Assert.Equal(0, template.Draft.Version);
+            Assert.Throws<ArgumentException>(() => compiler.Compile(template.Draft, "owner", ResourceScope.Session("owner", 1)));
+            var completed = template.Draft with { Detection = Complete(template.Draft.Detection), Action = Complete(template.Draft.Action) };
+            Assert.NotNull(compiler.Compile(completed, "owner", ResourceScope.Session("owner", 1)));
+            var editor = new Axiom.WinUI.TaskEditorState(); editor.LoadDraft(template.Draft); Assert.True(editor.Dirty);
+        }
+        Assert.Equal("graceful", templates.Single(t => t.Id == "cleanup-companion").Draft.Action.Parameters["mode"]);
+        Assert.Equal("latest", templates.Single(t => t.Id == "cleanup-companion").Draft.Action.Parameters["instances"]);
+        Assert.DoesNotContain(templates[0].Draft.Id, AutomationTemplates.Build(catalog).Select(t => t.Draft.Id));
+
+        TaskInvocation Complete(TaskInvocation invocation)
+        {
+            var values = invocation.Parameters.ToBuilder();
+            foreach (var field in catalog.Capabilities.Single(c => c.Id == invocation.CapabilityId).Fields.Where(f => f.Required && !values.ContainsKey(f.Id)))
+                values[field.Id] = field.Kind switch
+                {
+                    TaskFieldKind.ProcessSelection => "Example.exe",
+                    TaskFieldKind.FilePath or TaskFieldKind.ExecutableSelection => Path.Combine(Path.GetTempPath(), "Example.exe"),
+                    TaskFieldKind.HotkeyList => "Ctrl+Alt+F9",
+                    TaskFieldKind.Text => Path.GetTempPath(),
+                    _ => throw new InvalidOperationException("Uncovered template parameter kind.")
+                };
+            return invocation with { Parameters = values.ToImmutable() };
+        }
+    }
+    [Fact]
+    public void RecipesAreHiddenWhenTheLiveRegistryCannotSupplyTheirCombinationOrChoice()
+    {
+        var catalog = Catalog(); Assert.Empty(AutomationTemplates.Build(catalog with { Combinations = [] }));
+        Assert.DoesNotContain(AutomationTemplates.Build(catalog with { Capabilities = [.. catalog.Capabilities.Where(c => c.Id != WindowCapabilities.State)] }), t => t.Draft.Action.CapabilityId == WindowCapabilities.State);
+        var reduced = catalog with { Capabilities = [.. catalog.Capabilities.Select(c => c.Id != WindowCapabilities.State ? c : c with { Fields = [.. c.Fields.Select(f => f.Id == "state" ? f with { Choices = [] } : f)] })] };
+        Assert.DoesNotContain(AutomationTemplates.Build(reduced), t => t.Draft.Action.CapabilityId == WindowCapabilities.State);
+    }
+}

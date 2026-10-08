@@ -69,3 +69,5 @@ Host 自身生命周期检测位于 Host：`AxiomStartupPlugin → PluginTaskRun
 - 使用观察的进程退出：`WindowsUsageObservation` 核验新进程后交 `ObservedProcessExitTracker` 持有有界等待句柄；暂停/退出全释放。`UsageOptions.ProcessExits` 显式范围，`UsageAnalysis` 退出对生成正常关闭暂停草稿；`ObservedProcessExitTests`、`UsageObservationTests` 验证边界。
 
 - 窗口状态观察：`WindowsUsageWindows` / `UsageWindowHistory` 接共享窗口源，仅状态变化记录；`UsageOptions.WindowStates` 显式范围，`UsageAnalysis.WindowPairs` 经证据形成暂停草稿。`UsageWindowTests` 和原生 `WindowActionTests` 验证基线、去重、容量及真实状态。
+
+常用场景：`AutomationTemplates` 从当前能力目录组合暂停草稿，`WorkbenchWindow.Templates` 选择并进入通用编辑器；`AutomationTemplateTests` 用实际插件注册验证补齐对象后可编译，缺能力/组合/枚举项时不展示。
