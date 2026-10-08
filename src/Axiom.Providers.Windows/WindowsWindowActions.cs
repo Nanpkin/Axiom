@@ -11,7 +11,7 @@ public static class WindowsWindowActions
 {
     public static async Task<ProgramControlResult> CloseAsync(string path, string title, TimeSpan wait, CancellationToken token, string? state = null)
     {
-        if (state is not (null or "minimize" or "maximize" or "restore")) throw new ArgumentException("窗口状态无效。");
+        if (state is not (null or "minimize" or "maximize" or "restore" or "left" or "right" or "center")) throw new ArgumentException("窗口状态无效。");
         if (wait < TimeSpan.FromSeconds(1) || wait > TimeSpan.FromSeconds(30)) throw new ArgumentOutOfRangeException(nameof(wait));
         if (!File.Exists(path)) return new(false, "目标程序不存在，请重新选择路径。");
         token.ThrowIfCancellationRequested();
@@ -55,6 +55,7 @@ public static class WindowsWindowActions
         {
             if (!current.Any(p => p.Id == pid) || !Candidate(target, title) || GetWindowThreadProcessId(target, out var owner) == 0 || owner != pid)
                 return new(false, "目标窗口已变化，未发出关闭请求。");
+            if (state is "left" or "right" or "center") return await WindowsWindowLayout.ApplyAsync(target, pid, path, state, events, token);
             if (state is not null)
             {
                 bool Confirmed() => Visible(target, pid) && (state == "minimize" ? IsIconic(target) : state == "maximize" ? IsZoomed(target) : !IsIconic(target) && !IsZoomed(target));

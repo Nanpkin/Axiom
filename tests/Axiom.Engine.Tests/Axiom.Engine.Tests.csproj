@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsWindowLayout.cs" Link="WindowsWindowLayout.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsSessionEvents.cs" Link="WindowsSessionEvents.cs" />
     <Compile Include="../../src/Axiom.ServiceHost/UsageObservationController.cs" Link="UsageObservationController.cs" />
     <Compile Include="../../src/Axiom.Launcher/LoginTaskCleanup.cs" Link="LoginTaskCleanup.cs" />
