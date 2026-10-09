@@ -41,7 +41,7 @@ public sealed class AutomationTemplateTests
                     TaskFieldKind.ProcessSelection => "Example.exe",
                     TaskFieldKind.FilePath or TaskFieldKind.ExecutableSelection => Path.Combine(Path.GetTempPath(), "Example.exe"),
                     TaskFieldKind.HotkeyList => "Ctrl+Alt+F9",
-                    TaskFieldKind.TextList => invocation.CapabilityId == UsbDeviceCapabilities.Present ? @"USB\VID_1234&PID_5678\SYNTHETIC_A" : field.EditAsList ? "Synthetic Office" : "请休息片刻",
+                    TaskFieldKind.TextList => invocation.CapabilityId == OpenTargetBatchCapabilities.Open ? "网页 | https://example.invalid/work" : invocation.CapabilityId == UsbDeviceCapabilities.Present ? @"USB\VID_1234&PID_5678\SYNTHETIC_A" : field.EditAsList ? "Synthetic Office" : "请休息片刻",
                     TaskFieldKind.Text => invocation.Parameters.GetValueOrDefault("kind") == "document" ? Path.Combine(Path.GetTempPath(), "SyntheticPlan.pdf") : invocation.CapabilityId == NotificationCapabilities.Show ? "请休息片刻" : invocation.Parameters.GetValueOrDefault("kind") == "url" ? "https://example.invalid/reminder" : Path.GetTempPath(),
                     _ => throw new InvalidOperationException("Uncovered template parameter kind.")
                 };

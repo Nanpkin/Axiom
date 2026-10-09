@@ -5,7 +5,7 @@ using System.Runtime.Versioning;
 namespace Axiom.Providers.Windows;
 
 [SupportedOSPlatform("windows")]
-public static class WindowsOpenTarget
+public static partial class WindowsOpenTarget
 {
     private static readonly BoundedNativeCommand Commands = new("打开目标", TimeSpan.FromSeconds(8));
     public static Task<(bool Success, string Reason)> OpenAsync(string kind, string target, CancellationToken token) =>
