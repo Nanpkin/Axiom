@@ -13,7 +13,7 @@ public sealed class AudioPlaybackToggleTests
         new Dictionary<string, string> { ["delaySeconds"] = delay }.ToImmutableDictionary());
 
     [Fact]
-    public void RealRegistryCompilesShortcutToggleAndStrictImportPreservesExistingExplicitMuteSchema()
+    public async Task RealRegistryCompilesShortcutToggleAndStrictImportPreservesExistingExplicitMuteSchema()
     {
         var action = new AudioPlaybackToggleTaskAction(); var scope = ResourceScope.Session("owner", 1);
         Assert.True(action.SupportsTimeWindow); Assert.Equal("default-playback", action.Compile(Invocation(), scope).Key.ResourceId);
@@ -42,6 +42,17 @@ public sealed class AudioPlaybackToggleTests
         string Proposal(TaskInvocation command) => JsonSerializer.Serialize(new UsageImport(1, recorder.Session.Id, "existing", "playback", "review", detection, command));
         var draft = UsageAnalysis.Import(Proposal(Invocation()), recorder.Session, catalog).Draft!;
         Assert.True(draft.Paused); Assert.Equal(AudioPlaybackToggleCapabilities.Toggle, draft.Action.CapabilityId);
+        var database = Path.Combine(Path.GetTempPath(), "axiom-playback-toggle-" + Guid.NewGuid().ToString("N") + ".db");
+        try
+        {
+            using var store = new SqliteAutomationTaskStore(database);
+            await store.SaveAsync(draft, default);
+            var saved = Assert.Single(await store.ListAsync());
+            Assert.True(saved.Paused); Assert.Equal(detection.Parameters["chords"], saved.Detection.Parameters["chords"]);
+            Assert.Equal(AudioPlaybackToggleCapabilities.Toggle, saved.Action.CapabilityId);
+            Assert.Equal("0", saved.Action.Parameters["delaySeconds"]);
+        }
+        finally { foreach (var suffix in new[] { "", "-wal", "-shm" }) File.Delete(database + suffix); }
         Assert.Throws<ArgumentException>(() => UsageAnalysis.Import(Proposal(Invocation("86401")), recorder.Session, catalog));
         Assert.Throws<ArgumentException>(() => UsageAnalysis.Import(Proposal(Invocation() with { Parameters = Invocation().Parameters.Add("device", "untrusted") }), recorder.Session, catalog));
     }
