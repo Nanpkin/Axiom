@@ -12,7 +12,7 @@ public sealed class MediaPlaybackPlugin : IAutomationPlugin
     public IEnumerable<ITaskActionCompiler> Actions => [];
     // Media control, program close/start and synthetic input can change their own detection.
     public ImmutableArray<TaskCombination> Combinations => [.. new[] { KeepAwakeCapabilities.Hold, AudioPlaybackCapabilities.Set,
-        ApplicationAudioCapabilities.Set, MicrophoneCapabilities.Set, NotificationCapabilities.Show }
+        ApplicationAudioCapabilities.Set, AudioPlaybackAdjustCapabilities.Adjust, MicrophoneCapabilities.Set, MicrophoneToggleCapabilities.Toggle, NotificationCapabilities.Show }
         .Select(action => new TaskCombination(MediaPlaybackCapabilities.State, action))];
     public IEnumerable<CapabilityBinding> Bindings => [new(new(MediaPlaybackCapabilities.State, new("axiom.bool", 1), new("axiom.bool", 1),
         ScopeKind.Session, true, false, false, ExecutionLocation.SessionAgent, "same-user-session", true, "available", false,
