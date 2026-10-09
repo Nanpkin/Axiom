@@ -7,20 +7,25 @@ using Microsoft.Win32.SafeHandles;
 
 namespace Axiom.Providers.Windows;
 
-public sealed record ProgramControlResult(bool Success, string Reason);
+public sealed record ProgramControlResult(bool Success, string Reason)
+{
+    public bool Skipped { get; init; }
+}
 
 [SupportedOSPlatform("windows")]
 public static class WindowsProgramControl
 {
-    public static ProgramControlResult Start(string path, string arguments, string workingDirectory, string window, bool skipRunning)
+    public static ProgramControlResult Start(string path, string arguments, string workingDirectory, string window, bool skipRunning, CancellationToken token = default)
     {
+        token.ThrowIfCancellationRequested();
         if (!File.Exists(path)) return new(false, "目标程序不存在，请重新选择路径。");
         var directory = string.IsNullOrWhiteSpace(workingDirectory) ? Path.GetDirectoryName(path)! : workingDirectory;
         if (!Directory.Exists(directory)) return new(false, "工作目录不存在。");
         var existing = Matching(path);
         try
         {
-            if (skipRunning && existing.Count > 0) return new(true, "程序已运行，按配置跳过启动。");
+            token.ThrowIfCancellationRequested();
+            if (skipRunning && existing.Count > 0) return new(true, "程序已运行，按配置跳过启动。") { Skipped = true };
             using var started = Process.Start(new ProcessStartInfo(path, arguments)
             {
                 UseShellExecute = false, WorkingDirectory = directory,
