@@ -13,7 +13,7 @@ public sealed class SystemSoundPlugin : IAutomationPlugin
     public ImmutableArray<TaskCombination> Combinations => [.. new[] { "process.running", "process.exited", AxiomStartupPlugin.CapabilityId,
         HotkeyCapabilities.Pressed, SystemEventCapabilities.Event, AudioCapabilities.Changed, ForegroundCapabilities.Active,
         WindowPresenceCapabilities.Visible, WindowPresenceCapabilities.Absent, IntervalCapabilities.Elapsed, DailyTimeCapabilities.Due,
-        OnceTimeCapabilities.Due, WindowedIntervalCapabilities.Due, FileArrivalCapabilities.Arrived }.Select(d => new TaskCombination(d, SystemSoundCapabilities.Sound))];
+        OnceTimeCapabilities.Due, WindowedIntervalCapabilities.Due, FileArrivalCapabilities.Arrived, NetworkCategoryCapabilities.State }.Select(d => new TaskCombination(d, SystemSoundCapabilities.Sound))];
     public IEnumerable<CapabilityBinding> Bindings => [new(new(SystemSoundCapabilities.Sound, TaskInvocationCommands.Schema, new("axiom.bool", 1),
         ScopeKind.Session, false, true, false, ExecutionLocation.SessionAgent, "same-user-session", true, "available", false,
         TimeSpan.FromSeconds(10), true, ConcurrencyScope.Resource, RetryCategory.Never, ConfirmationSource.ReceiptOnly, EventFidelity.EdgeSensitive,

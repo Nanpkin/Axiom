@@ -63,3 +63,4 @@ AudioPlaybackToggleTests
 SystemSoundTests
 
 NetworkCategoryTests
+ForegroundWindowMonitorTests

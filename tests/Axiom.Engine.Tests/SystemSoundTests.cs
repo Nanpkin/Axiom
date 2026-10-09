@@ -33,6 +33,12 @@ public sealed class SystemSoundTests
         var recorder = new UsageRecorder(new(5, true, true, []), DateTimeOffset.UtcNow);
         string Proposal(TaskInvocation command) => JsonSerializer.Serialize(new UsageImport(1, recorder.Session.Id, "existing", "系统提示音", "合成审阅", template.Draft.Detection, command));
         Assert.True(UsageAnalysis.Import(Proposal(Invocation()), recorder.Session, catalog).Draft!.Paused);
+        var category = new TaskInvocation(NetworkCategoryCapabilities.State, 1,
+            ImmutableDictionary<string, string>.Empty.Add("category", "public"));
+        Assert.Contains(plugin.Combinations, pair => pair.DetectionId == category.CapabilityId && pair.ActionId == SystemSoundCapabilities.Sound);
+        var categorySound = UsageAnalysis.Import(JsonSerializer.Serialize(new UsageImport(1, recorder.Session.Id,
+            "existing", "分类提示音", "合成审阅", category, Invocation("warning"))), recorder.Session, catalog).Draft!;
+        Assert.True(categorySound.Paused); Assert.NotNull(compiler.Compile(categorySound, "owner", scope));
         foreach (var invalid in new[] { Invocation("file"), Invocation("https://example.invalid/tone"), Invocation(delay: "-1"), Invocation(delay: "1.5"), Invocation(delay: "86401") })
             Assert.Throws<ArgumentException>(() => UsageAnalysis.Import(Proposal(invalid), recorder.Session, catalog));
         foreach (var extra in new[] { "file", "url", "tts", "volume", "loop", "unmute" })
