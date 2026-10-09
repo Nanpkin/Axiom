@@ -1,5 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <Compile Include="../../src/Axiom.SessionAgent/SessionDisplayCapabilityProvider.cs" Link="SessionDisplayCapabilityProvider.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/SessionDisplayState.cs" Link="SessionDisplayState.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/SessionDisplayObservation.cs" Link="SessionDisplayObservation.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsSessionDisplay.cs" Link="WindowsSessionDisplay.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/DisplayCountCapabilityProvider.cs" Link="DisplayCountCapabilityProvider.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/DisplayCountState.cs" Link="DisplayCountState.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/DisplayCountObservation.cs" Link="DisplayCountObservation.cs" />

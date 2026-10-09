@@ -105,3 +105,6 @@
 - [x] fc41的Linux run37872329703暴露Internet测试在Unknown之后立即读Disposed计数的竞态；合成清理门闩准确复现，改等Dispose完成TCS且保留次数断言，另一个同序列断言一并同步。产品Unknown先于cleanup不变、无sleep，Internet30项针对回归通过。
 - [x] 已接入main e2602f9静音窄修，最终核心实际6 Domain + 548 Engine = 554项通过（保留全部回归，含main新增4与Timeout签名守卫1），零失败/跳过；Agent/Host顺序交叉构建各零警告/错误。
 - [ ] 推送整合head后核对其Windows原生、完整应用及私有包；不将旧head结果移作新head通过证据。
+- [x] 独立下一增量`screen.state`已注册contract/plugin/Agent/import：当前会话on/dim/off仅读公开通知，共享现有窗口，无新线程/同步猜测/轮询。首次、Unknown恢复、挂起恢复及会话连接切换重建基线；26合成回归、默认暂停screen-off-mute和35模板已接通；整个KeepAwake及显示设置组合排除。
+- [x] 41能力真实最大12handled+Prompt/CRLF为65538字节，超64KiB 2字节；仅最终compact元数据再省略TaskField默认false本地浏览/名单编辑标记，true/展示名/所有约束、预算与往返断言保持。最大无handled59077、12handled61154字节；后续42能力和窗口四角新选项整合后再实测。
+- [ ] WindowsSessionDisplayTests两项只注入自有隐藏窗口，验证真实注册/过滤/共享释放/独立消费者溢出，待WindowsCI；不得将注入消息当逐屏硬件、电源设置、锁屏或现代待机实测。本增量e816基线最终冻结源码顺序验证580核心（6Domain+574Engine）通过、零失败/跳过，Agent/Host均零警告/错误（2026-10-09 02:05:42 UTC）；未含媒体/四角，整合后另验。
