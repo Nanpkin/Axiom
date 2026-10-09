@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <Compile Include="../../src/Axiom.Providers.Windows/HardwareBrightnessOperation.cs" Link="HardwareBrightnessOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/NetworkCategoryState.cs" Link="NetworkCategoryState.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/NetworkCategoryObservation.cs" Link="NetworkCategoryObservation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsNetworkCategoryEvents.cs" Link="WindowsNetworkCategoryEvents.cs" />
