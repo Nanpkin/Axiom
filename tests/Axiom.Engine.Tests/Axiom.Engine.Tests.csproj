@@ -1,5 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <Compile Include="../../src/Axiom.Providers.Windows/CurrentMediaOperation.cs" Link="CurrentMediaOperation.cs" />
+    <Compile Include="../../src/Axiom.SessionAgent/SessionDisplayCapabilityProvider.cs" Link="SessionDisplayCapabilityProvider.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/SessionDisplayState.cs" Link="SessionDisplayState.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/SessionDisplayObservation.cs" Link="SessionDisplayObservation.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsSessionDisplay.cs" Link="WindowsSessionDisplay.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/DisplayCountCapabilityProvider.cs" Link="DisplayCountCapabilityProvider.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/DisplayCountState.cs" Link="DisplayCountState.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/DisplayCountObservation.cs" Link="DisplayCountObservation.cs" />
@@ -37,8 +42,10 @@
     <Compile Include="../../src/Axiom.SessionAgent/FileArrivalCapabilityProvider.cs" Link="FileArrivalCapabilityProvider.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/FileArrivalSource.cs" Link="FileArrivalSource.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/AudioPlaybackOperation.cs" Link="AudioPlaybackOperation.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/ProgramPriorityOperation.cs" Link="ProgramPriorityOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/ApplicationAudioOperation.cs" Link="ApplicationAudioOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/PowerSchemeOperation.cs" Link="PowerSchemeOperation.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/DisplayOffOperation.cs" Link="DisplayOffOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/SessionLockOperation.cs" Link="SessionLockOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/BuiltInBrightnessOperation.cs" Link="BuiltInBrightnessOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/SessionLockStateReader.cs" Link="SessionLockStateReader.cs" />

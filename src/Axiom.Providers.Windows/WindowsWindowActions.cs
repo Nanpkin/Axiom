@@ -13,13 +13,16 @@ public static class WindowsWindowActions
         CloseAsync(path, title, wait, token, monitorSelection: monitor);
     public static async Task<ProgramControlResult> CloseAsync(string path, string title, TimeSpan wait, CancellationToken token, string? state = null, string? monitorSelection = null)
     {
-        if (state is not (null or "minimize" or "maximize" or "restore" or "left" or "right" or "center" or "topmost" or "notopmost")) throw new ArgumentException("窗口状态无效。");
+        if (state is not (null or "minimize" or "maximize" or "restore" or "left" or "right" or "center" or "top-left" or "top-right" or "bottom-left" or "bottom-right" or "topmost" or "notopmost")) throw new ArgumentException("窗口状态无效。");
         if (monitorSelection is not (null or "primary" or "next" or "previous") || monitorSelection is not null && state is not null) throw new ArgumentException("目标显示器选项无效。");
         if (wait < TimeSpan.FromSeconds(1) || wait > TimeSpan.FromSeconds(30)) throw new ArgumentOutOfRangeException(nameof(wait));
         if (!File.Exists(path)) return new(false, "目标程序不存在，请重新选择路径。");
         token.ThrowIfCancellationRequested();
         using var events = new WindowsWindowEvents(); // subscribe before the single initial enumeration
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token); deadline.CancelAfter(wait);
+        var layoutOperation = WindowLayoutGeometry.IsLayout(state);
+        var needsCreation = monitorSelection is not null || layoutOperation;
+        var unchangedReason = layoutOperation ? "未还原或调整布局。" : "未还原或移动窗口。";
         nint target = 0; int pid = 0; DateTime? startedAtUtc = null;
         try
         {
@@ -27,13 +30,13 @@ public static class WindowsWindowActions
             try
             {
                 Dictionary<int, DateTime>? creations = null;
-                if (monitorSelection is not null)
+                if (needsCreation)
                 {
-                    if (processes.Count > 128) return new(false, "目标程序实例过多，无法有界核验窗口身份；未移动窗口。");
+                    if (processes.Count > 128) return new(false, "目标程序实例过多，无法有界核验窗口身份；" + unchangedReason);
                     creations = [];
                     foreach (var process in processes)
                         if (TryReadCreation(process, out var creation)) creations.Add(process.Id, creation);
-                    if (processes.Count > 0 && creations.Count == 0) return new(false, "无法确认目标进程创建时间；未还原或移动窗口。");
+                    if (processes.Count > 0 && creations.Count == 0) return new(false, "无法确认目标进程创建时间；" + unchangedReason);
                 }
                 var ids = processes.Select(p => p.Id).ToHashSet();
                 EnumWindows((window, _) =>
@@ -62,10 +65,10 @@ public static class WindowsWindowActions
                 try
                 {
                     var match = matches.SingleOrDefault(p => p.Id == owner); if (match is null) continue;
-                    if (monitorSelection is not null)
+                    if (needsCreation)
                     {
-                        if (matches.Count > 128) return new(false, "目标程序实例过多，未移动窗口。");
-                        if (!TryReadCreation(match, out var creation)) return new(false, "无法确认目标进程创建时间；未还原或移动窗口。");
+                        if (matches.Count > 128) return new(false, "目标程序实例过多；" + unchangedReason);
+                        if (!TryReadCreation(match, out var creation)) return new(false, "无法确认目标进程创建时间；" + unchangedReason);
                         startedAtUtc = creation;
                     }
                     target = window; pid = (int)owner;
@@ -74,7 +77,7 @@ public static class WindowsWindowActions
             }
         }
         catch (OperationCanceledException) when (!token.IsCancellationRequested)
-        { return new(false, $"等待窗口超时：{Path.GetFileName(path)} 没有匹配的可见主窗口；" + (monitorSelection is null ? "未结束程序。 " : "未移动窗口。")); }
+        { return new(false, $"等待窗口超时：{Path.GetFileName(path)} 没有匹配的可见主窗口；" + (layoutOperation ? "未调整布局。" : monitorSelection is null ? "未结束程序。 " : "未移动窗口。")); }
 
         token.ThrowIfCancellationRequested();
         // Recheck identity immediately before sending, guarding exit, HWND and PID reuse.
@@ -82,14 +85,14 @@ public static class WindowsWindowActions
         try
         {
             if (!current.Any(p => p.Id == pid) || !Candidate(target, title) || GetWindowThreadProcessId(target, out var owner) == 0 || owner != pid)
-                return new(false, monitorSelection is null ? "目标窗口已变化，未发出关闭请求。" : "目标窗口已变化，未移动窗口。");
-            if (monitorSelection is not null)
+                return new(false, layoutOperation ? "目标窗口已变化，未调整布局。" : monitorSelection is null ? "目标窗口已变化，未发出关闭请求。" : "目标窗口已变化，未移动窗口。");
+            if (needsCreation)
             {
                 if (startedAtUtc is null || !current.Any(p => p.Id == pid && TryReadCreation(p, out var creation) && creation == startedAtUtc))
-                    return new(false, "窗口所属进程已变化，未移动窗口。");
-                return await WindowsWindowMonitor.ApplyAsync(target, pid, path, startedAtUtc.Value, monitorSelection, events, token);
+                    return new(false, "窗口所属进程已变化；" + unchangedReason);
+                if (monitorSelection is not null) return await WindowsWindowMonitor.ApplyAsync(target, pid, path, startedAtUtc.Value, monitorSelection, events, token);
+                return await WindowsWindowLayout.ApplyAsync(target, pid, path, startedAtUtc.Value, state!, events, token);
             }
-            if (state is "left" or "right" or "center") return await WindowsWindowLayout.ApplyAsync(target, pid, path, state, events, token);
             if (state is not null)
             {
                 bool Confirmed() => Visible(target, pid) && (state == "minimize" ? IsIconic(target) : state == "maximize" ? IsZoomed(target) : state is "topmost" or "notopmost" ? Topmost(target) == (state == "topmost") : !IsIconic(target) && !IsZoomed(target));

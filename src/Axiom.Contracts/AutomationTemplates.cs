@@ -12,9 +12,13 @@ public static class AutomationTemplates
         (string Field, string Value)[] DetectionValues, (string Field, string Value)[] ActionValues);
     private static readonly Recipe[] Recipes =
     [
+        new("lock-pause-current-media", "锁屏后暂停Windows当前媒体", "锁屏的新通知后，向Windows选中的当前媒体会话请求暂停一次；目标可能是播放器或浏览器，不指定程序。没有媒体会话或播放器不支持时会说明，解锁不自动播放。", SystemEventCapabilities.Event, CurrentMediaCapabilities.Control, [("event", "locked")], [("operation", "pause")]),
+        new("screen-off-pause-current-media", "当前会话屏幕关闭后暂停媒体", "Windows当前会话新报告屏幕关闭后，向Windows选中的当前媒体会话请求暂停一次；没有媒体会话或播放器不支持时会说明。首次及睡眠恢复不补执行，屏幕亮起不自动播放，不证明每块物理屏状态。", SessionDisplayCapabilities.State, CurrentMediaCapabilities.Control, [("state", "off")], [("operation", "pause")]),
+        new("screen-off-mute", "当前会话屏幕关闭后静音", "Windows当前会话报告屏幕关闭后，将默认播放设备静音一次；不自动恢复。首次及睡眠恢复不补执行，不证明锁屏或每块物理屏已关闭，现代待机可能延迟执行。", SessionDisplayCapabilities.State, AudioPlaybackCapabilities.Set, [("state", "off")], [("operation", "mute"), ("percent", "30"), ("delaySeconds", "0")]),
         new("multi-display-awake", "多屏工作期间保持系统唤醒", "Windows逻辑桌面至少2个显示器且状态已知时持有系统唤醒请求，屏幕仍可关闭；退回单屏、未知或暂停后释放。首次已多屏即可生效，不保证物理屏幕数量，不阻止用户手动睡眠。", DisplayCountCapabilities.Count, KeepAwakeCapabilities.Hold, [("comparison", "at-least"), ("count", "2")], [("target", "system")]),
         new("single-display-primary-window", "返回单屏后整理工作窗口", "选择程序完整路径；只在Windows逻辑桌面新变为恰好1屏时，把一个匹配主窗口放到主屏中央80%。最小化或最大化先还原，首次单屏和睡眠恢复不补移动，不保存或恢复旧布局。", DisplayCountCapabilities.Count, WindowMonitorCapabilities.Move, [("comparison", "exact"), ("count", "1")], [("monitor", "primary")]),
         new("internet-tools", "Windows报告Internet可用后启动工具", "选择同步或工作工具；只在Windows报告的新可用状态后请求启动，首次已有Internet不补执行。不主动探测，不保证目标服务可达，VPN或NCSI策略可能影响报告；未知不当作离线。", InternetConnectivityCapabilities.State, "program.start", [("state", "available")], []),
+        new("lower-background-priority", "后台工具开始运行时降低优先级", "选择检测程序名及目标完整exe路径；检测组从全部未运行变为任一运行时，把执行时目标的所有当前实例设为低于正常。同名检测可能来自其他路径；组仍运行时新增实例不再触发，首次已运行不补执行。未运行或权限不足会失败，不限制CPU使用率，退出或暂停不恢复。", "process.running", ProgramPriorityCapabilities.Set, [], [("priority", "below-normal")]),
         new("launch-companion", "打开程序后启动配套工具", "选择检测程序和要启动的工具；工具已运行时跳过，结束后不自动关闭。", "process.running", "program.start", [], []),
         new("cleanup-companion", "程序退出后关闭配套工具", "只请求正常关闭最近启动的一个匹配实例；不强制结束、不自动重开，未保存内容可能需要确认。", "process.exited", "program.close", [], [("mode", "graceful"), ("instances", "latest")]),
         new("window-cleanup", "工作窗口全部消失后收尾", "选择工作程序和配套工具；全部工作主窗口隐藏或销毁后请求正常关闭配套工具最新实例。最小化不触发，程序可能仍在后台；不强杀、不自动重开。", WindowPresenceCapabilities.Absent, "program.close", [], [("mode", "graceful"), ("instances", "latest")]),
@@ -38,6 +42,7 @@ public static class AutomationTemplates
         new("desktop-reminder", "定期显示桌面提醒", "填写提醒内容；默认每30分钟请求一次安静提醒。Windows勿扰可能隐藏通知，不适合紧急提醒。", IntervalCapabilities.Elapsed, NotificationCapabilities.Show, [], []),
         new("pdf-arrival", "文件夹出现PDF后打开工具", "填写本机文件夹和配套程序；新建或重命名出现PDF后一秒合并触发，不读取内容、不证明下载完成、不传递文件名。可给动作增加延迟。", FileArrivalCapabilities.Arrived, "program.start", [("kind", "pdf")], []),
         new("microphone-shortcut", "按快捷键静音默认通信麦克风", "选择快捷键；只静音Windows默认通信麦克风一次，不自动取消静音。应用选择的其他输入设备可能仍收音，请核对应用。", HotkeyCapabilities.Pressed, MicrophoneCapabilities.Set, [], [("operation", "mute")]),
+        new("lock-display-off", "锁屏后请求关闭屏幕", "锁屏新通知后向Windows请求关闭屏幕一次，电脑与后台工作继续；不睡眠、不改电源方案。输入可能唤醒屏幕，驱动与保持屏幕唤醒请求可能影响效果，接受请求不代表物理屏幕已关闭。", SystemEventCapabilities.Event, DisplayOffCapabilities.Request, [("event", "locked")], []),
         new("lock-mute", "锁屏后静音默认播放设备", "锁屏时静音一次，不停止播放、不改麦克风，解锁不自动恢复。之后可手动取消静音；请审阅后启用。", SystemEventCapabilities.Event, AudioPlaybackCapabilities.Set, [("event", "locked")], [("operation", "mute")]),
         new("focus-quiet-apps", "切到工作应用时降低播放应用音量", "选择前台工作程序及实际发声程序完整路径；只把默认播放设备上的活动会话音量设为30%，不取消静音、不自动恢复。目标未播放或无会话会说明失败。", ForegroundCapabilities.Active, ApplicationAudioCapabilities.Set, [], [("operation", "volume"), ("percent", "30")]),
         new("keep-transfer-awake", "传输或会议程序运行期间保持系统唤醒", "选择需要持续运行的程序；任意一个运行时持有Axiom自己的电源请求，全部退出或状态未知后释放。默认允许屏幕关闭，不改变电源计划、不阻止手动睡眠。", "process.running", KeepAwakeCapabilities.Hold, [], [("target", "system")]),
