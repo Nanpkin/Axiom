@@ -4,7 +4,7 @@
 
 ## 当前交付与执行队列
 
-当前main `9e87cbbb044d72411cdacf3bb55cde8937805bf7`已包含十项增量、49能力/45默认暂停模板；[准确main检查37878921158](https://github.com/Starvan/Axiom/actions/runs/37878921158)成功。
+当前main `9267169516e1f01055aeebfda99d86de0152c6ca`已包含上一阶段十项及本轮四项增量、53能力/49默认暂停模板；[准确main检查37882793100](https://github.com/Starvan/Axiom/actions/runs/37882793100)全部成功。
 
 [预览 .3](https://github.com/Starvan/Axiom/releases/tag/v0.2.0-preview.20261009.3)已发布，[准确发布构建37879255109](https://github.com/Starvan/Axiom/actions/runs/37879255109)成功，来源为`9e87cbb`；便携zip、安装exe、BUILD-INFO.json和SHA256SUMS.txt四项资产均已核验。本轮未替换所有者本机版本；实机与完整性能验收仍独立。
 
@@ -12,6 +12,7 @@
 - [x] 新一轮已启动四场景的用户价值、最小验收路径及按收益/API排序的后续方向记入[功能清单](../../product/functional-roadmap.md)；规划记录单独提交，继续功能主线而非等待新需求。
 - [x] 三个代理实现并整合：公开NLM公用/专用/域分类条件、快捷键当前窗口移主/相邻屏、默认播放静音切换、有限系统提示音。当前四项优先交付；下一批`power.scheme-state`/`power.saver-state`及指定程序音频会话活动条件独立实施，其他候选不预造框架。
 - [x] `codex/functional-round-two-integration`已接通53能力/49模板，8项注册/模板/严格导入/暂停保存/原64KiB完整fields/pairs检查成功；Agent/Host构建均零警告/错误；准确Windows/main/阶段包由负责人核验，不做半批重复或旧代码全量复审。
+- [x] 本批仅三个已就绪条件：电源方案、兼容电池节能报告、用户在场，56能力/52模板；一次6项必要入口/模板/严格导入/暂停保存/原64KiB完整fields/pairs检查成功，Agent/Host零警告/错误。指定程序音频活动待提交，归下一就绪集，与整屏几何、硬件亮度和有限工作准备独立实施；.4按实际完成增量统一发布。
 - [ ] 实机重点：多网络分类/Unknown、当前窗口快速切换/销毁/混合DPI、播放设备两向静音及设备变更、系统音受理与实际可听。既有媒体/电源/外设/安装性能待验继续有效。
 
 用户要求持续提出并实施有价值能力，保持`gpt-6.1-sol` / `high`；完成阶段/PR/发布后按收益推进后续独立增量。候选先查API与具体消费者，不自行加入自动睡眠/关机，不增加常驻轮询或通用工作流前置。

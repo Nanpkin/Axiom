@@ -29,6 +29,11 @@ public sealed class PowerSchemeStateTests
         var recorder = new UsageRecorder(new(5, false, false, [], SystemEvents: true), DateTimeOffset.UtcNow);
         var proposal = new UsageImport(1, recorder.Session.Id, "existing", "标准方案条件", "synthetic", Detection(), template.Draft.Action);
         Assert.True(UsageAnalysis.Import(JsonSerializer.Serialize(proposal), recorder.Session, catalog).Draft!.Paused);
+        Assert.Contains(catalog.Combinations, c => c.DetectionId == PowerSchemeStateCapabilities.State && c.ActionId == SystemSoundCapabilities.Sound);
+        var sound = new TaskInvocation(SystemSoundCapabilities.Sound, 1,
+            ImmutableDictionary<string, string>.Empty.Add("sound", "info").Add("delaySeconds", "0"));
+        var soundDraft = UsageAnalysis.Import(JsonSerializer.Serialize(proposal with { Action = sound }), recorder.Session, catalog).Draft!;
+        Assert.True(soundDraft.Paused); Assert.NotNull(compiler.Compile(soundDraft, "owner", ResourceScope.Session("owner", 1)));
         foreach (var value in new[] { "custom", "Balanced", "", PowerSchemeCapabilities.Saver.ToString() })
             Assert.Throws<ArgumentException>(() => UsageAnalysis.Import(JsonSerializer.Serialize(proposal with { Detection = Detection(value) }), recorder.Session, catalog));
         Assert.Throws<ArgumentException>(() => PowerSchemeStateCapabilities.Validate(Detection() with { SchemaVersion = 2 }));

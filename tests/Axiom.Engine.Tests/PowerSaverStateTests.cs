@@ -29,6 +29,11 @@ public sealed class PowerSaverStateTests
         var recorder = new UsageRecorder(new(5, false, false, [], SystemEvents: true), DateTimeOffset.UtcNow);
         var proposal = new UsageImport(1, recorder.Session.Id, "existing", "Windows节能报告", "synthetic", Detection(), template.Draft.Action);
         Assert.True(UsageAnalysis.Import(JsonSerializer.Serialize(proposal), recorder.Session, catalog).Draft!.Paused);
+        Assert.Contains(catalog.Combinations, c => c.DetectionId == PowerSaverStateCapabilities.State && c.ActionId == SystemSoundCapabilities.Sound);
+        var sound = new TaskInvocation(SystemSoundCapabilities.Sound, 1,
+            ImmutableDictionary<string, string>.Empty.Add("sound", "info").Add("delaySeconds", "0"));
+        var soundDraft = UsageAnalysis.Import(JsonSerializer.Serialize(proposal with { Action = sound }), recorder.Session, catalog).Draft!;
+        Assert.True(soundDraft.Paused); Assert.NotNull(compiler.Compile(soundDraft, "owner", ResourceScope.Session("owner", 1)));
         foreach (var value in new[] { "battery-below", "saver", "On", "", "2", "255" })
             Assert.Throws<ArgumentException>(() => UsageAnalysis.Import(JsonSerializer.Serialize(proposal with { Detection = Detection(value) }), recorder.Session, catalog));
         Assert.Throws<ArgumentException>(() => PowerSaverStateCapabilities.Validate(Detection() with { SchemaVersion = 2 }));
