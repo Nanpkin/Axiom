@@ -165,10 +165,10 @@ public sealed class WindowsSessionEventTests
     }
 
     [Fact(Timeout = 10000)]
-    public void NativeSetupApiUsbSnapshotReadsBoundedInstancesWithoutRecordingTheirValues()
+    public async Task NativeSetupApiUsbSnapshotReadsBoundedInstancesWithoutRecordingTheirValues()
     {
         using var source = new WindowsSessionEvents(usbOnly: true);
-        var instances = WindowsUsbDevices.ReadPresentInstances(default);
+        var instances = await Task.Run(() => WindowsUsbDevices.ReadPresentInstances(default));
         Assert.True(instances.Length <= 256);
         Assert.True(instances.All(id => id.Length is > 0 and <= 255 && !id.Any(char.IsControl)));
         Assert.Equal(instances.Length, instances.Distinct(StringComparer.OrdinalIgnoreCase).Count());
