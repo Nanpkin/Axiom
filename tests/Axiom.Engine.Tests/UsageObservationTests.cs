@@ -328,6 +328,14 @@ public sealed class UsageObservationTests
         Assert.DoesNotContain(UsageAnalysis.Analyze(unsafeObjects), s => s.Kind == "existing");
     }
 
+    private static TaskCombination[] SummaryCombinations(JsonElement summary)
+    {
+        var combinations = summary.GetProperty("combinations");
+        if (combinations.ValueKind == JsonValueKind.Array) return combinations.Deserialize<TaskCombination[]>()!;
+        Assert.Equal(JsonValueKind.Object, combinations.ValueKind);
+        return [.. combinations.EnumerateObject().SelectMany(d => d.Value.EnumerateArray().Select(a => new TaskCombination(d.Name, a.GetString()!)))];
+    }
+
     [Fact]
     public void FullProductionCatalogAndMaximumObjectDictionaryFitExportWithoutDeviceIdentityOrLostParameters()
     {
@@ -372,7 +380,7 @@ public sealed class UsageObservationTests
                 else { Assert.Equal(field.DefaultValue, actual.DefaultValue); Assert.Equal(field.Choices.Select(c => c.Value), actual.Choices.Select(c => c.Value)); }
             }
         }
-        Assert.Equal(catalog.Combinations.Length, document.RootElement.GetProperty("combinations").GetArrayLength());
+        Assert.Equal(catalog.Combinations.Length, SummaryCombinations(document.RootElement).Length);
         var handledKeys = UsageAnalysis.AnalyzeCandidates(recorder.Session).Take(12).Select(s => UsageAnalysis.FeedbackKey(recorder.Session, s)).ToHashSet();
         var withFeedback = UsageAnalysis.Summary(recorder.Session, catalog, handledKeys);
         Assert.True(System.Text.Encoding.UTF8.GetByteCount(UsageAnalysis.Prompt + withFeedback.Replace("\r\n", "\n").Replace("\n", "\r\n")) <= UsageValidation.MaximumExportBytes);
@@ -380,7 +388,11 @@ public sealed class UsageObservationTests
         Assert.Equal(12, feedbackDocument.RootElement.GetProperty("handledPatterns").GetArrayLength());
         Assert.InRange(feedbackDocument.RootElement.GetProperty("patterns").GetArrayLength(), 1, 12);
         Assert.Equal(catalog.Capabilities.Length, feedbackDocument.RootElement.GetProperty("capabilities").GetArrayLength());
-        Assert.Equal(catalog.Combinations.ToArray(), feedbackDocument.RootElement.GetProperty("combinations").Deserialize<TaskCombination[]>());
+        Assert.Equal(JsonValueKind.Object, feedbackDocument.RootElement.GetProperty("combinations").ValueKind);
+        Assert.Contains("键是DetectionId", UsageAnalysis.Prompt);
+        Assert.Contains("全部组合保留", withFeedback);
+        Assert.Equal(catalog.Combinations.OrderBy(c => c.DetectionId, StringComparer.Ordinal).ThenBy(c => c.ActionId, StringComparer.Ordinal).ToArray(),
+            SummaryCombinations(feedbackDocument.RootElement).OrderBy(c => c.DetectionId, StringComparer.Ordinal).ThenBy(c => c.ActionId, StringComparer.Ordinal).ToArray());
         var serializedFields = feedbackDocument.RootElement.GetProperty("capabilities").EnumerateArray()
             .SelectMany(c => c.GetProperty("Fields").EnumerateArray()).ToArray();
         Assert.Contains("默认false", feedbackDocument.RootElement.GetProperty("omissions").GetString());
