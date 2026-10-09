@@ -12,8 +12,10 @@ public sealed class WindowsEndpointMuteEvents : IEndpointMuteSource
     private readonly Hub owner;
     private readonly HashSet<string> endpoints;
     private readonly Channel<EndpointMuteSample> queue = Channel.CreateBounded<EndpointMuteSample>(64);
+    private volatile bool failed;
     private bool disposed;
     public ChannelReader<EndpointMuteSample> Events => queue.Reader;
+    public bool Failed => failed;
     public static int ActiveConsumers { get { lock (Gate) return shared?.Clients.Count ?? 0; } }
     public WindowsEndpointMuteEvents(string[] endpoints)
     {
@@ -37,40 +39,35 @@ public sealed class WindowsEndpointMuteEvents : IEndpointMuteSource
         {
             if (disposed) return; disposed = true; queue.Writer.TryComplete(); owner.Clients.Remove(this);
             if (owner.Clients.Count == 0 && !owner.Stopped.Task.IsCompleted)
-            { last = true; owner.Closing = true; owner.Work.Writer.TryComplete(); }
+            { last = true; owner.Closing = true; owner.Work.Complete(); }
         }
         if (last) owner.Stopped.Task.Wait(TimeSpan.FromSeconds(5));
         else owner.Enqueue(new("sync"));
     }
-    private sealed record Signal(string Kind, string Endpoint = "", long Generation = 0);
     private sealed class Hub
     {
         internal readonly HashSet<WindowsEndpointMuteEvents> Clients = [];
         internal readonly Dictionary<string, EndpointMuteSample> Latest = new(StringComparer.Ordinal);
-        internal readonly Channel<Signal> Work = Channel.CreateBounded<Signal>(64);
+        internal readonly EndpointMuteNotifications Work;
         internal readonly TaskCompletionSource Stopped = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal bool Closing;
-        private readonly object signalGate = new();
-        private readonly HashSet<Signal> pending = [];
-        private readonly EndpointMuteDefaultChanges defaultChanges = new();
         private readonly Dictionary<string, EndpointMuteState> states = new(StringComparer.Ordinal);
         private readonly Dictionary<string, Binding> bindings = new(StringComparer.Ordinal);
         private readonly HashSet<string> active = new(StringComparer.Ordinal);
-        private int overflow;
         internal Hub()
         {
+            Work = new(CompleteLostNotifications);
             var thread = new Thread(Run) { IsBackground = true, Name = "Axiom endpoint mute observer" };
             thread.SetApartmentState(ApartmentState.MTA); thread.Start();
         }
-        internal void Enqueue(Signal signal)
+        internal void Enqueue(EndpointMuteSignal signal) => Work.Enqueue(signal);
+        private void CompleteLostNotifications()
         {
-            // Coalesce repeated volume callbacks; no COM calls or consumer work runs on a callback thread.
-            lock (signalGate)
+            lock (Gate)
             {
-                if (signal.Kind == "default") defaultChanges.Note(signal.Endpoint);
-                if (!pending.Add(signal)) return;
-                if (!Work.Writer.TryWrite(signal))
-                { pending.Remove(signal); Interlocked.Exchange(ref overflow, 1); Work.Writer.TryComplete(new IOException("静音通知队列不可用。")); }
+                Closing = true;
+                foreach (var client in Clients)
+                { client.failed = true; client.queue.Writer.TryComplete(new IOException("静音状态通知丢失。")); }
             }
         }
         private void Publish(EndpointMuteSample sample)
@@ -79,7 +76,8 @@ public sealed class WindowsEndpointMuteEvents : IEndpointMuteSource
             {
                 Latest[sample.Endpoint] = sample;
                 foreach (var client in Clients.Where(c => c.endpoints.Contains(sample.Endpoint)))
-                    if (!client.queue.Writer.TryWrite(sample)) client.queue.Writer.TryComplete(new IOException("静音通知积压，状态未知。"));
+                    if (!client.queue.Writer.TryWrite(sample))
+                    { client.failed = true; client.queue.Writer.TryComplete(new IOException("静音通知积压，状态未知。")); }
             }
         }
         private void Run()
@@ -93,13 +91,12 @@ public sealed class WindowsEndpointMuteEvents : IEndpointMuteSource
                 Marshal.ThrowExceptionForHR(CoCreateInstance(ref cls, 0, 1, ref iid, out enumerator));
                 defaults = new WindowsAudioEvents(includeEndpointState: true);
                 _ = ForwardDefaultsAsync(defaults, stop.Token);
-                while (Work.Reader.WaitToReadAsync().AsTask().GetAwaiter().GetResult())
+                while (Work.Events.WaitToReadAsync().AsTask().GetAwaiter().GetResult())
                 {
-                    if (Volatile.Read(ref overflow) != 0) throw new IOException("静音通知队列不可用。");
-                    if (!Work.Reader.TryRead(out var signal)) continue;
-                    lock (signalGate) pending.Remove(signal);
+                    if (Work.Failed) throw new IOException("静音通知队列不可用。");
+                    if (!Work.TryRead(out var signal)) continue;
                     lock (Gate) if (Closing) break;
-                    switch (signal.Kind)
+                    switch (signal!.Kind)
                     {
                         case "sync": Synchronize(enumerator); break;
                         case "default":
@@ -113,7 +110,7 @@ public sealed class WindowsEndpointMuteEvents : IEndpointMuteSource
             }
             catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
             {
-                lock (Gate) Closing = true;
+                CompleteLostNotifications();
                 foreach (var endpoint in states.Keys.ToArray()) Publish(states[endpoint].Reset("默认设备静音通知不可用；请暂停并重新启用规则。"));
                 lock (Gate) foreach (var client in Clients) client.queue.Writer.TryComplete(new IOException("静音通知不可用。"));
             }
@@ -164,7 +161,7 @@ public sealed class WindowsEndpointMuteEvents : IEndpointMuteSource
             IDevice? device = null; object? activated = null; Binding? created = null;
             var state = states[endpoint];
             long selectionVersion;
-            lock (signalGate) selectionVersion = defaultChanges.Version(endpoint);
+            lock (Work.Gate) selectionVersion = Work.DefaultChanges.Version(endpoint);
             try
             {
                 if (bindings.TryGetValue(endpoint, out var previous) && previous.SelectionVersion != selectionVersion)
@@ -177,7 +174,7 @@ public sealed class WindowsEndpointMuteEvents : IEndpointMuteSource
                 if (status != 1) throw new IOException("默认设备未处于活动状态。");
                 var identity = ReadIdentity(device); // Transient comparison only; never publish, log, or persist this string.
                 bool querySuperseded;
-                lock (signalGate) querySuperseded = selectionVersion != defaultChanges.Version(endpoint);
+                lock (Work.Gate) querySuperseded = Work.Failed || selectionVersion != Work.DefaultChanges.Version(endpoint);
                 if (querySuperseded)
                 {
                     Publish(state.Reset("默认设备正在重新连接。"));
@@ -202,9 +199,9 @@ public sealed class WindowsEndpointMuteEvents : IEndpointMuteSource
                 Marshal.ThrowExceptionForHR(created.Volume.GetMute(out var muted));
                 bindings[endpoint] = created; created = null;
                 EndpointMuteSample? sample;
-                lock (signalGate)
+                lock (Work.Gate)
                 {
-                    if (selectionVersion != defaultChanges.Version(endpoint)) return;
+                    if (Work.Failed || selectionVersion != Work.DefaultChanges.Version(endpoint)) return;
                     sample = state.Read(generation, muted);
                 }
                 if (sample is not null) Publish(sample);
@@ -221,18 +218,18 @@ public sealed class WindowsEndpointMuteEvents : IEndpointMuteSource
                 if (device is not null) Marshal.ReleaseComObject(device);
             }
         }
-        private void ReadMute(Signal signal)
+        private void ReadMute(EndpointMuteSignal signal)
         {
             if (!states.TryGetValue(signal.Endpoint, out var state) || state.Generation != signal.Generation || !bindings.TryGetValue(signal.Endpoint, out var binding)) return;
             // A queued default selection invalidates old callbacks even before its coalesced rebind signal runs.
-            lock (signalGate) if (binding.SelectionVersion != defaultChanges.Version(signal.Endpoint)) return;
+            lock (Work.Gate) if (Work.Failed || binding.SelectionVersion != Work.DefaultChanges.Version(signal.Endpoint)) return;
             try
             {
                 Marshal.ThrowExceptionForHR(binding.Volume.GetMute(out var muted));
                 EndpointMuteSample? sample;
-                lock (signalGate)
+                lock (Work.Gate)
                 {
-                    if (binding.SelectionVersion != defaultChanges.Version(signal.Endpoint)) return;
+                    if (Work.Failed || binding.SelectionVersion != Work.DefaultChanges.Version(signal.Endpoint)) return;
                     sample = state.Read(signal.Generation, muted);
                 }
                 if (sample is not null) Publish(sample);
