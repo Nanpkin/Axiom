@@ -127,3 +127,7 @@ Engine在新条件边沿/事件进入延迟前、延迟deadline以及队列取�
 一次性`window.state`保持schema 1，`state`增量接受`top-left|top-right|bottom-left|bottom-right`，旧值与已保存参数不变；沿用完整exe多选、标题、等待、延迟、时段策略及独立目标结果。既有模板可选择新布局，不新增设备ID、持久坐标、结束恢复或持续控制。工作区宽高至少2个物理像素，2×2分割，奇数余量分到右侧/下侧；计算边界checked，兼容负坐标。
 
 仅布局（左右/中央/四角）补齐原移屏的进程创建时间核验；不改变关闭、最小化/最大化/置顶路径。`WindowsWindowLayout`固定当前匹配进程句柄、验证存活/创建时间及顶层无拥有者HWND，DPI scope在每次await前恢复，3秒linked deadline在还原后及SetWindowPos前再次核验。相关显示器/工作区变化与精确位置大小读回失败返回未确认，允许已经还原/发送请求；不声称撤销取消前的Windows请求，不重复写入或回写旧布局。主屏/上一屏/下一屏仍由`window.monitor`单独中央80%处理。
+
+## Windows当前媒体播放条件
+
+`media.playback-state` schema1接受`playing|paused|stopped`，同会话最多3个bool资源；Stopped和Closed对应已停止，Opened/Changing/未知枚举为Unknown，没有当前会话明确Known且三个条件全false。只查询公开PlaybackStatus，不调用曲目/应用ID/媒体属性。CurrentSessionChanged先使旧状态Unknown并递增代际，固定新会话并先订阅PlaybackInfoChanged再查询，查询后重读选择及代际核验；旧代回调丢弃。首次/选中会话变化/Unknown恢复仅为Command基线，Known初始状态可授权Desired。64有界提示合并后查询，无轮询；提示溢出立即使租约Failed，Provider丢缓存Known并先Unknown后清理。共享查询线程未退出时拒新租约以免原生阻塞堆线程，末租约取消/注销，不能保证播放器及时或准确报告实际声画。只组合保持唤醒、音频/应用音量/麦克风及提醒，排除直接媒体控制、程序启停和模拟按键反馈。所有校验/组合仍由实际注册和严格导入承担，不改变协议或目录预算。

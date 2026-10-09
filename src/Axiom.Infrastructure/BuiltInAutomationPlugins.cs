@@ -8,7 +8,7 @@ public static class BuiltInAutomationPlugins
 {
     public static IAutomationPlugin[] Create() =>
     [
-        new SessionDisplayPlugin(), new DisplayCountPlugin(), new InternetConnectivityPlugin(), new ProgramPlugin(), new AxiomStartupPlugin(), new WindowPlugin(), new TrayPlugin(), new KeyboardPlugin(),
+        new MediaPlaybackPlugin(), new SessionDisplayPlugin(), new DisplayCountPlugin(), new InternetConnectivityPlugin(), new ProgramPlugin(), new AxiomStartupPlugin(), new WindowPlugin(), new TrayPlugin(), new KeyboardPlugin(),
         new SystemEventPlugin(), new IntervalPlugin(), new DailyTimePlugin(), new WindowedIntervalPlugin(), new FileArrivalPlugin(), new AudioPlaybackPlugin(), new AudioPlaybackAdjustPlugin(),
         new PowerStatePlugin(), new BuiltInBrightnessPlugin(), new EndpointMutePlugin(), new SessionLockPlugin(), new DisplayOffPlugin(), new WindowMonitorPlugin(), new UsbDevicePlugin(), new PowerSchemePlugin(), new WifiProfilePlugin(), new KeepAwakePlugin(), new ApplicationAudioPlugin(), new ProgramPriorityPlugin(), new CurrentMediaPlugin(), new MicrophonePlugin(), new MicrophoneTogglePlugin(), new NotificationPlugin(), new OnceTimePlugin(), new AudioPlugin(), new OpenTargetPlugin(), new ForegroundPlugin(), new WindowPresencePlugin(), new WindowStateDetectionPlugin()
     ];
