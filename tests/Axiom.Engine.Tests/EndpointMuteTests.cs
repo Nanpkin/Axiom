@@ -245,7 +245,8 @@ public sealed class EndpointMuteTests
     public async Task SharedNotificationOverflowInvalidatesConsumersWhileTheMuteQueryIsBlocked()
     {
         using var stop = new CancellationTokenSource(); using var queryEntered = new ManualResetEventSlim();
-        using var releaseQuery = new ManualResetEventSlim(); var fake = new FakeSource();
+        using var releaseQuery = new ManualResetEventSlim(); using var disposalRecorded = new ManualResetEventSlim();
+        var fake = new FakeSource { Disposing = disposalRecorded.Set };
         var notifications = new EndpointMuteNotifications(fake.Fail);
         var updates = Channel.CreateBounded<ProviderUpdate>(8);
         var observing = new EndpointMuteCapabilityProvider(_ => fake).ObserveAsync([new(EndpointMuteCapabilities.State, "input")],
@@ -258,10 +259,11 @@ public sealed class EndpointMuteTests
             for (var i = 0; i < 65; i++) notifications.Enqueue(new("read", "input", i));
             Assert.True(notifications.Failed); Assert.True(fake.Failed); Assert.False(query.IsCompleted);
             var lost = await updates.Reader.ReadAsync(); Assert.Equal(StateQuality.Unknown, Assert.Single(lost.Samples).Quality);
+            Assert.True(disposalRecorded.Wait(TimeSpan.FromSeconds(2)));
             Assert.False(updates.Reader.TryRead(out _)); Assert.Equal(1, fake.Disposals); Assert.False(observing.IsCompleted);
         }
         finally { releaseQuery.Set(); stop.Cancel(); }
-        await query; await Assert.ThrowsAnyAsync<OperationCanceledException>(() => observing);
+        await query; await Assert.ThrowsAnyAsync<OperationCanceledException>(() => observing); Assert.Equal(1, fake.Disposals);
     }
 
     [Fact]
