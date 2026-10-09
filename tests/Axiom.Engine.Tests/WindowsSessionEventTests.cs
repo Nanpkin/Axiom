@@ -322,18 +322,19 @@ public sealed class WindowsSessionEventTests
         {
             Marshal.StructureToPtr(new Guid("3C0F4548-C03F-4C4D-B9F2-237EDE686376"), buffer, false);
             Marshal.WriteInt32(buffer, 16, 4);
+            // A real registration/current-state report can interleave; await the expected injected hint, as for scheme/saver.
             foreach (var (raw, expected) in new[] { (0, "presence-present"), (1, "presence-absent"), (2, "presence-inactive"), (3, "presence-reset") })
             {
                 Marshal.WriteInt32(buffer, 20, raw); SendMessage(presence.NotificationWindow, 0x0218, 0x8013, buffer);
-                Assert.Equal(expected, await presence.Events.ReadAsync(deadline.Token));
+                Assert.Equal(expected, await NextContextHint(presence, expected, deadline.Token));
             }
             Marshal.WriteInt32(buffer, 16, 0); SendMessage(presence.NotificationWindow, 0x0218, 0x8013, buffer);
-            Assert.Equal("presence-reset", await presence.Events.ReadAsync(deadline.Token));
+            Assert.Equal("presence-reset", await NextContextHint(presence, "presence-reset", deadline.Token));
             foreach (var source in new[] { system, power, usb, screen, scheme, saver })
                 while (source.Events.TryRead(out var kind)) Assert.DoesNotContain("presence-", kind);
             Assert.False(clock.ClockChanges.TryRead(out _));
             SendMessage(presence.NotificationWindow, 0x02B1, 2, 0);
-            Assert.Equal("presence-reset", await presence.Events.ReadAsync(deadline.Token));
+            Assert.Equal("presence-reset", await NextContextHint(presence, "presence-reset", deadline.Token));
             Marshal.WriteInt32(buffer, 16, 4); Marshal.WriteInt32(buffer, 20, 1);
             for (var i = 0; i < 65; i++) SendMessage(presence.NotificationWindow, 0x0218, 0x8013, buffer);
             Assert.True(presence.Failed); Assert.False(presence.Events.TryRead(out _));
