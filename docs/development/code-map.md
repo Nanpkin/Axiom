@@ -106,6 +106,8 @@ USB类别通知：`WindowsSessionEvents` 注册USB接口GUID、处理接入/移�
 
 应用音量：`ApplicationAudioCapabilities/Plugin/CapabilityProvider` → `WindowsAudioPlayback.Applications`，`ApplicationAudioOperation`核验/多会话/部分结果；`ApplicationAudioTests`为合成端点测试，真实播放会话单列。
 
+指定程序音频活动：`ApplicationAudioActivityCapabilities/Plugin/CapabilityProvider` → `WindowsApplicationAudioActivity` → `ApplicationAudioActivityHub`和`WindowsAudioPlayback.Activity`。公开默认播放角色/会话创建/状态/断开通知，MTA先订阅再枚举，保留新会话通知的控制引用；与现有应用音量写动作共享固定SID/会话/进程句柄/创建时间/路径身份，仅选定进程注册退出等待。三值OR、初始Desired与Unknown恢复命令基线、默认选择代际隔离；明确Expired在MTA释放，Inactive仍监听，旧进程已退出而会话仍报Active保留固定身份直到过期，避免PID复用重新认领。5秒查询期限，32消费者/128路径/128会话/64提示/256状态样本，失败先Unknown、阻塞清理不新开线程。`ApplicationAudioActivityTests`6项合成覆盖聚合/身份退出、共享释放/恢复/无会话、旧代际、积压失败、Engine初态/释放和严格alias导入/保存/暂停模板；Windows原生通知和实际Power Request尚待实机。
+
 保持唤醒：`KeepAwakeCapabilities/Plugin` → `PluginTaskRuntime.KeepAwake` → `SessionDesiredLeaseStream/KeepAwakeCapabilityProvider` → `WindowsPowerRequest`；Engine窄`ILeasedDesiredExecutor`通知授权收回，`KeepAwakeTests`及Windows管道`WindowsKeepAwakeRuntimeTests`验证独立请求生命周期。
 
 Wi-Fi配置：`WifiProfileCapabilities/Plugin/CapabilityProvider` → `WindowsWifiProfiles`共享Wlan通知及`WifiProfileState`多网卡合并；`WifiProfileTests`验证已知/未知、基线、保存及隐私。`TaskField.EditAsList`由`WorkbenchWindow.NamedLists`显示有界名单弹窗，保存仍由能力校验。

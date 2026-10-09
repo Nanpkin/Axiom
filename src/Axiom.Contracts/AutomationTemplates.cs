@@ -13,6 +13,7 @@ public static class AutomationTemplates
     private static readonly Recipe[] Recipes =
     [
         new("public-network-reminder", "出现公用网络分类后提醒", "Windows从没有公用匹配新变为有公用匹配时，请求安静桌面提醒；首次、重新启用及未知恢复不补提醒，不读取网络名称。分类不代表Internet可用性或安全可信，请按实际需要审阅规则。", NetworkCategoryCapabilities.State, NotificationCapabilities.Show, [("category", "public")], [("title", "Windows网络分类"), ("body", "Windows报告当前有已连接网络归为公用；分类不代表Internet可用性或安全可信。")]),
+        new("application-audio-awake", "指定程序音频活动期间保持唤醒", "选择实际播放器或会议工具完整exe路径；默认播放端点存在其已核验活动渲染会话时保持系统唤醒，屏幕仍可关闭。首次已活动即可持有，全部不活动、未知或暂停后释放；不证明实际发声、收音或会议进行，不修改音量/静音。", ApplicationAudioActivityCapabilities.Active, KeepAwakeCapabilities.Hold, [], [("target", "system")]),
         new("current-media-awake", "当前媒体播放期间保持系统唤醒", "Windows选中的当前媒体会话报告正在播放时，持有Axiom自己的系统唤醒请求，屏幕仍可关闭。暂停、停止、没有会话、未知或暂停规则后释放；不指定播放器，不证明实际出声，不阻止手动睡眠。", MediaPlaybackCapabilities.State, KeepAwakeCapabilities.Hold, [("state", "playing")], [("target", "system")]),
         new("lock-pause-current-media", "锁屏后暂停Windows当前媒体", "锁屏的新通知后，向Windows选中的当前媒体会话请求暂停一次；目标可能是播放器或浏览器，不指定程序。没有媒体会话或播放器不支持时会说明，解锁不自动播放。", SystemEventCapabilities.Event, CurrentMediaCapabilities.Control, [("event", "locked")], [("operation", "pause")]),
         new("screen-off-pause-current-media", "当前会话屏幕关闭后暂停媒体", "Windows当前会话新报告屏幕关闭后，向Windows选中的当前媒体会话请求暂停一次；没有媒体会话或播放器不支持时会说明。首次及睡眠恢复不补执行，屏幕亮起不自动播放，不证明每块物理屏状态。", SessionDisplayCapabilities.State, CurrentMediaCapabilities.Control, [("state", "off")], [("operation", "pause")]),
