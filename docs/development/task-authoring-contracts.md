@@ -131,3 +131,7 @@ Engine在新条件边沿/事件进入延迟前、延迟deadline以及队列取�
 ## Windows当前媒体播放条件
 
 `media.playback-state` schema1接受`playing|paused|stopped`，同会话最多3个bool资源；Stopped和Closed对应已停止，Opened/Changing/未知枚举为Unknown，没有当前会话明确Known且三个条件全false。只查询公开PlaybackStatus，不调用曲目/应用ID/媒体属性。CurrentSessionChanged先使旧状态Unknown并递增代际，固定新会话并先订阅PlaybackInfoChanged再查询，查询后重读选择及代际核验；旧代回调丢弃。首次/选中会话变化/Unknown恢复仅为Command基线，Known初始状态可授权Desired。64有界提示合并后查询，无轮询；提示溢出立即使租约Failed，Provider丢缓存Known并先Unknown后清理。共享查询线程未退出时拒新租约以免原生阻塞堆线程，末租约取消/注销，不能保证播放器及时或准确报告实际声画。只组合保持唤醒、音频/应用音量/麦克风及提醒，排除直接媒体控制、程序启停和模拟按键反馈。所有校验/组合仍由实际注册和严格导入承担，不改变协议或目录预算。
+
+## Windows网络分类条件
+
+`network.category-state` schema1单选`category=public|private|domain`，同会话最多3个bool资源。公开[SDK netlistmgr.idl](https://github.com/microsoft/win32metadata/blob/main/generation/WinSDK/RecompiledIdlHeaders/um/netlistmgr.idl)的INetworkEvents（DCB00004）四方法保持原序；NetworkPropertyChanged仅category(0x10)/connection(0x01)，added/deleted/connectivity亦提示。回调GUID仅入参且不保留，不读取名称/描述/SSID/IP或ID getter。独立共享MTA先Advise再读GetNetworks(CONNECTED=1)，公开_NewEnum及.NET标准IEnumVARIANT最多64项分类及一项超限探测、IsConnected及GetCategory(0/1/2)；异常/未知类别为可能连接的Unknown，不完整枚举保留已读Known匹配但其余不能否定。通知合并和查询代际检查，无ping/HTTP/轮询；64提示/样本队列失效即时Failed，Provider丢缓冲Known，先Unknown后清理。各分类分别维护初次/重新启用/Unknown恢复基线，不补Command，Known初始可授权Desired；不额外订阅睡眠恢复，实机按真实NLM通知核验。不提供分类切换动作，不把专用/域已验证等同安全或可信；末消费者注销/释放，原MTA未结束时拒新源，旧Internet检测不改。
