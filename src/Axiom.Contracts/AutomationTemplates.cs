@@ -44,6 +44,7 @@ public static class AutomationTemplates
         new("workday-reminder", "仅工作时段定期提醒", "默认工作日9–18点，每30分钟请求安静提醒；填写内容后审阅启用。结束时刻不触发，无节假日判断，不补发错过机会。", WindowedIntervalCapabilities.Due, NotificationCapabilities.Show, [], []),
         new("desktop-reminder", "定期显示桌面提醒", "填写提醒内容；默认每30分钟请求一次安静提醒。Windows勿扰可能隐藏通知，不适合紧急提醒。", IntervalCapabilities.Elapsed, NotificationCapabilities.Show, [], []),
         new("pdf-arrival", "文件夹出现PDF后打开工具", "填写本机文件夹和配套程序；新建或重命名出现PDF后一秒合并触发，不读取内容、不证明下载完成、不传递文件名。可给动作增加延迟。", FileArrivalCapabilities.Arrived, "program.start", [("kind", "pdf")], []),
+        new("playback-toggle-shortcut", "按同一快捷键切换播放静音", "选择快捷键；读取默认播放设备的静音状态后反向设置一次并读回。读不到不修改，不改音量、不停止播放、不自动恢复；取消静音可能立即发声，请审阅后启用。", HotkeyCapabilities.Pressed, AudioPlaybackToggleCapabilities.Toggle, [], []),
         new("microphone-toggle-shortcut", "按同一快捷键切换麦克风静音", "填写快捷键；读取默认通信麦克风当前软件静音状态后反向设置一次并读回，无法读取时不修改。取消静音可能立即恢复收音；不是硬件隐私开关、不停止录音程序、不修改输入音量，暂停/结束不恢复。请审阅后启用。", HotkeyCapabilities.Pressed, MicrophoneToggleCapabilities.Toggle, [], []),
         new("volume-up-shortcut", "按快捷键提高播放音量5个百分点", "选择快捷键；按执行时默认播放设备音量提高5个百分点，最多100%，保持静音状态。一次调整并读回，不自动恢复，独立路由的应用可能不受影响。", HotkeyCapabilities.Pressed, AudioPlaybackAdjustCapabilities.Adjust, [], [("operation", "increase"), ("step", "5")]),
         new("volume-down-shortcut", "按快捷键降低播放音量5个百分点", "选择快捷键；按执行时默认播放设备音量降低5个百分点，最低0%，保持静音状态。一次调整并读回，不自动恢复，独立路由的应用可能不受影响。", HotkeyCapabilities.Pressed, AudioPlaybackAdjustCapabilities.Adjust, [], [("operation", "decrease"), ("step", "5")]),
