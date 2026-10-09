@@ -52,6 +52,7 @@ InternetConnectivityTests
 DisplayCountTests
 CurrentMediaTests
 SessionDisplayTests
+SessionPresenceTests
 ProgramPriorityTests
 DisplayOffTests
 MicrophoneToggleTests
@@ -64,3 +65,5 @@ SystemSoundTests
 
 NetworkCategoryTests
 ForegroundWindowMonitorTests
+PowerSchemeStateTests
+PowerSaverStateTests

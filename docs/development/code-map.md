@@ -152,7 +152,7 @@ Internet条件：`InternetConnectivityCapabilities → InternetConnectivityPlugi
 
 当前前台窗口布局：`ForegroundWindowLayoutCapabilities/Plugin/CapabilityProvider` → `WindowsForegroundWindowLayout` → `WindowsForegroundWindowCommand` → `ForegroundWindowLayoutOperation`。hotkey-only、布局字段，无exe或HWND输入；共享`WindowsWindowEvents(trackCaptureLifetime:true)`在捕获前订阅、一次Bind，`CapturedWindowLifetime`有界记录绑定前销毁和绑定后失效。固定HWND/PID/thread、进程句柄/创建时间/完整路径/SID/session，每次写前仍须前台；复用`RestoreNormalAsync`新增可选guard（旧默认不改）及`WindowLayoutGeometry`，3秒事件读回、`BoundedNativeCommand`5秒单准入/关停Drain。`ForegroundWindowLayoutTests`4项合成覆盖参数/严格导入、身份/前台/销毁、结果和取消，不操作真实窗口；暂停模板走已有编辑器与注册。
 
-第四批共用注册/模板/严格导入仍在`BuiltInAutomationPlugins`、`GameHdrAgent`、`AutomationTemplates`、`UsageAnalysis`；`OpenTargetBatchTests`原注册用例追加合成SQLite保存读回，`ForegroundWindowLayoutTests`核验快捷键唯一组合及layout-only导入。`core-test-suites.txt`登记相关既有套件；当前53能力最大匿名字段/组合回归保持原64KiB及已有压缩，不新增框架。
+共用注册/模板/严格导入仍在`BuiltInAutomationPlugins`、`GameHdrAgent`、`AutomationTemplates`、`UsageAnalysis`；当前56能力/52暂停模板。三个新条件的既有注册用例覆盖严格导入及SQLite保存，追加系统音允许对编译；`core-test-suites.txt`保留相关既有套件。原64KiB全机器字段/允许对往返及已有压缩不变。
 
 播放静音切换：`AudioPlaybackToggleCapabilities/Plugin/CapabilityProvider` → `WindowsAudioPlayback.Toggle` → `AudioPlaybackToggleOperation`。共用现有Commands/ApplyEndpoint，执行开始绑定eRender/eConsole端点；GetMute已知→反向SetMute→GetMute，不动音量/默认设备，未知不写、取消后不恢复。独立schema，排除EndpointMute/默认设备变化组合；Agent共享音频Drain。`AudioPlaybackToggleTests`4项合成注册/严格导入/暂停SQLite保存及模板、双向、失读/写拒绝/不一致和取消检查，不实际静音。
 
@@ -161,3 +161,12 @@ Internet条件：`InternetConnectivityCapabilities → InternetConnectivityPlugi
 当前前台窗口移屏：`ForegroundWindowMonitorCapabilities/Plugin/CapabilityProvider` → `WindowsForegroundWindowMonitor` → 共用`WindowsForegroundWindowCommand` → `ForegroundWindowMonitorOperation`。hotkey-only，一个monitor选项，无exe/HWND；两前台动作共享5秒单准入、捕获前`WindowsWindowEvents`/`CapturedWindowLifetime`、原固定句柄/创建时间/路径/SID/session及每次写前前台检查，worker实际结束前持有租约。复用`WindowsWindowMonitor.ReadMonitors`与`WindowMonitorGeometry`实时拓扑/中央80%，每次还原或移动前及读回时核验拓扑，单屏相邻屏no-op；主屏即使已在主屏也居中。`ForegroundWindowMonitorTests`4项直接风险测试，受提取影响的旧`ForegroundWindowLayoutTests`4项及模板2项通过，无真实窗口操作。
 
 Windows网络分类：`NetworkCategoryCapabilities/NetworkCategoryPlugin` → `NetworkCategoryCapabilityProvider` → `WindowsNetworkCategoryEvents/NetworkCategoryObservation/NetworkCategoryState`。独立分类共享MTA、INetworkEvents连接点，added/deleted/connectivity及property的category/connection标志提示后读取最多64已连接网络分类，另1项仅检查超限；GetCategory仅保留0/1/2或Unknown，三值OR。每类独立基线避免其他类Unknown恢复压掉Known边沿；64提示失效丢缓存，最后租约注销。`NetworkCategoryTests`6项覆盖混合Unknown/无连接、基线、公开回调ABI/过滤、查询代际/溢出、Provider→Engine与Strict import/保存/暂停模板；原生API和实际类别变动待Windows。
+
+共用注册/模板/严格导入仍在`BuiltInAutomationPlugins`、`GameHdrAgent`、`AutomationTemplates`、`UsageAnalysis`；当前56能力/52暂停模板。三个新条件的既有注册用例覆盖严格导入及SQLite保存，追加系统音允许对编译；`core-test-suites.txt`保留相关既有套件。原64KiB全机器字段/允许对往返及已有压缩不变。
+
+电源方案条件：`PowerSchemeStateCapabilities/Plugin/CapabilityProvider` → `WindowsPowerSchemeState/PowerSchemeStateObservation/PowerSchemeStateState（与节能共享局部PowerContextObservation）`，复用`WindowsSessionEvents(schemeOnly:true)`与`WindowsPowerScheme.ReadActive`。GUID_ACTIVE_POWERSCHEME仅提示后查询，不改方案；PowerSchemeStateTests四项集中验证标准/自定义/Unknown、64合并、独立故障、初始/恢复边沿与Desired释放。WindowsSessionEventTests新增自有消息与只读查询，不替代真实方案切换验收。
+
+Windows节能报告条件：`PowerSaverStateCapabilities/Plugin/CapabilityProvider` → `WindowsPowerSaverState/PowerSaverStateObservation/PowerSaverStateState`，复用`WindowsSessionEvents(saverOnly:true)`与`WindowsPowerState.ReadSaverStatus`。GUID_POWER_SAVING_STATUS通知后仅读SystemStatusFlag，0/1 Known、其他Unknown，无电池/阈值推断；局部PowerContextObservation由两个真实电源消费者共享64hint合并及Unknown恢复baseline。PowerSaverStateTests四项集中覆盖注册/暂停模板/保存/严格导入、解析/合并、失败隔离、Engine边沿；WindowsSessionEventTests新增过滤/独立溢出/挂起恢复与只读状态，不改系统节能。
+
+
+用户在场报告：`SessionPresenceCapabilities → SessionPresencePlugin → SessionPresenceCapabilityProvider → WindowsSessionPresence/SessionPresenceObservation/SessionPresenceState`，复用`WindowsSessionEvents(presenceOnly:true)`的GUID_SESSION_USER_PRESENCE DWORD。公开枚举为USER_ACTIVITY_PRESENCE的0/1/2，不是另一个POWER_USER_PRESENCE结构；不初读/轮询/输入hook。64提示合并保留Unknown边界，注册失败只拒新消费者，溢出立即Failed并丢缓存；SessionPresenceTests四项验证三态、基线、独立故障与保存/严格导入/Engine命令。WindowsSessionEventTests新增自有窗口解析/过滤/溢出案例，Windows CI执行，云端仅编译。

@@ -362,8 +362,11 @@ public static class UsageAnalysis
             if (resolved.CapabilityId == InternetConnectivityCapabilities.State) InternetConnectivityCapabilities.Validate(resolved);
             if (resolved.CapabilityId == FileArrivalCapabilities.Arrived) FileArrivalCapabilities.Validate(resolved);
             if (resolved.CapabilityId == MediaPlaybackCapabilities.State) MediaPlaybackCapabilities.Validate(resolved);
+            if (resolved.CapabilityId == SessionPresenceCapabilities.State) SessionPresenceCapabilities.Validate(resolved);
             if (resolved.CapabilityId == SessionDisplayCapabilities.State) SessionDisplayCapabilities.Validate(resolved);
             if (resolved.CapabilityId == DisplayCountCapabilities.Count) DisplayCountCapabilities.Validate(resolved);
+            if (resolved.CapabilityId == PowerSaverStateCapabilities.State) PowerSaverStateCapabilities.Validate(resolved);
+            if (resolved.CapabilityId == PowerSchemeStateCapabilities.State) PowerSchemeStateCapabilities.Validate(resolved);
             if (resolved.CapabilityId == PowerStateCapabilities.State) PowerStateCapabilities.Validate(resolved);
             if (resolved.CapabilityId == WindowStateDetectionCapabilities.StateIs) WindowStateDetectionCapabilities.Validate(resolved);
             if (resolved.CapabilityId == BuiltInBrightnessCapabilities.Set) BuiltInBrightnessCapabilities.Validate(resolved);
