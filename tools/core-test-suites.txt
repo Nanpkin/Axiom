@@ -68,3 +68,4 @@ NetworkCategoryTests
 ForegroundWindowMonitorTests
 PowerSchemeStateTests
 PowerSaverStateTests
+ForegroundScreenCoverTests

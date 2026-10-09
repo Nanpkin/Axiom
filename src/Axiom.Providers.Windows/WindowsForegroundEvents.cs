@@ -16,6 +16,8 @@ public sealed class WindowsForegroundEvents : IDisposable
     private readonly Channel<ForegroundHint> queue = Channel.CreateBounded<ForegroundHint>(128);
     private long baseline = long.MaxValue;
     private bool disposed;
+    private volatile bool failed;
+    public bool Failed => failed;
     public ChannelReader<ForegroundHint> Events => queue.Reader;
     public static int ActiveConsumers { get { lock (Gate) return shared?.Clients.Count ?? 0; } }
     public static ForegroundHint ReadCurrent()
@@ -70,7 +72,7 @@ public sealed class WindowsForegroundEvents : IDisposable
             finally
             {
                 UnhookWinEvent(hook);
-                lock (Gate) foreach (var client in Clients) client.queue.Writer.TryComplete(new IOException("前台通知已停止。"));
+                lock (Gate) foreach (var client in Clients) { client.failed = true; client.queue.Writer.TryComplete(new IOException("前台通知已停止。")); }
                 Stopped.TrySetResult();
             }
         }
@@ -81,7 +83,7 @@ public sealed class WindowsForegroundEvents : IDisposable
             var at = DateTimeOffset.UtcNow.AddMilliseconds(-elapsed).ToFileTime();
             lock (Gate) foreach (var client in Clients)
                 if (at >= client.baseline && !client.queue.Writer.TryWrite(new((int)pid, at)))
-                    client.queue.Writer.TryComplete(new IOException("前台事件队列溢出，状态未知。"));
+                { client.failed = true; client.queue.Writer.TryComplete(new IOException("前台事件队列溢出，状态未知。")); }
         }
     }
     private delegate void Callback(nint hook,uint kind,nint window,int objectId,int childId,uint thread,uint time);

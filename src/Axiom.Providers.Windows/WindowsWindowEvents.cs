@@ -21,10 +21,15 @@ public sealed class WindowsWindowEvents : IDisposable
         lock (Gate) (captureLifetime ?? throw new InvalidOperationException("未开启捕获窗口跟踪。")).Bind(window);
     }
     private bool disposed;
-    public WindowsWindowEvents(bool lifecycleOnly = false, bool requireMinimizeEvents = false, bool trackCaptureLifetime = false)
+    private volatile bool failed;
+    public bool Failed => failed;
+    private readonly Action<nint>? onDestroyed;
+    private readonly bool requireCloakEvents;
+    public WindowsWindowEvents(bool lifecycleOnly = false, bool requireMinimizeEvents = false, bool trackCaptureLifetime = false, Action<nint>? onDestroyed = null, bool requireCloakEvents = false)
     {
+        this.onDestroyed = onDestroyed; this.requireCloakEvents = requireCloakEvents;
         this.lifecycleOnly = lifecycleOnly; captureLifetime = trackCaptureLifetime ? new() : null;
-        int? minimizeError = null;
+        int? minimizeError = null, cloakError = null;
         lock (Gate)
         {
             shared ??= new Hub();
@@ -32,9 +37,11 @@ public sealed class WindowsWindowEvents : IDisposable
             catch { shared = null; throw; }
             shared.Clients.Add(this);
             if (requireMinimizeEvents && !shared.MinimizeAvailable) minimizeError = shared.MinimizeError;
+            if (requireCloakEvents && !shared.CloakAvailable) cloakError = shared.CloakError;
         }
         // Reject only the opt-in consumer; old presence/command subscriptions retain their working hook.
         if (minimizeError.HasValue) { Dispose(); throw new Win32Exception(minimizeError.Value, "最小化窗口通知不可用，窗口状态检测未启动。"); }
+        if (cloakError.HasValue) { Dispose(); throw new Win32Exception(cloakError.Value, "窗口cloaking通知不可用，前台覆盖屏幕检测未启动。"); }
     }
     public void Dispose()
     {
@@ -59,6 +66,8 @@ public sealed class WindowsWindowEvents : IDisposable
         internal uint ThreadId;
         internal bool MinimizeAvailable;
         internal int MinimizeError;
+        internal bool CloakAvailable;
+        internal int CloakError;
         private readonly Callback callback;
         internal Hub() { callback = OnEvent; new Thread(Run) { IsBackground = true, Name = "Axiom window commands" }.Start(); }
         private void Run()
@@ -69,13 +78,17 @@ public sealed class WindowsWindowEvents : IDisposable
             var minimizeHook = SetWinEventHook(0x0016, 0x0017, 0, callback, 0, 0, 0);
             MinimizeAvailable = minimizeHook != 0;
             if (!MinimizeAvailable) MinimizeError = Marshal.GetLastWin32Error();
+            // Optional additional hook: failure rejects only opt-in cover consumers, old queues remain unchanged.
+            var cloakHook = SetWinEventHook(0x8017, 0x8018, 0, callback, 0, 0, 0);
+            CloakAvailable = cloakHook != 0;
+            if (!CloakAvailable) CloakError = Marshal.GetLastWin32Error();
             Ready.TrySetResult();
             try { while (GetMessage(out _, 0, 0, 0) > 0) { } }
-            finally { if (minimizeHook != 0) UnhookWinEvent(minimizeHook); UnhookWinEvent(hook); lock (Gate) foreach (var client in Clients) client.Events.Writer.TryComplete(new IOException("窗口通知已停止。")); Stopped.TrySetResult(); }
+            finally { if (cloakHook != 0) UnhookWinEvent(cloakHook); if (minimizeHook != 0) UnhookWinEvent(minimizeHook); UnhookWinEvent(hook); lock (Gate) foreach (var client in Clients) { client.failed = true; client.Events.Writer.TryComplete(new IOException("窗口通知已停止。")); } Stopped.TrySetResult(); }
         }
         private void OnEvent(nint hook, uint kind, nint window, int objectId, int childId, uint thread, uint time)
         {
-            if (kind is not (0x0016 or 0x0017 or 0x8000 or 0x8001 or 0x8002 or 0x8003 or 0x8004 or 0x800A or 0x800B)) return;
+            if (kind is not (0x0016 or 0x0017 or 0x8000 or 0x8001 or 0x8002 or 0x8003 or 0x8004 or 0x800A or 0x800B or 0x8017 or 0x8018)) return;
             var minimize = kind is 0x0016 or 0x0017;
             // System minimize events name an HWND, unlike object notifications their object IDs are unspecified.
             if (window == 0 || !minimize && (objectId != 0 || childId != 0) ||
@@ -83,9 +96,10 @@ public sealed class WindowsWindowEvents : IDisposable
             lock (Gate)
                 foreach (var client in Clients)
                 {
+                    if (kind is 0x8017 or 0x8018 && !client.requireCloakEvents) continue;
                     // A destroyed captured HWND is never reused by an in-flight foreground command.
-                    if (kind == 0x8001) client.captureLifetime?.Destroy(window);
-                    if ((!client.lifecycleOnly || kind is 0x8000 or 0x8001 or 0x8002 or 0x8003) && !client.Events.Writer.TryWrite(window)) client.Events.Writer.TryComplete(new IOException("窗口事件队列已满，无法确认窗口操作；不会自动重试。"));
+                    if (kind == 0x8001) { client.captureLifetime?.Destroy(window); client.onDestroyed?.Invoke(window); }
+                    if ((!client.lifecycleOnly || kind is 0x8000 or 0x8001 or 0x8002 or 0x8003) && !client.Events.Writer.TryWrite(window)) { client.failed = true; client.Events.Writer.TryComplete(new IOException("窗口事件队列已满，无法确认窗口操作；不会自动重试。")); }
                 }
         }
     }
