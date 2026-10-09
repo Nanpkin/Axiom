@@ -9,8 +9,9 @@ namespace Axiom.Engine.Tests;
 public sealed class WindowsWindowStateTests
 {
     [Fact(Timeout = 10000)]
-    public void NativeReadSeparatesHiddenOwnedNormalMinimizedAndMaximizedWindowsWithoutTitles()
+    public async Task NativeReadSeparatesHiddenOwnedNormalMinimizedAndMaximizedWindowsWithoutTitles()
     {
+        await Task.Yield();
         using var target = new WindowActionTests.TrayWindow(); using var owner = new WindowActionTests.TrayWindow();
         using var api = new WindowsWindowState([Environment.ProcessPath!]);
         Assert.False(api.Read(target.WindowHandle).Candidate);

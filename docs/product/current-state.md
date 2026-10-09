@@ -92,6 +92,8 @@ USB/移屏/锁屏批次 **6 Domain + 417 Engine = 423项**核心与最终Agent/H
 
 提交前按既有源码私路径/凭据/排除产物模式检查490个暂存可见文件并人工审阅本批41文件通过。原隐私脚本在云端用户名`agent`下把通用技术词Agent判为个人信息，故当地canonical检查未通过；未修改守卫，准确提交仍须GitHub通用runner运行原脚本验证。
 
+PR #3提交`2a05a53`的[Windows CI 37871863025](https://github.com/Starvan/Axiom/actions/runs/37871863025)已过549核心，原生58通过/1失败：窗口状态读取夹具同步void声明Timeout，执行前被xUnit拒绝。现改为真实异步Task，保留10秒超时和全部断言；Architecture元数据守卫直接使用当前xUnit的AsyncUtility.IsAsync核对整个测试程序集全部带Timeout的Fact/Theory，不运行原生API。修复前守卫准确失败、修复后Architecture9项通过；其余5项新增原生签名已核对，修复后的Windows执行与完整应用/包仍待准确head CI，不把失败夹具称为通过。静音窄修PR #2已过488核心/53原生及私有包，尚待合并授权，main仍f7814b6，首tag尚未发布。
+
 原生跨阶段合成夹具已贯穿真实Win32事件→SQLite保存读回→证据/匿名摘要→暂停草稿→实际编译→删除；不在正式UI播种假记录。修复并保留了模式恢复边沿竞态、线程池退出等待句柄释放、最大化后最小化的两步还原回归。观察不再对无变化的重复/范围外样本重写整段SQLite记录；SQL触发器计数证明修复前应1次却3次，修复后通过，缺口与到期仍保存。这些不证明完整CPU/内存预算达标。
 
 私有工作流生成便携版和安装版，无Release；检出准确PR head并检查工作区干净，包内/包旁 `BUILD-INFO.json` 及 `SHA256SUMS` 可核对来源。必须下载与最新目标提交对应的成功产物，不能用旧包替代新提交。入口见[分发说明](../development/distribution.md)。
