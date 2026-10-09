@@ -8,6 +8,19 @@ namespace Axiom.Engine.Tests;
 
 public sealed class ArchitectureTests
 {
+    [Fact]
+    public void AllTimeoutFactsAndTheoriesUseAnAsyncSignatureSupportedByTheCurrentXunitRunner()
+    {
+        var timedMethods = typeof(ArchitectureTests).Assembly.GetTypes()
+            .SelectMany(type => type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))
+            .Where(method => method.GetCustomAttribute<FactAttribute>() is { Timeout: > 0 }).ToArray();
+        Assert.NotEmpty(timedMethods);
+        // TheoryAttribute inherits FactAttribute. Use the same classifier as the pinned runner's timeout path.
+        var violations = timedMethods.Where(method => !Xunit.Sdk.AsyncUtility.IsAsync(method))
+            .Select(method => $"{method.DeclaringType!.FullName}.{method.Name}: Timeout requires an xUnit-supported async signature").ToArray();
+        Assert.True(violations.Length == 0, string.Join(Environment.NewLine, violations));
+    }
+
     // Explicit assembly allowlist: adding a dependency requires a conscious boundary review.
     private static readonly HashSet<string> Allowed = new(StringComparer.Ordinal)
     {
