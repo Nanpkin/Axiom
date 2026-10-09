@@ -9,8 +9,8 @@
 [预览 .3](https://github.com/Starvan/Axiom/releases/tag/v0.2.0-preview.20261009.3)已发布，[准确发布构建37879255109](https://github.com/Starvan/Axiom/actions/runs/37879255109)成功，来源为`9e87cbb`；便携zip、安装exe、BUILD-INFO.json和SHA256SUMS.txt四项资产均已核验。本轮未替换所有者本机版本；实机与完整性能验收仍独立。
 
 - [x] 十项增量、49能力/45模板已合main并发布准确 .3，必要注册/模板/导入/保存及原64KiB完整参数/组合往返、Agent/Host和Windows/main检查成功，实机另验。
-- [x] 新一轮已启动四场景的用户价值、最小验收路径及八个按收益/API排序候选记入[功能清单](../../product/functional-roadmap.md)；规划记录单独提交，继续功能主线而非等待新需求。
-- [ ] 三个代理实现：公开NLM公用/专用/域分类条件、快捷键当前窗口移主/相邻屏、默认播放静音切换、有限系统提示音。只有四项已启动，其他候选不预造框架。
+- [x] 新一轮已启动四场景的用户价值、最小验收路径及按收益/API排序的后续方向记入[功能清单](../../product/functional-roadmap.md)；规划记录单独提交，继续功能主线而非等待新需求。
+- [ ] 三个代理实现：公开NLM公用/专用/域分类条件、快捷键当前窗口移主/相邻屏、默认播放静音切换、有限系统提示音。当前四项优先交付；下一批`power.scheme-state`/`power.saver-state`独立实施，其他候选不预造框架。
 - [ ] 实现提交到齐后在`codex/functional-round-two-integration`整批仅一次注册/模板/严格导入/保存/原64KiB完整fields/pairs和Agent/Host构建；准确Windows/main/阶段包由负责人核验，不做半批重复或旧代码全量复审。
 - [ ] 实机重点：多网络分类/Unknown、当前窗口快速切换/销毁/混合DPI、播放设备两向静音及设备变更、系统音受理与实际可听。既有媒体/电源/外设/安装性能待验继续有效。
 
