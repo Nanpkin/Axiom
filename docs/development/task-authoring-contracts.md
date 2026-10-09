@@ -131,3 +131,10 @@ Engine在新条件边沿/事件进入延迟前、延迟deadline以及队列取�
 ## Windows当前媒体播放条件
 
 `media.playback-state` schema1接受`playing|paused|stopped`，同会话最多3个bool资源；Stopped和Closed对应已停止，Opened/Changing/未知枚举为Unknown，没有当前会话明确Known且三个条件全false。只查询公开PlaybackStatus，不调用曲目/应用ID/媒体属性。CurrentSessionChanged先使旧状态Unknown并递增代际，固定新会话并先订阅PlaybackInfoChanged再查询，查询后重读选择及代际核验；旧代回调丢弃。首次/选中会话变化/Unknown恢复仅为Command基线，Known初始状态可授权Desired。64有界提示合并后查询，无轮询；提示溢出立即使租约Failed，Provider丢缓存Known并先Unknown后清理。共享查询线程未退出时拒新租约以免原生阻塞堆线程，末租约取消/注销，不能保证播放器及时或准确报告实际声画。只组合保持唤醒、音频/应用音量/麦克风及提醒，排除直接媒体控制、程序启停和模拟按键反馈。所有校验/组合仍由实际注册和严格导入承担，不改变协议或目录预算。
+
+
+## 当前标准电源方案条件
+
+`power.scheme-state` schema 1仅接受`scheme=balanced|saver|performance`，每项编译独立bool资源，最多3个。匹配实际标准GUID，不按方案显示名或personality推断；有效自定义方案三项均false，空GUID/失败Unknown。组合排除`power.scheme`自反馈，允许现有工具、亮度、音频、提醒及保持唤醒。所有首次/重新启用/Unknown恢复/睡眠恢复均baseline，不补Command；已知Desired可立即成立，结束/未知/暂停释放。
+
+公开[SDK winnt.h](https://github.com/microsoft/win32metadata/blob/main/generation/WinSDK/RecompiledIdlHeaders/um/winnt.h)定义`GUID_ACTIVE_POWERSCHEME`与GUID payload；[PowerGetActiveScheme](https://learn.microsoft.com/windows/win32/api/powersetting/nf-powersetting-powergetactivescheme)要求LocalFree释放返回GUID。共享消息窗口追加opt-in过滤，原生注册失败仅拒该条件；合法通知最多64提示合并后一次当前查询，畸形/挂起先Unknown，恢复查询为baseline；不轮询或切方案。电源模式overlay/滑块与此GUID不同；实际设备/策略/Modern Standby通知行为待实机。

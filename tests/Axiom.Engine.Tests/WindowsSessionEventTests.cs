@@ -231,4 +231,35 @@ public sealed class WindowsSessionEventTests
         // Empty snapshots are valid on runners without exposed USB hardware. This is API coverage, not an unplug test.
     }
 
+    [Fact(Timeout = 10000)]
+    public async Task SchemeHintsStayOptInAndOverflowCannotStopExistingConsumers()
+    {
+        using var system = new WindowsSessionEvents(); using var clock = new WindowsSessionEvents(clockOnly: true);
+        using var power = new WindowsSessionEvents(powerOnly: true); using var usb = new WindowsSessionEvents(usbOnly: true);
+        using var screen = new WindowsSessionEvents(screenPowerOnly: true); using var scheme = new WindowsSessionEvents(schemeOnly: true);
+        Assert.Equal(system.NotificationWindow, scheme.NotificationWindow);
+        while (scheme.Events.TryRead(out _)) { }
+        var buffer = Marshal.AllocHGlobal(36);
+        try
+        {
+            Marshal.StructureToPtr(new Guid("31F9F286-5084-42FE-B720-2B0264993763"), buffer, false);
+            Marshal.WriteInt32(buffer, 16, 16); Marshal.StructureToPtr(new Guid("10000000-0000-0000-0000-000000000001"), buffer + 20, false);
+            SendMessage(scheme.NotificationWindow, 0x0218, 0x8013, buffer);
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+            Assert.Equal("power-scheme-changed", await scheme.Events.ReadAsync(deadline.Token));
+            Marshal.WriteInt32(buffer, 16, 4); SendMessage(scheme.NotificationWindow, 0x0218, 0x8013, buffer);
+            Assert.Equal("power-scheme-reset", await scheme.Events.ReadAsync(deadline.Token));
+            foreach (var source in new[] { system, power, usb, screen })
+                while (source.Events.TryRead(out var kind)) Assert.DoesNotContain("power-scheme", kind);
+            Assert.False(clock.Events.TryRead(out _)); Assert.False(clock.ClockChanges.TryRead(out _));
+            Marshal.WriteInt32(buffer, 16, 16);
+            for (var i = 0; i < 65; i++) SendMessage(scheme.NotificationWindow, 0x0218, 0x8013, buffer);
+            Assert.True(scheme.Failed); foreach (var source in new[] { system, clock, power, usb, screen }) Assert.False(source.Failed);
+        }
+        finally { Marshal.FreeHGlobal(buffer); }
+        scheme.Dispose(); Assert.False(system.Events.Completion.IsCompleted); Assert.False(power.Events.Completion.IsCompleted);
+        var current = await Task.Run(() => WindowsPowerScheme.ReadActive(default)); Assert.NotEqual(Guid.Empty, current);
+        // Only reads and messages to our own window; never changes the real scheme.
+    }
+
 }
