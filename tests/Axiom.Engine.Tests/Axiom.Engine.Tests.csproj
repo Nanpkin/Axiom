@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <Compile Include="../../src/Axiom.Providers.Windows/PowerSchemeOperation.cs" Link="PowerSchemeOperation.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/WifiProfileCapabilityProvider.cs" Link="WifiProfileCapabilityProvider.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WifiProfileState.cs" Link="WifiProfileState.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsWifiProfiles.cs" Link="WindowsWifiProfiles.cs" />

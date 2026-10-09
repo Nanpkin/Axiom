@@ -109,3 +109,5 @@ USB类别通知：`WindowsSessionEvents` 注册USB接口GUID、处理接入/移�
 保持唤醒：`KeepAwakeCapabilities/Plugin` → `PluginTaskRuntime.KeepAwake` → `SessionDesiredLeaseStream/KeepAwakeCapabilityProvider` → `WindowsPowerRequest`；Engine窄`ILeasedDesiredExecutor`通知授权收回，`KeepAwakeTests`及Windows管道`WindowsKeepAwakeRuntimeTests`验证独立请求生命周期。
 
 Wi-Fi配置：`WifiProfileCapabilities/Plugin/CapabilityProvider` → `WindowsWifiProfiles`共享Wlan通知及`WifiProfileState`多网卡合并；`WifiProfileTests`验证已知/未知、基线、保存及隐私。`TaskField.EditAsList`由`WorkbenchWindow.NamedLists`显示有界名单弹窗，保存仍由能力校验。
+
+电源方案：`PowerSchemeCapabilities/Plugin/CapabilityProvider` → `WindowsPowerScheme` → `PowerSchemeOperation`；只操作本机已存在标准方案，枚举、Set、Get读回，单准入5秒有界原生执行/关停Drain。`PowerSchemeTests`用合成API验证缺失、读回及阻塞取消，不替代实机方案支持性。

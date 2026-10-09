@@ -325,6 +325,7 @@ public static class UsageAnalysis
             if (missing.Count > 0) return resolved;
             // Provider-specific constraints are also checked before offering the draft.
             if (resolved.CapabilityId == FileArrivalCapabilities.Arrived) FileArrivalCapabilities.Validate(resolved);
+            if (resolved.CapabilityId == PowerSchemeCapabilities.Set) PowerSchemeCapabilities.Validate(resolved);
             if (resolved.CapabilityId == ApplicationAudioCapabilities.Set) ApplicationAudioCapabilities.Validate(resolved);
             if (resolved.CapabilityId == KeepAwakeCapabilities.Hold) KeepAwakeCapabilities.Validate(resolved);
             if (resolved.CapabilityId == MicrophoneCapabilities.Set) MicrophoneCapabilities.Validate(resolved);
