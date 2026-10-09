@@ -231,4 +231,118 @@ public sealed class WindowsSessionEventTests
         // Empty snapshots are valid on runners without exposed USB hardware. This is API coverage, not an unplug test.
     }
 
+    [Fact(Timeout = 10000)]
+    public async Task SchemeHintsStayOptInAndOverflowCannotStopExistingConsumers()
+    {
+        using var system = new WindowsSessionEvents(); using var clock = new WindowsSessionEvents(clockOnly: true);
+        using var power = new WindowsSessionEvents(powerOnly: true); using var usb = new WindowsSessionEvents(usbOnly: true);
+        using var screen = new WindowsSessionEvents(screenPowerOnly: true); using var scheme = new WindowsSessionEvents(schemeOnly: true);
+        Assert.Equal(system.NotificationWindow, scheme.NotificationWindow);
+        while (scheme.Events.TryRead(out _)) { }
+        var buffer = Marshal.AllocHGlobal(36);
+        try
+        {
+            Marshal.StructureToPtr(new Guid("31F9F286-5084-42FE-B720-2B0264993763"), buffer, false);
+            Marshal.WriteInt32(buffer, 16, 16); Marshal.StructureToPtr(new Guid("10000000-0000-0000-0000-000000000001"), buffer + 20, false);
+            SendMessage(scheme.NotificationWindow, 0x0218, 0x8013, buffer);
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+            Assert.Equal("power-scheme-changed", await NextContextHint(scheme, "power-scheme-changed", deadline.Token));
+            Marshal.WriteInt32(buffer, 16, 4); SendMessage(scheme.NotificationWindow, 0x0218, 0x8013, buffer);
+            Assert.Equal("power-scheme-reset", await NextContextHint(scheme, "power-scheme-reset", deadline.Token));
+            foreach (var source in new[] { system, power, usb, screen })
+                while (source.Events.TryRead(out var kind)) Assert.DoesNotContain("power-scheme", kind);
+            Assert.False(clock.Events.TryRead(out _)); Assert.False(clock.ClockChanges.TryRead(out _));
+            Marshal.WriteInt32(buffer, 16, 16);
+            for (var i = 0; i < 65; i++) SendMessage(scheme.NotificationWindow, 0x0218, 0x8013, buffer);
+            Assert.True(scheme.Failed); foreach (var source in new[] { system, clock, power, usb, screen }) Assert.False(source.Failed);
+        }
+        finally { Marshal.FreeHGlobal(buffer); }
+        scheme.Dispose(); Assert.False(system.Events.Completion.IsCompleted); Assert.False(power.Events.Completion.IsCompleted);
+        var current = await Task.Run(() => WindowsPowerScheme.ReadActive(default)); Assert.NotEqual(Guid.Empty, current);
+        // Only reads and messages to our own window; never changes the real scheme.
+    }
+
+    [Fact(Timeout = 10000)]
+    public async Task SaverHintsStayOptInAndOverflowCannotStopExistingOrSchemeConsumers()
+    {
+        using var system = new WindowsSessionEvents(); using var clock = new WindowsSessionEvents(clockOnly: true);
+        using var power = new WindowsSessionEvents(powerOnly: true); using var usb = new WindowsSessionEvents(usbOnly: true);
+        using var screen = new WindowsSessionEvents(screenPowerOnly: true); using var scheme = new WindowsSessionEvents(schemeOnly: true);
+        using var saver = new WindowsSessionEvents(saverOnly: true);
+        Assert.Equal(system.NotificationWindow, saver.NotificationWindow); while (saver.Events.TryRead(out _)) { }
+        var buffer = Marshal.AllocHGlobal(24);
+        try
+        {
+            Marshal.StructureToPtr(new Guid("E00958C0-C213-4ACE-AC77-FECCED2EEEA5"), buffer, false);
+            Marshal.WriteInt32(buffer, 16, 4); Marshal.WriteInt32(buffer, 20, 1);
+            SendMessage(saver.NotificationWindow, 0x0218, 0x8013, buffer);
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+            Assert.Equal("power-saver-changed", await NextContextHint(saver, "power-saver-changed", deadline.Token));
+            foreach (var value in new[] { 2, 255, -1 })
+            {
+                Marshal.WriteInt32(buffer, 20, value); SendMessage(saver.NotificationWindow, 0x0218, 0x8013, buffer);
+                Assert.Equal("power-saver-reset", await NextContextHint(saver, "power-saver-reset", deadline.Token));
+            }
+            Marshal.WriteInt32(buffer, 16, 16); SendMessage(saver.NotificationWindow, 0x0218, 0x8013, buffer);
+            Assert.Equal("power-saver-reset", await NextContextHint(saver, "power-saver-reset", deadline.Token));
+            foreach (var source in new[] { system, power, usb, screen, scheme })
+                while (source.Events.TryRead(out var kind)) Assert.DoesNotContain("power-saver", kind);
+            Assert.False(clock.Events.TryRead(out _));
+            SendMessage(saver.NotificationWindow, 0x0218, 0x04, 0); Assert.Equal("power-saver-reset", await NextContextHint(saver, "power-saver-reset", deadline.Token));
+            SendMessage(saver.NotificationWindow, 0x0218, 0x12, 0); Assert.Equal("resumed", await NextContextHint(saver, "resumed", deadline.Token));
+            Assert.Equal((byte)1, await clock.ClockChanges.ReadAsync(deadline.Token));
+            Marshal.WriteInt32(buffer, 16, 4); Marshal.WriteInt32(buffer, 20, 0);
+            for (var i = 0; i < 65; i++) SendMessage(saver.NotificationWindow, 0x0218, 0x8013, buffer);
+            Assert.True(saver.Failed); foreach (var source in new[] { system, clock, power, usb, screen, scheme }) Assert.False(source.Failed);
+        }
+        finally { Marshal.FreeHGlobal(buffer); }
+        saver.Dispose(); Assert.False(system.Events.Completion.IsCompleted); Assert.False(scheme.Events.Completion.IsCompleted);
+        var status = await Task.Run(() => WindowsPowerState.ReadSaverStatus(default));
+        var sample = PowerSaverStateState.Evaluate("off", status); Assert.Equal(status is 0 or 1, sample.HasValue);
+        // Does not require a battery or toggle any real power/energy-saving setting.
+    }
+
+    private static async Task<string> NextContextHint(WindowsSessionEvents source, string expected, CancellationToken token)
+    {
+        string value; do { value = await source.Events.ReadAsync(token); } while (value != expected);
+        return value;
+    }
+
+    [Fact(Timeout = 15000)]
+    public async Task PresenceDwordStaysOptInResetsOnSessionChangeAndOverflowDiscardsItsCacheOnly()
+    {
+        using var system = new WindowsSessionEvents(); using var clock = new WindowsSessionEvents(clockOnly: true);
+        using var power = new WindowsSessionEvents(powerOnly: true); using var usb = new WindowsSessionEvents(usbOnly: true);
+        using var screen = new WindowsSessionEvents(screenPowerOnly: true); using var scheme = new WindowsSessionEvents(schemeOnly: true);
+        using var presence = new WindowsSessionEvents(presenceOnly: true); using var saver = new WindowsSessionEvents(saverOnly: true);
+        Assert.Equal(system.NotificationWindow, presence.NotificationWindow);
+        while (presence.Events.TryRead(out _)) { }
+        var buffer = Marshal.AllocHGlobal(24); using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+        try
+        {
+            Marshal.StructureToPtr(new Guid("3C0F4548-C03F-4C4D-B9F2-237EDE686376"), buffer, false);
+            Marshal.WriteInt32(buffer, 16, 4);
+            // A real registration/current-state report can interleave; await the expected injected hint, as for scheme/saver.
+            foreach (var (raw, expected) in new[] { (0, "presence-present"), (1, "presence-absent"), (2, "presence-inactive"), (3, "presence-reset") })
+            {
+                Marshal.WriteInt32(buffer, 20, raw); SendMessage(presence.NotificationWindow, 0x0218, 0x8013, buffer);
+                Assert.Equal(expected, await NextContextHint(presence, expected, deadline.Token));
+            }
+            Marshal.WriteInt32(buffer, 16, 0); SendMessage(presence.NotificationWindow, 0x0218, 0x8013, buffer);
+            Assert.Equal("presence-reset", await NextContextHint(presence, "presence-reset", deadline.Token));
+            foreach (var source in new[] { system, power, usb, screen, scheme, saver })
+                while (source.Events.TryRead(out var kind)) Assert.DoesNotContain("presence-", kind);
+            Assert.False(clock.ClockChanges.TryRead(out _));
+            SendMessage(presence.NotificationWindow, 0x02B1, 2, 0);
+            Assert.Equal("presence-reset", await NextContextHint(presence, "presence-reset", deadline.Token));
+            Marshal.WriteInt32(buffer, 16, 4); Marshal.WriteInt32(buffer, 20, 1);
+            for (var i = 0; i < 65; i++) SendMessage(presence.NotificationWindow, 0x0218, 0x8013, buffer);
+            Assert.True(presence.Failed); Assert.False(presence.Events.TryRead(out _));
+            foreach (var source in new[] { system, clock, power, usb, screen, scheme, saver }) Assert.False(source.Failed);
+        }
+        finally { Marshal.FreeHGlobal(buffer); }
+        presence.Dispose(); Assert.False(system.Events.Completion.IsCompleted);
+        // Only messages to our own window; no user input, session switch, audio or display changes.
+    }
+
 }

@@ -135,3 +135,19 @@ Engine在新条件边沿/事件进入延迟前、延迟deadline以及队列取�
 ## Windows网络分类条件
 
 `network.category-state` schema1单选`category=public|private|domain`，同会话最多3个bool资源。公开[SDK netlistmgr.idl](https://github.com/microsoft/win32metadata/blob/main/generation/WinSDK/RecompiledIdlHeaders/um/netlistmgr.idl)的INetworkEvents（DCB00004）四方法保持原序；NetworkPropertyChanged仅category(0x10)/connection(0x01)，added/deleted/connectivity亦提示。回调GUID仅入参且不保留，不读取名称/描述/SSID/IP或ID getter。独立共享MTA先Advise再读GetNetworks(CONNECTED=1)，公开_NewEnum及.NET标准IEnumVARIANT最多64项分类及一项超限探测、IsConnected及GetCategory(0/1/2)；异常/未知类别为可能连接的Unknown，不完整枚举保留已读Known匹配但其余不能否定。通知合并和查询代际检查，无ping/HTTP/轮询；64提示/样本队列失效即时Failed，Provider丢缓冲Known，先Unknown后清理。各分类分别维护初次/重新启用/Unknown恢复基线，不补Command，Known初始可授权Desired；不额外订阅睡眠恢复，实机按真实NLM通知核验。不提供分类切换动作，不把专用/域已验证等同安全或可信；末消费者注销/释放，原MTA未结束时拒新源，旧Internet检测不改。
+
+
+## 当前标准电源方案条件
+
+`power.scheme-state` schema 1仅接受`scheme=balanced|saver|performance`，每项编译独立bool资源，最多3个。匹配实际标准GUID，不按方案显示名或personality推断；有效自定义方案三项均false，空GUID/失败Unknown。组合排除`power.scheme`自反馈，允许现有工具、亮度、音频、提醒及保持唤醒。所有首次/重新启用/Unknown恢复/睡眠恢复均baseline，不补Command；已知Desired可立即成立，结束/未知/暂停释放。
+
+公开[SDK winnt.h](https://github.com/microsoft/win32metadata/blob/main/generation/WinSDK/RecompiledIdlHeaders/um/winnt.h)定义`GUID_ACTIVE_POWERSCHEME`与GUID payload；[PowerGetActiveScheme](https://learn.microsoft.com/windows/win32/api/powersetting/nf-powersetting-powergetactivescheme)要求LocalFree释放返回GUID。共享消息窗口追加opt-in过滤，原生注册失败仅拒该条件；合法通知最多64提示合并后一次当前查询，畸形/挂起先Unknown，恢复查询为baseline；不轮询或切方案。电源模式overlay/滑块与此GUID不同；实际设备/策略/Modern Standby通知行为待实机。
+
+
+## Windows电池节能兼容报告
+
+`power.saver-state` schema 1仅接受`state=on|off`，最多2个独立bool资源。使用[GUID_POWER_SAVING_STATUS](https://learn.microsoft.com/windows/win32/power/power-setting-guids)通知后一次[GetSystemPowerStatus](https://learn.microsoft.com/windows/win32/api/winbase/nf-winbase-getsystempowerstatus)读取[SYSTEM_POWER_STATUS.SystemStatusFlag](https://learn.microsoft.com/windows/win32/api/winbase/ns-winbase-system_power_status)。只认0已关闭/1已开启，任何其他值或失败为Unknown；不查有无电池，不假设真实电池或节能界面支持、不以低电量/方案/电源模式推断。
+
+较新[SDK winnt.h](https://github.com/microsoft/win32metadata/blob/main/generation/WinSDK/RecompiledIdlHeaders/um/winnt.h)把此GUID保留为电池节能兼容报告，另有GUID_ENERGY_SAVER_STATUS的Off/Standard/High Savings；当前能力不冒充新版强度检测。实际不同Windows版本/设备/策略的兼容报告待实机验收。
+
+`saverOnly`过滤不泄漏新通知到旧通用电源事件；新注册失败只拒新消费者。合法DWORD 0/1仅为hint，局部PowerContextObservation与电源方案条件共同处理64合并→当前查询；畸形/其他值/挂起先Unknown，恢复查询为baseline。首次/重新启用/Unknown及睡眠恢复不补Command，暂停或源结束后不保持旧Known。支持亮度/音量/提醒/工具等现有动作，排除`power.scheme`与`power.keepAwake`明显反馈；不启用、关闭或改变系统节能设置，无轮询。
