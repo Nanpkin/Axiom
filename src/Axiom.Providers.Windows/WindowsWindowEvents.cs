@@ -14,10 +14,16 @@ public sealed class WindowsWindowEvents : IDisposable
     internal readonly Channel<nint> Events = Channel.CreateBounded<nint>(256);
     public ChannelReader<nint> Reader => Events.Reader;
     private readonly bool lifecycleOnly;
-    private bool disposed;
-    public WindowsWindowEvents(bool lifecycleOnly = false, bool requireMinimizeEvents = false)
+    private readonly CapturedWindowLifetime? captureLifetime;
+    internal bool TrackedWindowDestroyed => captureLifetime?.Invalid == true;
+    internal void BindCapturedWindow(nint window)
     {
-        this.lifecycleOnly = lifecycleOnly;
+        lock (Gate) (captureLifetime ?? throw new InvalidOperationException("未开启捕获窗口跟踪。")).Bind(window);
+    }
+    private bool disposed;
+    public WindowsWindowEvents(bool lifecycleOnly = false, bool requireMinimizeEvents = false, bool trackCaptureLifetime = false)
+    {
+        this.lifecycleOnly = lifecycleOnly; captureLifetime = trackCaptureLifetime ? new() : null;
         int? minimizeError = null;
         lock (Gate)
         {
@@ -76,7 +82,11 @@ public sealed class WindowsWindowEvents : IDisposable
                 (minimize || kind is 0x8000 or 0x8002 or 0x800A or 0x800B) && GetAncestor(window, 2) != window) return;
             lock (Gate)
                 foreach (var client in Clients)
+                {
+                    // A destroyed captured HWND is never reused by an in-flight foreground command.
+                    if (kind == 0x8001) client.captureLifetime?.Destroy(window);
                     if ((!client.lifecycleOnly || kind is 0x8000 or 0x8001 or 0x8002 or 0x8003) && !client.Events.Writer.TryWrite(window)) client.Events.Writer.TryComplete(new IOException("窗口事件队列已满，无法确认窗口操作；不会自动重试。"));
+                }
         }
     }
     private delegate void Callback(nint hook, uint kind, nint window, int objectId, int childId, uint thread, uint time);
