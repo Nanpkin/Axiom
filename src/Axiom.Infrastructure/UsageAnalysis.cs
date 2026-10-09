@@ -366,6 +366,7 @@ public static class UsageAnalysis
             if (resolved.CapabilityId == KeepAwakeCapabilities.Hold) KeepAwakeCapabilities.Validate(resolved);
             if (resolved.CapabilityId == MicrophoneToggleCapabilities.Toggle) MicrophoneToggleCapabilities.Validate(resolved);
             if (resolved.CapabilityId == MicrophoneCapabilities.Set) MicrophoneCapabilities.Validate(resolved);
+            if (resolved.CapabilityId == AudioPlaybackAdjustCapabilities.Adjust) AudioPlaybackAdjustCapabilities.Validate(resolved);
             if (resolved.CapabilityId == AudioPlaybackCapabilities.Set) AudioPlaybackCapabilities.Validate(resolved);
             if (resolved.CapabilityId == AudioCapabilities.Changed) AudioCapabilities.Validate(resolved);
             if (resolved.CapabilityId == OnceTimeCapabilities.Due) OnceTimeCapabilities.Validate(resolved);
