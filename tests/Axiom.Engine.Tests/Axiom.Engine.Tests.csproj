@@ -19,6 +19,10 @@
     <Compile Include="../../src/Axiom.Providers.Windows/MediaPlaybackEvents.cs" Link="MediaPlaybackEvents.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/MediaPlaybackCapabilityProvider.cs" Link="MediaPlaybackCapabilityProvider.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/CurrentMediaOperation.cs" Link="CurrentMediaOperation.cs" />
+    <Compile Include="../../src/Axiom.SessionAgent/SessionPresenceCapabilityProvider.cs" Link="SessionPresenceCapabilityProvider.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/SessionPresenceState.cs" Link="SessionPresenceState.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/SessionPresenceObservation.cs" Link="SessionPresenceObservation.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsSessionPresence.cs" Link="WindowsSessionPresence.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/SessionDisplayCapabilityProvider.cs" Link="SessionDisplayCapabilityProvider.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/SessionDisplayState.cs" Link="SessionDisplayState.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/SessionDisplayObservation.cs" Link="SessionDisplayObservation.cs" />
