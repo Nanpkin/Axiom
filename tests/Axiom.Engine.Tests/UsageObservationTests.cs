@@ -360,9 +360,12 @@ public sealed class UsageObservationTests
             Assert.Equal(capability.SchemaVersion, capabilities[capability.Id].GetProperty("SchemaVersion").GetInt32());
             Assert.Equal(capability.Fields.Length, capabilities[capability.Id].GetProperty("Fields").GetArrayLength());
             var exported = capabilities[capability.Id].Deserialize<TaskCapability>()!;
+            Assert.Equal(capability.Name, exported.Name); Assert.Equal(capability.Category, exported.Category);
             foreach (var field in capability.Fields)
             {
                 var actual = exported.Fields.Single(f => f.Id == field.Id);
+                Assert.Equal(field.Label, actual.Label); Assert.Equal(field.Group, actual.Group);
+                Assert.Equal(field.BrowseLocalPath, actual.BrowseLocalPath); Assert.Equal(field.EditAsList, actual.EditAsList);
                 Assert.Equal(field.Kind, actual.Kind); Assert.Equal(field.Required, actual.Required); Assert.Equal(field.MaximumLength, actual.MaximumLength);
                 Assert.Equal(field.Minimum, actual.Minimum); Assert.Equal(field.Maximum, actual.Maximum);
                 if (field.Kind is TaskFieldKind.Resource or TaskFieldKind.FilePath or TaskFieldKind.DirectoryPath or TaskFieldKind.ProcessSelection or TaskFieldKind.ExecutableSelection or TaskFieldKind.TraySelection) { Assert.Null(actual.DefaultValue); Assert.Empty(actual.Choices); }
@@ -377,6 +380,24 @@ public sealed class UsageObservationTests
         Assert.Equal(12, feedbackDocument.RootElement.GetProperty("handledPatterns").GetArrayLength());
         Assert.InRange(feedbackDocument.RootElement.GetProperty("patterns").GetArrayLength(), 1, 12);
         Assert.Equal(catalog.Capabilities.Length, feedbackDocument.RootElement.GetProperty("capabilities").GetArrayLength());
+        Assert.Equal(catalog.Combinations.ToArray(), feedbackDocument.RootElement.GetProperty("combinations").Deserialize<TaskCombination[]>());
+        foreach (var actual in feedbackDocument.RootElement.GetProperty("capabilities").EnumerateArray().Select(c => c.Deserialize<TaskCapability>()!))
+        {
+            var expected = catalog.Capabilities.Single(c => c.Id == actual.Id);
+            Assert.Equal(expected.Category, actual.Category); Assert.Equal(expected.Name, actual.Name);
+            Assert.Equal(expected.SchemaVersion, actual.SchemaVersion); Assert.Equal(expected.Kind, actual.Kind); Assert.Equal(expected.Fields.Length, actual.Fields.Length);
+            foreach (var field in expected.Fields)
+            {
+                var roundtrip = actual.Fields.Single(f => f.Id == field.Id);
+                Assert.Equal(field.Label, roundtrip.Label); Assert.Equal(field.Kind, roundtrip.Kind); Assert.Equal(field.Required, roundtrip.Required);
+                Assert.Equal(field.Minimum, roundtrip.Minimum); Assert.Equal(field.Maximum, roundtrip.Maximum); Assert.Equal(field.MaximumLength, roundtrip.MaximumLength);
+                Assert.Equal(field.Group, roundtrip.Group);
+                Assert.Equal(field.BrowseLocalPath, roundtrip.BrowseLocalPath); Assert.Equal(field.EditAsList, roundtrip.EditAsList);
+                if (field.Kind is TaskFieldKind.Resource or TaskFieldKind.FilePath or TaskFieldKind.DirectoryPath or TaskFieldKind.ProcessSelection or TaskFieldKind.ExecutableSelection or TaskFieldKind.TraySelection)
+                { Assert.Null(roundtrip.DefaultValue); Assert.Empty(roundtrip.Choices); }
+                else { Assert.Equal(field.DefaultValue, roundtrip.DefaultValue); Assert.Equal(field.Choices.ToArray(), roundtrip.Choices.ToArray()); }
+            }
+        }
         Assert.All(handledKeys, key => Assert.DoesNotContain(key, withFeedback));
         Assert.DoesNotContain("synthetic-private", UsageAnalysis.CapabilityCatalog(catalog, false));
     }
