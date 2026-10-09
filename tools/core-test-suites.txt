@@ -52,3 +52,7 @@ InternetConnectivityTests
 DisplayCountTests
 CurrentMediaTests
 SessionDisplayTests
+ProgramPriorityTests
+DisplayOffTests
+MicrophoneToggleTests
+AudioPlaybackAdjustTests

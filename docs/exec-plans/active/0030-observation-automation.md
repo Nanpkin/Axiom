@@ -14,13 +14,13 @@
 - [x] 仅5项整合检查：新动作实际注册/严格导入2项、真实注册模板编译/缺能力隐藏、完整目录128对象+12已处理模式+提示词/CRLF原64KiB与字段/组合往返；Agent/Host最终Windows目标交叉构建零警告/错误。
 - [ ] 核对本批准确提交Windows CI、11项新增原生（媒体只读2、屏电自有消息2、四角自有窗口7）、完整WinUI及私有包；Linux不称原生已过。
 - [ ] 媒体权限/播放器支持、真实亮暗关、混合DPI四角、同用户多实例优先级、锁屏后关屏与驱动/输入影响须实机；自动检查不发送媒体、锁屏、关屏或真实优先级修改。
-- [ ] 后续相对播放音量、麦克风切换独立实施，不延长本批收口。任意AND、工作流框架、持久设备身份均非前置。
+- [x] 第一批`79f3202`推送PR #5、Windows检查进行中；第二批`codex/audio-shortcuts`独立接入相对播放音量/麦克风切换，46能力/42暂停模板。仅5项模板/新动作实际注册严格导入/最大目录检查、最终Agent/Host编译通过，不延长第一批收口。任意AND、工作流框架、持久设备身份均非前置。
 
 ## 当前验证与分发
 
-当前main基线`e7ee2cb`已包含静音窄修、PR #3窗口状态/显示数量/Internet及PR #4发布输出修正；[准确main Windows检查37874601682](https://github.com/Starvan/Axiom/actions/runs/37874601682)成功。版本标签`v0.2.0-preview.20261009.2`指向该提交，已触发[发布构建37874889575](https://github.com/Starvan/Axiom/actions/runs/37874889575)，资产尚未核验。
+当前main基线`e7ee2cb`已包含静音窄修、PR #3窗口状态/显示数量/Internet及PR #4发布输出修正；[准确main Windows检查37874601682](https://github.com/Starvan/Axiom/actions/runs/37874601682)成功。版本标签`v0.2.0-preview.20261009.2`指向该提交，[发布构建37874889575](https://github.com/Starvan/Axiom/actions/runs/37874889575)完成，[私有预览Release .2](https://github.com/Starvan/Axiom/releases/tag/v0.2.0-preview.20261009.2)已核验发布，含便携zip、安装exe、BUILD-INFO.json和SHA256SUMS.txt四项资产；范围为该基线34模板，不含第一批39或第二批42模板。
 
-本批各功能的直接风险已由实施代理验过，整合仅补冲突及组合检查，不重复整轮核心套件。摘要沿用compact：省略可选null和默认false显示元数据，true、分类、标签、完整非空约束和组合保持；未新增格式、未扩大64KiB预算、结构化AI导入不变。成功包的BUILD-INFO和SHA256SUMS须对应准确提交，旧main资产不代表本批已发布。
+本批各功能的直接风险已由实施代理验过，整合仅补冲突及组合检查，不重复整轮核心套件。摘要沿用compact：省略可选null和默认false显示元数据，true、分类、标签、完整非空约束和组合保持；第二批最大目录真实超限后最后级组合改为DetectionId→ActionId数组，提示词明确表示；全部允许对精确展开往返、参数约束和原64KiB保持，结构化AI导入及独立目录不变。成功包的BUILD-INFO和SHA256SUMS须对应准确提交，旧main资产不代表本批已发布。
 
 已解决并持续保留的回归：恢复快照和确认间边沿、固定句柄退出清理、最大化后最小化普通还原、无变化观察不重写SQLite、静音/Internet失效先Unknown并丢旧Known、原生Timeout异步签名守卫和清理完成信号同步。原断言/期限保持，CI不替代真实硬件、安装升级或完整CPU/内存预算。
 

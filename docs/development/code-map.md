@@ -142,3 +142,5 @@ Internet条件：`InternetConnectivityCapabilities → InternetConnectivityPlugi
 
 麦克风静音切换：`MicrophoneToggleCapabilities/Plugin/CapabilityProvider` → `WindowsAudioPlayback.MicrophoneToggle` → `MicrophoneToggleOperation`。原`audio.microphone`schema不变，新`audio.microphone-toggle`只接受延迟；复用共享`Commands`和`ApplyEndpoint(true, ...)`执行开始时一次绑定默认通信输入，已知GetMute反向SetMute后读回，未知初始状态不写。`MicrophoneToggleTests`4项合成与已有模板检查覆盖两方向、读/写/读回故障、取消及严格导入，不改真实麦克风；暂停快捷键模板复用现有编辑器与注册。
 相对播放音量：`AudioPlaybackAdjustCapabilities/Plugin/CapabilityProvider` → `WindowsAudioPlayback.Adjustment` → `AudioPlaybackAdjustOperation`。既有`WindowsAudioPlayback.ApplyEndpoint`绑定一次eRender/eConsole端点、共用Commands准入及COM清理；初始标量必须有限且0–1，±1–100百分点限幅后写一次/读回，不碰静音、不重试恢复。新能力schema独立，资源名沿用default-playback，Engine能力键分开、原生重叠拒绝。`AudioPlaybackAdjustTests`4项合成测试覆盖严格导入/注册/两个暂停模板、上下限、无效读数/读回以及取消；不调整真实设备。
+
+匿名摘要最后级组合压缩：`UsageAnalysis.Summary`仅在原64KiB真实超限时把允许组合按检测ID分组；Prompt/omissions说明键和值。严格Import和CapabilityCatalog不变。`UsageObservationTests.FullProductionCatalogAndMaximumObjectDictionaryFitExportWithoutDeviceIdentityOrLostParameters`验证128对象/12handled/提示词/CRLF、全部字段约束及分组展开后的完整允许对；`core-test-suites.txt`登记四个现有新动作针对性套件，无新增测试框架。
