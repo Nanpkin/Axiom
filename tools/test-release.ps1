@@ -78,3 +78,6 @@ try {
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
 }
 Write-Output "Release guard checks passed: $checks"
+# Expected git rejection cases leave LASTEXITCODE=1. Clear it only after every assertion succeeds,
+# so GitHub's dot-sourced pwsh wrapper reports the result of this test rather than the last negative fixture.
+$global:LASTEXITCODE = 0
