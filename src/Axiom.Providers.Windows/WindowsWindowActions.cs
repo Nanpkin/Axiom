@@ -9,26 +9,44 @@ namespace Axiom.Providers.Windows;
 [SupportedOSPlatform("windows")]
 public static class WindowsWindowActions
 {
-    public static async Task<ProgramControlResult> CloseAsync(string path, string title, TimeSpan wait, CancellationToken token, string? state = null)
+    public static Task<ProgramControlResult> MoveToMonitorAsync(string path, string title, TimeSpan wait, string monitor, CancellationToken token) =>
+        CloseAsync(path, title, wait, token, monitorSelection: monitor);
+    public static async Task<ProgramControlResult> CloseAsync(string path, string title, TimeSpan wait, CancellationToken token, string? state = null, string? monitorSelection = null)
     {
         if (state is not (null or "minimize" or "maximize" or "restore" or "left" or "right" or "center" or "topmost" or "notopmost")) throw new ArgumentException("窗口状态无效。");
+        if (monitorSelection is not (null or "primary" or "next" or "previous") || monitorSelection is not null && state is not null) throw new ArgumentException("目标显示器选项无效。");
         if (wait < TimeSpan.FromSeconds(1) || wait > TimeSpan.FromSeconds(30)) throw new ArgumentOutOfRangeException(nameof(wait));
         if (!File.Exists(path)) return new(false, "目标程序不存在，请重新选择路径。");
         token.ThrowIfCancellationRequested();
         using var events = new WindowsWindowEvents(); // subscribe before the single initial enumeration
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token); deadline.CancelAfter(wait);
-        nint target = 0; int pid = 0;
+        nint target = 0; int pid = 0; DateTime? startedAtUtc = null;
         try
         {
             var processes = WindowsProgramControl.Matching(path);
             try
             {
+                Dictionary<int, DateTime>? creations = null;
+                if (monitorSelection is not null)
+                {
+                    if (processes.Count > 128) return new(false, "目标程序实例过多，无法有界核验窗口身份；未移动窗口。");
+                    creations = [];
+                    foreach (var process in processes)
+                        if (TryReadCreation(process, out var creation)) creations.Add(process.Id, creation);
+                    if (processes.Count > 0 && creations.Count == 0) return new(false, "无法确认目标进程创建时间；未还原或移动窗口。");
+                }
                 var ids = processes.Select(p => p.Id).ToHashSet();
                 EnumWindows((window, _) =>
                 {
                     GetWindowThreadProcessId(window, out var owner);
                     if (!ids.Contains((int)owner) || !Candidate(window, title)) return true;
-                    target = window; pid = (int)owner; return false;
+                    if (creations is not null)
+                    {
+                        if (!creations.TryGetValue((int)owner, out var creation)) return true;
+                        startedAtUtc = creation;
+                    }
+                    target = window; pid = (int)owner;
+                    return false;
                 }, 0);
             }
             finally { foreach (var process in processes) process.Dispose(); }
@@ -41,12 +59,22 @@ public static class WindowsWindowActions
                 try { using var process = Process.GetProcessById((int)owner); if (!process.ProcessName.Equals(Path.GetFileNameWithoutExtension(path), StringComparison.OrdinalIgnoreCase)) continue; }
                 catch (Exception error) when (error is ArgumentException or InvalidOperationException or Win32Exception) { continue; }
                 var matches = WindowsProgramControl.Matching(path);
-                try { if (!matches.Any(p => p.Id == owner)) continue; target = window; pid = (int)owner; }
+                try
+                {
+                    var match = matches.SingleOrDefault(p => p.Id == owner); if (match is null) continue;
+                    if (monitorSelection is not null)
+                    {
+                        if (matches.Count > 128) return new(false, "目标程序实例过多，未移动窗口。");
+                        if (!TryReadCreation(match, out var creation)) return new(false, "无法确认目标进程创建时间；未还原或移动窗口。");
+                        startedAtUtc = creation;
+                    }
+                    target = window; pid = (int)owner;
+                }
                 finally { foreach (var process in matches) process.Dispose(); }
             }
         }
         catch (OperationCanceledException) when (!token.IsCancellationRequested)
-        { return new(false, $"等待窗口超时：{Path.GetFileName(path)} 没有匹配的可见主窗口；未结束程序。 "); }
+        { return new(false, $"等待窗口超时：{Path.GetFileName(path)} 没有匹配的可见主窗口；" + (monitorSelection is null ? "未结束程序。 " : "未移动窗口。")); }
 
         token.ThrowIfCancellationRequested();
         // Recheck identity immediately before sending, guarding exit, HWND and PID reuse.
@@ -54,7 +82,13 @@ public static class WindowsWindowActions
         try
         {
             if (!current.Any(p => p.Id == pid) || !Candidate(target, title) || GetWindowThreadProcessId(target, out var owner) == 0 || owner != pid)
-                return new(false, "目标窗口已变化，未发出关闭请求。");
+                return new(false, monitorSelection is null ? "目标窗口已变化，未发出关闭请求。" : "目标窗口已变化，未移动窗口。");
+            if (monitorSelection is not null)
+            {
+                if (startedAtUtc is null || !current.Any(p => p.Id == pid && TryReadCreation(p, out var creation) && creation == startedAtUtc))
+                    return new(false, "窗口所属进程已变化，未移动窗口。");
+                return await WindowsWindowMonitor.ApplyAsync(target, pid, path, startedAtUtc.Value, monitorSelection, events, token);
+            }
             if (state is "left" or "right" or "center") return await WindowsWindowLayout.ApplyAsync(target, pid, path, state, events, token);
             if (state is not null)
             {
@@ -85,6 +119,16 @@ public static class WindowsWindowActions
             return new(true, $"窗口已关闭：{Path.GetFileName(path)}；" + (running ? "程序仍在运行。" : "目标程序处理关闭请求后已退出。"));
         }
         finally { foreach (var process in current) process.Dispose(); }
+    }
+    internal static bool TryReadCreation(Process process, out DateTime creation)
+    {
+        creation = default;
+        try
+        {
+            if (process.HasExited) return false;
+            creation = process.StartTime.ToUniversalTime(); return true;
+        }
+        catch (Exception error) when (error is Win32Exception or InvalidOperationException) { return false; }
     }
     internal static async Task<bool> RestoreNormalAsync(nint window, int pid, WindowsWindowEvents events, CancellationToken token)
     {

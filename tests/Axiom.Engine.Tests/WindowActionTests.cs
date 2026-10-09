@@ -10,6 +10,7 @@ using Axiom.WinUI;
 namespace Axiom.Engine.Tests;
 
 [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+[Collection("Native application windows")]
 public sealed class WindowActionTests
 {
     [Fact]
@@ -242,7 +243,7 @@ public sealed class WindowActionTests
     }
 
     // Native fixture deliberately implements × as hide-to-tray, retaining its process.
-    private sealed class TrayWindow : IDisposable
+    internal sealed class TrayWindow : IDisposable
     {
         private readonly Thread thread;
         private readonly Proc procedure;
@@ -251,6 +252,7 @@ public sealed class WindowActionTests
         private int count;
         private nint handle;
         public string Title { get; } = "Axiom window fixture " + Guid.NewGuid();
+        public nint WindowHandle => handle;
         public int CloseCount => Volatile.Read(ref count);
         public bool Topmost => (GetWindowLongPtr(handle, -20).ToInt64() & 8) != 0;
         public (int Left, int Top, int Right, int Bottom) Bounds { get { Assert.True(GetWindowRect(handle, out var rect)); return (rect.Left, rect.Top, rect.Right, rect.Bottom); } }

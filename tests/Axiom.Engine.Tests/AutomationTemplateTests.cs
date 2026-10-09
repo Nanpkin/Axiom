@@ -12,7 +12,7 @@ public sealed class AutomationTemplateTests
     [Fact]
     public void EveryAvailableRecipeIsPausedUnsavedAndCompilesAfterTheUserSelectsItsRequiredObjects()
     {
-        var catalog = Catalog(); var templates = AutomationTemplates.Build(catalog); Assert.Equal(22, templates.Length);
+        var catalog = Catalog(); var templates = AutomationTemplates.Build(catalog); Assert.Equal(26, templates.Length);
         var compiler = new AutomationTaskCompiler();
         foreach (var module in Modules()) { foreach (var d in module.Detections) compiler.Register(d); foreach (var a in module.Actions) compiler.Register(a); }
         foreach (var template in templates)
@@ -27,6 +27,7 @@ public sealed class AutomationTemplateTests
         Assert.Equal("graceful", templates.Single(t => t.Id == "cleanup-companion").Draft.Action.Parameters["mode"]);
         Assert.Equal("latest", templates.Single(t => t.Id == "cleanup-companion").Draft.Action.Parameters["instances"]);
         Assert.False(templates.Single(t => t.Id == "wifi-work-folder").Draft.Detection.Parameters.ContainsKey("profileNames"));
+        Assert.False(templates.Single(t => t.Id == "usb-dock-tools").Draft.Detection.Parameters.ContainsKey("deviceInstanceIds"));
         Assert.DoesNotContain(templates[0].Draft.Id, AutomationTemplates.Build(catalog).Select(t => t.Draft.Id));
 
         TaskInvocation Complete(TaskInvocation invocation)
@@ -40,7 +41,7 @@ public sealed class AutomationTemplateTests
                     TaskFieldKind.ProcessSelection => "Example.exe",
                     TaskFieldKind.FilePath or TaskFieldKind.ExecutableSelection => Path.Combine(Path.GetTempPath(), "Example.exe"),
                     TaskFieldKind.HotkeyList => "Ctrl+Alt+F9",
-                    TaskFieldKind.TextList => field.EditAsList ? "Synthetic Office" : "请休息片刻",
+                    TaskFieldKind.TextList => invocation.CapabilityId == UsbDeviceCapabilities.Present ? @"USB\VID_1234&PID_5678\SYNTHETIC_A" : field.EditAsList ? "Synthetic Office" : "请休息片刻",
                     TaskFieldKind.Text => invocation.Parameters.GetValueOrDefault("kind") == "document" ? Path.Combine(Path.GetTempPath(), "SyntheticPlan.pdf") : invocation.CapabilityId == NotificationCapabilities.Show ? "请休息片刻" : invocation.Parameters.GetValueOrDefault("kind") == "url" ? "https://example.invalid/reminder" : Path.GetTempPath(),
                     _ => throw new InvalidOperationException("Uncovered template parameter kind.")
                 };

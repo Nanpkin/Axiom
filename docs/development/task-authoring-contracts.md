@@ -72,4 +72,14 @@ Engine在新条件边沿/事件进入延迟前、延迟deadline以及队列取�
 
 `power.keepAwake` 是拥有可释放OS请求的具体Desired动作，使用独立lease管道与ownership观察。Engine的`ILeasedDesiredExecutor`授权回调只更新内存并异步发出取消，不在Engine锁内进行IPC。最后条件撤销、观察未就绪/未知或停止释放租约；Agent管道结束在finally关闭本请求，未改全局状态，不套用旧值恢复。其他Desired动作不能仅声明后绕过具体生命周期接入。
 
-`TaskField.EditAsList`仅配合TextList使用，通用名单编辑弹窗支持最多16项、每项255字符；保留空格及大小写，去重只按整行Ordinal。普通TextList仍用于多行通知正文。名单默认值和选项在可导出目录中清空；本机profile名称仅由用户手工补齐，不作为AI自由文本执行参数。
+`TaskField.EditAsList`仅配合TextList使用，通用名单编辑弹窗支持最多16项、每项255字符；保留空格及大小写，UI去重只按整行Ordinal，能力仍负责自身规范和最终校验。普通TextList仍用于多行通知正文。名单默认值和选项在可导出目录中清空；Wi-Fi配置名及USB实例路径仅由用户手工补齐，AI导入只能给空占位，不接受非空自由身份参数。USB可能含序列号，不随能力接入新增主动观察身份采集。
+
+## 精确USB、移屏及锁屏的最小边界
+
+`UsbDevicePlugin`提供schema 1的`usb.device-present`与`usb.device-absent`，`deviceInstanceIds`最多16个完整`USB\\设备\\实例`值；整项OrdinalIgnoreCase去重、转大写资源ID，不接受VID/PID子串、通配符或设备接口路径。两种检测消费同一presence bool资源，分别编译Any true与All false，不另开移除观察源。只有presence可组合`power.keepAwake`；初始已成立的Desired条件可持有请求，首次/重新启用/恢复不补发Command。
+
+`WindowsSessionEvents`保留`clockOnly`参数并追加`usbOnly`可选租约；同一个原生隐藏窗口和`RegisterDeviceNotificationW(GUID_DEVINTERFACE_USB_DEVICE)`注册由消费者共享。USB租约只收接入、移除及恢复提示，普通系统/clock消费者过滤和独立释放语义不变。消费者每批最多64提示后用SetupAPI读取DIGCF_PRESENT接口对应的PnP实例，通知interface path本身不当实例ID；查询失败、通知故障/溢出或超过256接口整体Unknown，无接口是Known空集合。睡眠恢复和Unknown后恢复发送新baseline，不补旧动作。只支持该接口类所对应实例，不自动关联HID/USBSTOR子节点、容器或型号；不承诺物理拔出识别。
+
+`WindowMonitorPlugin`的`window.monitor`沿用多完整exe路径、标题过滤、窗口等待和Engine延迟/时段门禁，`monitor=primary|next|previous`只引用执行时拓扑，不保存显示器身份。Windows端核验完整路径/SID/会话/创建时间，最多64屏按桌面坐标排序，目标工作区中央80%；最大化/最小化先还原，单屏上/下一屏直接跳过。3秒确认期限结束后不再发送新移动请求，读回须身份/拓扑/目标屏和位置大小一致；失败或取消可能已有部分副作用，不重试或恢复。真实多屏、DPI及拓扑改变另验。
+
+`SessionLockPlugin`的`session.lock`是单次Command，仅`delaySeconds`整数参数；共享当前会话资源，不接受目标会话/解锁参数。Agent用WTSInfoEx连接与锁元数据确认当前活动、未锁定交互会话，再请求`LockWorkStation`；Unknown/已锁定/非活动拒绝。独立5秒有界原生准入，超时或取消不提前复用阻塞线程，不重试；成功是ReceiptOnly接受，不证明锁定完成，不自动解锁。纯API及Win11 x64 WTS头解析回归不实际锁CI桌面；真实会话、权限和系统策略待实机。
