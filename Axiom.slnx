@@ -12,6 +12,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Axiom.Domain.Tests/Axiom.Domain.Tests.csproj" />
+    <Project Path="tests/Axiom.Providers.Windows.Tests/Axiom.Providers.Windows.Tests.csproj" />
     <Project Path="tests/Axiom.Engine.Tests/Axiom.Engine.Tests.csproj" />
   </Folder>
   <Folder Name="/benchmarks/">

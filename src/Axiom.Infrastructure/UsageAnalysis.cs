@@ -25,6 +25,8 @@ public static class UsageAnalysis
             if (type.Type != typeof(TaskField)) return;
             foreach (var property in type.Properties.Where(p => p.Name is nameof(TaskField.DefaultValue) or nameof(TaskField.Minimum) or nameof(TaskField.Maximum) or nameof(TaskField.Group)))
                 property.ShouldSerialize = (_, value) => value is not null;
+            foreach (var property in type.Properties.Where(p => p.Name is nameof(TaskField.BrowseLocalPath) or nameof(TaskField.EditAsList)))
+                property.ShouldSerialize = (_, value) => value is true;
         });
         return new(CompactJson) { TypeInfoResolver = resolver };
     }
@@ -288,7 +290,7 @@ public static class UsageAnalysis
         {
             body = body with
             {
-                omissions = body.omissions + "仍超过上限时省略参数中值为null的可选字段（默认值、上下限、分组），缺失仍表示未声明值，不改变授权或校验；展示名、全部非空参数约束和组合仍保留。"
+                omissions = body.omissions + "仍超过上限时省略参数中值为null的可选字段（默认值、上下限、分组）及默认false的本地浏览/名单编辑标记；缺失分别表示未声明值或false，不改变授权或校验；展示名、全部非空参数约束、true标记和组合仍保留。"
             };
             result = JsonSerializer.Serialize(body, CompactCatalogJson);
         }
@@ -347,12 +349,14 @@ public static class UsageAnalysis
             // Provider-specific constraints are also checked before offering the draft.
             if (resolved.CapabilityId == InternetConnectivityCapabilities.State) InternetConnectivityCapabilities.Validate(resolved);
             if (resolved.CapabilityId == FileArrivalCapabilities.Arrived) FileArrivalCapabilities.Validate(resolved);
+            if (resolved.CapabilityId == SessionDisplayCapabilities.State) SessionDisplayCapabilities.Validate(resolved);
             if (resolved.CapabilityId == DisplayCountCapabilities.Count) DisplayCountCapabilities.Validate(resolved);
             if (resolved.CapabilityId == PowerStateCapabilities.State) PowerStateCapabilities.Validate(resolved);
             if (resolved.CapabilityId == WindowStateDetectionCapabilities.StateIs) WindowStateDetectionCapabilities.Validate(resolved);
             if (resolved.CapabilityId == BuiltInBrightnessCapabilities.Set) BuiltInBrightnessCapabilities.Validate(resolved);
             if (resolved.CapabilityId == EndpointMuteCapabilities.State) EndpointMuteCapabilities.Validate(resolved);
             if (resolved.CapabilityId == SessionLockCapabilities.Lock) SessionLockCapabilities.Validate(resolved);
+            if (resolved.CapabilityId == CurrentMediaCapabilities.Control) CurrentMediaCapabilities.Validate(resolved);
             if (resolved.CapabilityId is UsbDeviceCapabilities.Present or UsbDeviceCapabilities.Absent) UsbDeviceCapabilities.Validate(resolved);
             if (resolved.CapabilityId == WindowMonitorCapabilities.Move) WindowMonitorCapabilities.ValidateTargets(resolved);
             if (resolved.CapabilityId == PowerSchemeCapabilities.Set) PowerSchemeCapabilities.Validate(resolved);

@@ -50,3 +50,5 @@ WindowStateDetectionTests
 PowerStateTests
 InternetConnectivityTests
 DisplayCountTests
+CurrentMediaTests
+SessionDisplayTests
