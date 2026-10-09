@@ -155,3 +155,5 @@ Internet条件：`InternetConnectivityCapabilities → InternetConnectivityPlugi
 第四批共用注册/模板/严格导入仍在`BuiltInAutomationPlugins`、`GameHdrAgent`、`AutomationTemplates`、`UsageAnalysis`；`OpenTargetBatchTests`原注册用例追加合成SQLite保存读回，`ForegroundWindowLayoutTests`核验快捷键唯一组合及layout-only导入。`core-test-suites.txt`登记两个既有套件；49能力最大匿名字段/组合回归保持原64KiB及已有压缩，不新增框架。
 
 播放静音切换：`AudioPlaybackToggleCapabilities/Plugin/CapabilityProvider` → `WindowsAudioPlayback.Toggle` → `AudioPlaybackToggleOperation`。共用现有Commands/ApplyEndpoint，执行开始绑定eRender/eConsole端点；GetMute已知→反向SetMute→GetMute，不动音量/默认设备，未知不写、取消后不恢复。独立schema，排除EndpointMute/默认设备变化组合；Agent共享音频Drain。`AudioPlaybackToggleTests`4项合成注册/严格导入/暂停模板、双向、失读/写拒绝/不一致和取消检查，不实际静音。
+
+系统提示音：`SystemSoundCapabilities/Plugin/CapabilityProvider` → `WindowsSystemSound` → `SystemSoundOperation`。公开[MessageBeep](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-messagebeep)的MB_OK/ICONASTERISK/ICONEXCLAMATION/ICONHAND内置类型，拒绝外部文件/地址/循环/音量参数；5秒Commands单准入与Agent Drain。成功只表示请求受理，静音/主题/远程/硬件可能无声，取消不能撤回已经受理；无UI/录音/联网。`SystemSoundTests`4项合成严格注册/暂停时段模板/导入、API类型/接受与拒绝、取消和阻塞准入/关停验证；不调用真实发声API。
