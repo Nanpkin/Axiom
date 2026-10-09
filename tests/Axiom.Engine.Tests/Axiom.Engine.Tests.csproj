@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <Compile Include="../../src/Axiom.Providers.Windows/CurrentMediaOperation.cs" Link="CurrentMediaOperation.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/PowerStateCapabilityProvider.cs" Link="PowerStateCapabilityProvider.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/PowerStateState.cs" Link="PowerStateState.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/PowerStateObservation.cs" Link="PowerStateObservation.cs" />

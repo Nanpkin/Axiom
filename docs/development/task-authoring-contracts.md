@@ -91,3 +91,16 @@ Engine在新条件边沿/事件进入延迟前、延迟deadline以及队列取�
 `EndpointMutePlugin`的`audio.mute-state`以`endpoint=input|output`选择eCapture/eCommunications或eRender/eConsole，以`state=muted|unmuted`编译同一端点bool资源的真/假条件。`WindowsEndpointMuteEvents`共享按需MTA源，回调只加有界提示，工作线程GetMute核验；默认选择通知保留代次，即使合并后身份相同也重建基线，普通inventory同ID保留绑定但验证可用性。旧代回调隔离，缺设备/失效/查询或通知失败Unknown；首次及恢复不补Command，已知初始Desired可生效。末订阅注销/释放，端点ID只暂存在进程内，不持久化/传输，不新增音频内容或设备身份观察。
 
 `PowerStatePlugin`的`power.state`使用`mode=ac|battery|battery-below`及1–99整数`threshold`，只将低电模式编码成`battery-below:N`；严格低于且电池供电，接电结束低电条件。`WindowsPowerState`复用`WindowsSessionEvents(powerOnly:true)`的供电来源/电量通知，每批最多64提示后GetSystemPowerStatus读取共享快照，无轮询；新增GUID注册失败只拒绝power消费者。供电255、电量255、查询故障或无电池却报告电池供电等矛盾状态为相关Unknown，无电池不当低电。首次/恢复/睡眠恢复baseline不补Command；持续保持唤醒按已知当前条件持有，结束、Unknown、暂停或停止释放。
+
+
+## Windows当前媒体控制
+
+`media.current-control`（schema 1）提供暂停、播放、上一项、下一项和Engine延迟，支持现有通用一次性命令星期/时段门禁。用户新增能完成：锁屏后暂停Windows当前媒体、进入指定前台程序后暂停，或用快捷键/定时请求当前媒体上一项/下一项。目标明确是执行时Windows选中的媒体会话；不是按完整exe路径指定播放器，也不是前台窗口或枚举的第一个会话。
+
+公开 [GetCurrentSession](https://learn.microsoft.com/uwp/api/windows.media.control.globalsystemmediatransportcontrolssessionmanager.getcurrentsession) 返回Windows认为用户最希望控制的会话。公开 `SourceAppUserModelId`只提供AUMID，不提供PID或完整exe路径映射，故本能力不声明“指定应用”，不保存或采集AUMID，也不调用媒体属性/标题/曲目API。现有指定应用播放音量能力继续独立使用Core Audio的完整路径核验。
+
+执行端按需 `RequestAsync`，固定当前会话引用，读 `GetPlaybackInfo().Controls.IsPauseEnabled/IsPlayEnabled/IsPreviousEnabled/IsNextEnabled`；请求前重读当前会话并按规范COM `IUnknown`身份及 `CurrentSessionChanged`代际核验，查询取得的引用在finally释放。切换后再切回同一会话也不补请求，不改控新的目标。校验与请求并非系统原子操作，校验后瞬间切换仍可能由刚才固定的旧会话接受请求。
+
+已暂停再暂停、已播放再播放明确成功且不发送请求。没有当前会话、操作未启用、已切换或访问拒绝明确失败。四种 `Try*Async`的true仅为请求接受，不确认实际状态或媒体内容改变；不做读回轮询。`BoundedNativeCommand`共用5秒有界单准入，原始WinRT操作未完成时不会提前释放占用；取消/超时可能已请求，不重试、不恢复，不创建无限线程。没有规则执行时不订阅媒体变化；UI关闭不停止规则。
+
+官方API标注 `globalMediaControl`，AppContainer使用 [uap7 capability](https://learn.microsoft.com/windows/uwp/packaging/app-capability-declarations#general-use-capabilities)。当前Agent为无包身份完整信任桌面程序；SDK WinRT投影已由项目Windows目标框架提供，无新生产依赖。独立 `Axiom.Providers.Windows.Tests`在Windows CI真正请求管理器并读取当前会话/操作支持，不发送播放命令、不吞权限或COM异常；没有媒体会话是正常空结果，不能等同API访问失败。Linux只验证fake及交叉编译，不证明Windows授权。真实播放器、浏览器、多会话切换、锁屏、操作支持性及实际播放效果须实机验收。

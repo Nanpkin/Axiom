@@ -47,3 +47,4 @@ SessionLockTests
 BuiltInBrightnessTests
 EndpointMuteTests
 PowerStateTests
+CurrentMediaTests

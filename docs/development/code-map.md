@@ -123,3 +123,6 @@ Wi-Fi配置：`WifiProfileCapabilities/Plugin/CapabilityProvider` → `WindowsWi
 默认静音状态：`EndpointMuteCapabilities → EndpointMutePlugin → EndpointMuteCapabilityProvider → WindowsEndpointMuteEvents/EndpointMuteState`。通信输入/常规播放共用按需MTA端点通知，回调后GetMute、选择变化计数保留baseline、同ID清单通知不重绑；`WindowsAudioEvents(includeEndpointState:true)`共享默认角色/清单通知。`EndpointMuteTests`验证代次/Unknown/Engine，`WindowsEndpointMuteTests`新增3项待Windows CI，不切换或修改真实设备。
 
 供电条件：`PowerStateCapabilities → PowerStatePlugin → PowerStateCapabilityProvider → WindowsPowerState/PowerStateObservation/PowerStateState`。`WindowsSessionEvents(powerOnly:true)`共享隐藏窗口和AC/DC、电量通知；合并后一次只读快照，ac/battery/严格battery-below条件，无电池与未知不假低电。`PowerStateTests`验证阈值、基线与Desired释放；`WindowsSessionEventTests`新增2项共享过滤/独立溢出/只读原生快照待CI，不改系统电源。
+
+
+当前媒体动作：`CurrentMediaCapabilities`/`CurrentMediaPlugin`/`CurrentMediaCapabilityProvider` → `WindowsCurrentMedia`的公开GSMTC适配；`CurrentMediaOperation`核对当前目标/支持操作/明确no-op/单次接受结果，复用 `BoundedNativeCommand`。`CurrentMediaTests`跨平台只用合成会话；`tests/Axiom.Providers.Windows.Tests/WindowsCurrentMediaTests`为独立Windows-only真实只读API访问，不发送媒体命令。范围与权限见任务接入的“Windows当前媒体控制”。

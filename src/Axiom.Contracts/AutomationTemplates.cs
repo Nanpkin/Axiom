@@ -12,6 +12,7 @@ public static class AutomationTemplates
         (string Field, string Value)[] DetectionValues, (string Field, string Value)[] ActionValues);
     private static readonly Recipe[] Recipes =
     [
+        new("lock-pause-current-media", "锁屏后暂停Windows当前媒体", "锁屏的新通知后，向Windows选中的当前媒体会话请求暂停一次；目标可能是播放器或浏览器，不指定程序。没有媒体会话或播放器不支持时会说明，解锁不自动播放。", SystemEventCapabilities.Event, CurrentMediaCapabilities.Control, [("event", "locked")], [("operation", "pause")]),
         new("launch-companion", "打开程序后启动配套工具", "选择检测程序和要启动的工具；工具已运行时跳过，结束后不自动关闭。", "process.running", "program.start", [], []),
         new("cleanup-companion", "程序退出后关闭配套工具", "只请求正常关闭最近启动的一个匹配实例；不强制结束、不自动重开，未保存内容可能需要确认。", "process.exited", "program.close", [], [("mode", "graceful"), ("instances", "latest")]),
         new("window-cleanup", "工作窗口全部消失后收尾", "选择工作程序和配套工具；全部工作主窗口隐藏或销毁后请求正常关闭配套工具最新实例。最小化不触发，程序可能仍在后台；不强杀、不自动重开。", WindowPresenceCapabilities.Absent, "program.close", [], [("mode", "graceful"), ("instances", "latest")]),

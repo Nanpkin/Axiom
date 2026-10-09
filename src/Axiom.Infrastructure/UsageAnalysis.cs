@@ -329,6 +329,7 @@ public static class UsageAnalysis
             if (resolved.CapabilityId == BuiltInBrightnessCapabilities.Set) BuiltInBrightnessCapabilities.Validate(resolved);
             if (resolved.CapabilityId == EndpointMuteCapabilities.State) EndpointMuteCapabilities.Validate(resolved);
             if (resolved.CapabilityId == SessionLockCapabilities.Lock) SessionLockCapabilities.Validate(resolved);
+            if (resolved.CapabilityId == CurrentMediaCapabilities.Control) CurrentMediaCapabilities.Validate(resolved);
             if (resolved.CapabilityId is UsbDeviceCapabilities.Present or UsbDeviceCapabilities.Absent) UsbDeviceCapabilities.Validate(resolved);
             if (resolved.CapabilityId == WindowMonitorCapabilities.Move) WindowMonitorCapabilities.ValidateTargets(resolved);
             if (resolved.CapabilityId == PowerSchemeCapabilities.Set) PowerSchemeCapabilities.Validate(resolved);
