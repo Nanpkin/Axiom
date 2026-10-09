@@ -354,6 +354,8 @@ public static class UsageAnalysis
                 missing.Contains(field.Id) ? field with { Required = false } : field)] });
             if (resolved.CapabilityId == NotificationCapabilities.Show)
                 NotificationCapabilities.Validate(resolved with { Parameters = resolved.Parameters.SetItem("title", "review").SetItem("body", "review") });
+            if (resolved.CapabilityId == WorkPreparationCapabilities.Prepare)
+                WorkPreparationCapabilities.Validate(missing.Contains("steps") ? resolved with { Parameters = resolved.Parameters.SetItem("steps", "网页 | https://example.invalid/review") } : resolved);
             if (resolved.CapabilityId == OpenTargetBatchCapabilities.Open)
                 OpenTargetBatchCapabilities.Validate(missing.Contains("targets") ? resolved with { Parameters = resolved.Parameters.SetItem("targets", "网页 | https://example.invalid/review") } : resolved);
             if (missing.Count > 0) return resolved;

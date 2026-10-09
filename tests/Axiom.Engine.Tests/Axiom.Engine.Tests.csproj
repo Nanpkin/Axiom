@@ -73,6 +73,7 @@
     <Compile Include="../../src/Axiom.SessionAgent/ApplicationAudioActivityCapabilityProvider.cs" Link="ApplicationAudioActivityCapabilityProvider.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/MicrophoneToggleOperation.cs" Link="MicrophoneToggleOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/AudioPlaybackAdjustOperation.cs" Link="AudioPlaybackAdjustOperation.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WorkPreparationOperation.cs" Link="WorkPreparationOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/OpenTargetBatchOperation.cs" Link="OpenTargetBatchOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/AudioPlaybackOperation.cs" Link="AudioPlaybackOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/ProgramPriorityOperation.cs" Link="ProgramPriorityOperation.cs" />
