@@ -12,13 +12,13 @@ public sealed class AutomationTemplateTests
     [Fact]
     public void EveryAvailableRecipeIsPausedUnsavedAndCompilesAfterTheUserSelectsItsRequiredObjects()
     {
-        var catalog = Catalog(); var templates = AutomationTemplates.Build(catalog); Assert.Equal(52, templates.Length);
+        var catalog = Catalog(); var templates = AutomationTemplates.Build(catalog); Assert.Equal(56, templates.Length);
         var compiler = new AutomationTaskCompiler();
         foreach (var module in Modules()) { foreach (var d in module.Detections) compiler.Register(d); foreach (var a in module.Actions) compiler.Register(a); }
         foreach (var template in templates)
         {
             Assert.True(template.Draft.Paused); Assert.Equal(0, template.Draft.Version);
-            if (template.Id is not ("standard-saver-dim-panel" or "windows-saver-dim-panel" or "session-absent-mute" or "public-network-reminder" or "workday-system-sound" or "current-media-awake" or "lock-pause-current-media" or "screen-off-pause-current-media" or "lock-display-off" or "lock-mute" or "screen-off-mute" or "battery-power-saver" or "battery-dim-panel" or "unmuted-microphone-awake" or "low-battery-dim-panel" or "plugged-in-awake" or "multi-display-awake")) Assert.Throws<ArgumentException>(() => compiler.Compile(template.Draft, "owner", ResourceScope.Session("owner", 1)));
+            if (template.Id is not ("foreground-cover-keep-awake" or "standard-saver-dim-panel" or "windows-saver-dim-panel" or "session-absent-mute" or "public-network-reminder" or "workday-system-sound" or "current-media-awake" or "lock-pause-current-media" or "screen-off-pause-current-media" or "lock-display-off" or "lock-mute" or "screen-off-mute" or "battery-power-saver" or "battery-dim-panel" or "unmuted-microphone-awake" or "low-battery-dim-panel" or "plugged-in-awake" or "multi-display-awake")) Assert.Throws<ArgumentException>(() => compiler.Compile(template.Draft, "owner", ResourceScope.Session("owner", 1)));
             else Assert.NotNull(compiler.Compile(template.Draft, "owner", ResourceScope.Session("owner", 1)));
             var completed = template.Draft with { Detection = Complete(template.Draft.Detection), Action = Complete(template.Draft.Action) };
             Assert.NotNull(compiler.Compile(completed, "owner", ResourceScope.Session("owner", 1)));
@@ -41,7 +41,7 @@ public sealed class AutomationTemplateTests
                     TaskFieldKind.ProcessSelection => "Example.exe",
                     TaskFieldKind.FilePath or TaskFieldKind.ExecutableSelection => Path.Combine(Path.GetTempPath(), "Example.exe"),
                     TaskFieldKind.HotkeyList => "Ctrl+Alt+F9",
-                    TaskFieldKind.TextList => invocation.CapabilityId == OpenTargetBatchCapabilities.Open ? "网页 | https://example.invalid/work" : invocation.CapabilityId == UsbDeviceCapabilities.Present ? @"USB\VID_1234&PID_5678\SYNTHETIC_A" : field.EditAsList ? "Synthetic Office" : "请休息片刻",
+                    TaskFieldKind.TextList => invocation.CapabilityId is OpenTargetBatchCapabilities.Open or WorkPreparationCapabilities.Prepare ? "网页 | https://example.invalid/work" : invocation.CapabilityId == UsbDeviceCapabilities.Present ? @"USB\VID_1234&PID_5678\SYNTHETIC_A" : field.EditAsList ? "Synthetic Office" : "请休息片刻",
                     TaskFieldKind.Text => invocation.Parameters.GetValueOrDefault("kind") == "document" ? Path.Combine(Path.GetTempPath(), "SyntheticPlan.pdf") : invocation.CapabilityId == NotificationCapabilities.Show ? "请休息片刻" : invocation.Parameters.GetValueOrDefault("kind") == "url" ? "https://example.invalid/reminder" : Path.GetTempPath(),
                     _ => throw new InvalidOperationException("Uncovered template parameter kind.")
                 };

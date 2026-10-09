@@ -354,6 +354,8 @@ public static class UsageAnalysis
                 missing.Contains(field.Id) ? field with { Required = false } : field)] });
             if (resolved.CapabilityId == NotificationCapabilities.Show)
                 NotificationCapabilities.Validate(resolved with { Parameters = resolved.Parameters.SetItem("title", "review").SetItem("body", "review") });
+            if (resolved.CapabilityId == WorkPreparationCapabilities.Prepare)
+                WorkPreparationCapabilities.Validate(missing.Contains("steps") ? resolved with { Parameters = resolved.Parameters.SetItem("steps", "网页 | https://example.invalid/review") } : resolved);
             if (resolved.CapabilityId == OpenTargetBatchCapabilities.Open)
                 OpenTargetBatchCapabilities.Validate(missing.Contains("targets") ? resolved with { Parameters = resolved.Parameters.SetItem("targets", "网页 | https://example.invalid/review") } : resolved);
             if (missing.Count > 0) return resolved;
@@ -363,12 +365,14 @@ public static class UsageAnalysis
             if (resolved.CapabilityId == FileArrivalCapabilities.Arrived) FileArrivalCapabilities.Validate(resolved);
             if (resolved.CapabilityId == MediaPlaybackCapabilities.State) MediaPlaybackCapabilities.Validate(resolved);
             if (resolved.CapabilityId == SessionPresenceCapabilities.State) SessionPresenceCapabilities.Validate(resolved);
+            if (resolved.CapabilityId == ForegroundScreenCoverCapabilities.Covers) ForegroundScreenCoverCapabilities.Validate(resolved);
             if (resolved.CapabilityId == SessionDisplayCapabilities.State) SessionDisplayCapabilities.Validate(resolved);
             if (resolved.CapabilityId == DisplayCountCapabilities.Count) DisplayCountCapabilities.Validate(resolved);
             if (resolved.CapabilityId == PowerSaverStateCapabilities.State) PowerSaverStateCapabilities.Validate(resolved);
             if (resolved.CapabilityId == PowerSchemeStateCapabilities.State) PowerSchemeStateCapabilities.Validate(resolved);
             if (resolved.CapabilityId == PowerStateCapabilities.State) PowerStateCapabilities.Validate(resolved);
             if (resolved.CapabilityId == WindowStateDetectionCapabilities.StateIs) WindowStateDetectionCapabilities.Validate(resolved);
+            if (resolved.CapabilityId == HardwareBrightnessCapabilities.Set) HardwareBrightnessCapabilities.Validate(resolved);
             if (resolved.CapabilityId == BuiltInBrightnessCapabilities.Set) BuiltInBrightnessCapabilities.Validate(resolved);
             if (resolved.CapabilityId == EndpointMuteCapabilities.State) EndpointMuteCapabilities.Validate(resolved);
             if (resolved.CapabilityId == DisplayOffCapabilities.Request) DisplayOffCapabilities.Validate(resolved);
@@ -380,6 +384,7 @@ public static class UsageAnalysis
             if (resolved.CapabilityId == WindowMonitorCapabilities.Move) WindowMonitorCapabilities.ValidateTargets(resolved);
             if (resolved.CapabilityId == PowerSchemeCapabilities.Set) PowerSchemeCapabilities.Validate(resolved);
             if (resolved.CapabilityId == ProgramPriorityCapabilities.Set) ProgramPriorityCapabilities.Validate(resolved);
+            if (resolved.CapabilityId == ApplicationAudioActivityCapabilities.Active) ApplicationAudioActivityCapabilities.Validate(resolved);
             if (resolved.CapabilityId == ApplicationAudioCapabilities.Set) ApplicationAudioCapabilities.Validate(resolved);
             if (resolved.CapabilityId == KeepAwakeCapabilities.Hold) KeepAwakeCapabilities.Validate(resolved);
             if (resolved.CapabilityId == SystemSoundCapabilities.Sound) SystemSoundCapabilities.Validate(resolved);
