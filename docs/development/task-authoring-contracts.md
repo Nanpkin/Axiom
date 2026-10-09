@@ -105,3 +105,9 @@ Engine在新条件边沿/事件进入延迟前、延迟deadline以及队列取�
 `DisplayCountPlugin`的schema 1 `display.count`接受`comparison=at-least|exact`和1–16整数`count`，资源规范化为`at-least:N|exact:N`，Provider拒非canonical资源。`WindowsSessionEvents`追加`displayOnly`最后可选参数，只收WM_DISPLAYCHANGE/恢复，原系统/时钟/USB/供电租约语义不变。同隐藏窗口线程共享通知，64提示合并后一次`EnumDisplayMonitors`计数服务全部最多32条件；只有完整1–64个逻辑屏才Known，0/失败/超64/通知故障Unknown，不当单屏。首次/睡眠恢复/Unknown恢复baseline不补Command；Desired已知初始可持有，结束/Unknown/暂停释放。逻辑数量不是物理数量、设备身份或屏幕布局；不存HMONITOR/ID/坐标，窗口动作执行前自行核验。
 
 `InternetConnectivityPlugin`的schema 1 `network.internet-state`接受`state=available|unavailable`，编译同一`windows-report` bool资源的true/false条件。`WindowsInternetConnectivityEvents`共享MTA Network List Manager connection point，回调只排有界提示，之后读取当前IPv4/IPv6 Internet标志，无ping/HTTP或周期查询；订阅/查询/服务失败及未知标志保持Unknown，明确本地/断开才为false。通知或消费者队列溢出即标故障，包括COM查询仍阻塞的情形；Provider丢弃失效源全部缓存Known，先发布Unknown再释放/等待重启，不使用失效快照继续授权或触发。初始/重新启用/Unknown恢复只建baseline，持续条件可持有唤醒请求、未知释放；源故障不自动重订阅。组合为程序启动、打开目标、通知及保持唤醒，不把Windows报告当应用可达性或网络可信性，不采名称/SSID/IP/位置/设备标识。末租约注销/释放，各消费者独立取消。
+
+### 窗口四角布局
+
+一次性`window.state`保持schema 1，`state`增量接受`top-left|top-right|bottom-left|bottom-right`，旧值与已保存参数不变；沿用完整exe多选、标题、等待、延迟、时段策略及独立目标结果。既有模板可选择新布局，不新增设备ID、持久坐标、结束恢复或持续控制。工作区宽高至少2个物理像素，2×2分割，奇数余量分到右侧/下侧；计算边界checked，兼容负坐标。
+
+仅布局（左右/中央/四角）补齐原移屏的进程创建时间核验；不改变关闭、最小化/最大化/置顶路径。`WindowsWindowLayout`固定当前匹配进程句柄、验证存活/创建时间及顶层无拥有者HWND，DPI scope在每次await前恢复，3秒linked deadline在还原后及SetWindowPos前再次核验。相关显示器/工作区变化与精确位置大小读回失败返回未确认，允许已经还原/发送请求；不声称撤销取消前的Windows请求，不重复写入或回写旧布局。主屏/上一屏/下一屏仍由`window.monitor`单独中央80%处理。
