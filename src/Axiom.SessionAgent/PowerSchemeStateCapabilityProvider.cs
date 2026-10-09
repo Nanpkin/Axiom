@@ -4,7 +4,7 @@ using Axiom.Providers.Windows;
 
 namespace Axiom.SessionAgent;
 
-internal sealed class PowerSchemeStateCapabilityProvider(Func<string[], Action<PowerSchemeStateValue[], bool>, CancellationToken, Task>? observe = null) : ISessionCapabilityProvider
+internal sealed class PowerSchemeStateCapabilityProvider(Func<string[], Action<PowerContextValue[], bool>, CancellationToken, Task>? observe = null) : ISessionCapabilityProvider
 {
     public IReadOnlyCollection<string> Capabilities => [PowerSchemeStateCapabilities.State];
     public async Task ObserveAsync(ProviderResource[] resources, Action<ProviderUpdate> publish, CancellationToken token)
@@ -30,7 +30,7 @@ internal sealed class PowerSchemeStateCapabilityProvider(Func<string[], Action<P
             await Task.Delay(Timeout.Infinite, token);
         }
     }
-    private static Task ObserveWindowsAsync(string[] resources, Action<PowerSchemeStateValue[], bool> publish, CancellationToken token)
+    private static Task ObserveWindowsAsync(string[] resources, Action<PowerContextValue[], bool> publish, CancellationToken token)
     {
         if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("电源方案状态检测需要 Windows。");
         return WindowsPowerSchemeState.ObserveAsync(resources, publish, token);

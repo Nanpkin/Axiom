@@ -363,6 +363,7 @@ public static class UsageAnalysis
             if (resolved.CapabilityId == MediaPlaybackCapabilities.State) MediaPlaybackCapabilities.Validate(resolved);
             if (resolved.CapabilityId == SessionDisplayCapabilities.State) SessionDisplayCapabilities.Validate(resolved);
             if (resolved.CapabilityId == DisplayCountCapabilities.Count) DisplayCountCapabilities.Validate(resolved);
+            if (resolved.CapabilityId == PowerSaverStateCapabilities.State) PowerSaverStateCapabilities.Validate(resolved);
             if (resolved.CapabilityId == PowerSchemeStateCapabilities.State) PowerSchemeStateCapabilities.Validate(resolved);
             if (resolved.CapabilityId == PowerStateCapabilities.State) PowerStateCapabilities.Validate(resolved);
             if (resolved.CapabilityId == WindowStateDetectionCapabilities.StateIs) WindowStateDetectionCapabilities.Validate(resolved);

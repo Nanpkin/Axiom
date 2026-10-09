@@ -50,6 +50,8 @@
 
 | 26 / 源码接通，Windows待验 | 新切入标准节能方案时调暗内屏，标准高性能期间保持唤醒 | `power.scheme-state`选择标准平衡/节能/高性能GUID，共享GUID_ACTIVE_POWERSCHEME通知后PowerGetActiveScheme只读、64提示合并 | 有效自定义GUID已知false，空GUID/失败/畸形/挂起Unknown；首次/恢复baseline，不切方案或匹配电源模式滑块，排除方案动作反馈。暂停模板、4项合成与Agent/Provider构建通过；原生/策略待Windows与实机 |
 
+| 27 / 源码接通，Windows待验 | Windows新报告电池节能开启时调暗内屏或降低音量 | `power.saver-state`on/off，GUID_POWER_SAVING_STATUS通知后读取SystemStatusFlag，只认文档0/1；不要求电池或推断电量/方案 | 新版节能强度不在此兼容API范围；其他值/异常Unknown，首次/恢复baseline、独立故障、排除切方案/保持唤醒反馈，不改变节能设置。暂停模板、4项合成与Agent/Provider构建通过，原生/设备/策略待验 |
+
 ## 保留的后续想法与已知 API 障碍
 
 - 有限有序动作仍有价值：一次打开计划文档、启动工具、整理窗口；之后围绕具体场景做最小逐项结果、失败策略和取消。当前不把工作流大框架或任意 AND 条件当作交付前置。
