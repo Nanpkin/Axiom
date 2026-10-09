@@ -69,16 +69,27 @@ public sealed class SessionPresenceTests
         Assert.Equal(StateQuality.Unknown, (await updates.Reader.ReadAsync()).Samples[0].Quality);
         source.Queue.Writer.TryWrite("presence-absent"); var first = await updates.Reader.ReadAsync(); Assert.True(first.Snapshot); Assert.True(first.Samples[0].Boolean);
         // Pause the synchronous publisher so reset and Known are guaranteed to coalesce in one bounded batch.
-        using var entered = new ManualResetEventSlim(); using var release = new ManualResetEventSlim();
+        var entered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously); using var release = new ManualResetEventSlim();
         var hints = Channel.CreateBounded<string>(64); var samples = Channel.CreateUnbounded<SessionPresenceSample>();
         hints.Writer.TryWrite("presence-present");
-        var observation = Task.Run(() => SessionPresenceObservation.RunAsync(hints.Reader, sample => { samples.Writer.TryWrite(sample); if (sample.State == 0) { entered.Set(); release.Wait(); } }, stop.Token));
-        Assert.True(entered.Wait(TimeSpan.FromSeconds(2)));
-        try { hints.Writer.TryWrite("presence-reset"); hints.Writer.TryWrite("presence-absent"); }
-        finally { release.Set(); }
-        Assert.True((await samples.Reader.ReadAsync()).Baseline); Assert.Null((await samples.Reader.ReadAsync()).State);
-        var recovery = await samples.Reader.ReadAsync(); Assert.True(recovery.Baseline); Assert.Equal(1u, recovery.State);
-        stop.Cancel(); await Assert.ThrowsAnyAsync<OperationCanceledException>(() => observation); await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run);
+        var observation = Task.Factory.StartNew(() => SessionPresenceObservation.RunAsync(hints.Reader,
+            sample => { samples.Writer.TryWrite(sample); if (sample.State == 0) { entered.TrySetResult(true); release.Wait(); } }, stop.Token),
+            CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default).Unwrap();
+        try
+        {
+            try
+            {
+                Assert.True(await entered.Task.WaitAsync(TimeSpan.FromSeconds(2)));
+                hints.Writer.TryWrite("presence-reset"); hints.Writer.TryWrite("presence-absent");
+            }
+            finally { release.Set(); }
+            Assert.True((await samples.Reader.ReadAsync()).Baseline); Assert.Null((await samples.Reader.ReadAsync()).State);
+            var recovery = await samples.Reader.ReadAsync(); Assert.True(recovery.Baseline); Assert.Equal(1u, recovery.State);
+        }
+        finally
+        {
+            stop.Cancel(); await Assert.ThrowsAnyAsync<OperationCanceledException>(() => observation); await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run);
+        }
     }
 
     [Fact(Timeout = 10000)]
