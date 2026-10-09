@@ -172,3 +172,5 @@ Windows节能报告条件：`PowerSaverStateCapabilities/Plugin/CapabilityProvid
 
 
 用户在场报告：`SessionPresenceCapabilities → SessionPresencePlugin → SessionPresenceCapabilityProvider → WindowsSessionPresence/SessionPresenceObservation/SessionPresenceState`，复用`WindowsSessionEvents(presenceOnly:true)`的GUID_SESSION_USER_PRESENCE DWORD。公开枚举为USER_ACTIVITY_PRESENCE的0/1/2，不是另一个POWER_USER_PRESENCE结构；不初读/轮询/输入hook。64提示合并保留Unknown边界，注册失败只拒新消费者，溢出立即Failed并丢缓存；SessionPresenceTests四项验证三态、基线、独立故障与保存/严格导入/Engine命令。WindowsSessionEventTests新增自有窗口解析/过滤/溢出案例，Windows CI执行，云端仅编译。
+
+硬件屏幕亮度：`HardwareBrightnessCapabilities/Plugin/CapabilityProvider` → `WindowsHardwareBrightness` → `HardwareBrightnessOperation`。`display.hardware-brightness`主屏/全支持屏、0–100/Engine延迟，独立于原内屏WMI；EnumDisplayMonitors/GetMonitorInfo实时逻辑选择，DXVA2物理句柄/MC_CAPS_BRIGHTNESS/min-current-max/一次写读回/DestroyPhysicalMonitors，SID及WTSActive核验。BoundedNativeCommand整批10秒单准入与Agent Drain，64/8/64容量前置、每个lease先拥有再检查取消/finally全部释放。HardwareBrightnessTests五项使用合成API验证范围/未知/部分、保存导入、超时取消句柄生命周期；实际硬件待验。
