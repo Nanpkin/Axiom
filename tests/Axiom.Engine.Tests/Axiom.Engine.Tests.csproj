@@ -1,5 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <Compile Include="../../src/Axiom.Providers.Windows/MediaPlaybackEvents.cs" Link="MediaPlaybackEvents.cs" />
+    <Compile Include="../../src/Axiom.SessionAgent/MediaPlaybackCapabilityProvider.cs" Link="MediaPlaybackCapabilityProvider.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/CurrentMediaOperation.cs" Link="CurrentMediaOperation.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/SessionDisplayCapabilityProvider.cs" Link="SessionDisplayCapabilityProvider.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/SessionDisplayState.cs" Link="SessionDisplayState.cs" />
