@@ -98,10 +98,32 @@ Engine在新条件边沿/事件进入延迟前、延迟deadline以及队列取�
 
 先接共享`WindowsWindowEvents`再一次`EnumWindows`，随后仅按事件读当前HWND，最多256已排队提示去重，无周期扫描。新增最小化开始/结束hook由`requireMinimizeEvents`显式要求，注册失败只拒新检测，既有窗口动作/出现/观察保持原hook。最多128订阅资源、4096相关窗口，源/容量故障整体Unknown、不自动重连；首次及Unknown后恢复逐资源baseline，不补Command，已知初始Desired可保持唤醒。短暂往返变化可能合并，最大化不等于全屏或手动调整证据；组合排除`window.state`/`window.monitor`自身反馈，允许程序、窗口关闭、打开目标、通知及保持唤醒。
 
-新增声明进入真实注册、Agent及导入校验；AI只能用当前观察应用别名映射本地路径。最大匿名摘要仍限定64KiB，完整字段ID/schema/类型/必填/长度/非空范围/默认值/选项与组合保留；在既有说明/hint缩减仍超限时，Infrastructure的compact序列化仅省略`TaskField.DefaultValue/Minimum/Maximum/Group`为null的可选字段，反序列化仍为null、非null原样保留。分类/字段展示名/能力名称和选项标签保留，omissions解释缺失表示未声明值，不改变授权或校验；Domain不增加JSON属性、不升级协议或放大预算，完整往返回归不减断言。
+新增声明进入真实注册、Agent及导入校验；AI只能用当前观察应用别名映射本地路径。最大匿名摘要仍限定64KiB，完整字段ID/schema/类型/必填/长度/非空范围/默认值/选项与组合保留；在既有说明/hint缩减仍超限时，Infrastructure的compact序列化仅省略`TaskField.DefaultValue/Minimum/Maximum/Group`为null的可选字段，反序列化仍为null、非null原样保留；实际新增能力再次超限后，仅同层额外省略BrowseLocalPath/EditAsList默认false，全部true保留，缺失还原false，omissions明确。分类/字段展示名/能力名称和选项标签保留，omissions解释缺失表示未声明值，不改变授权或校验；Domain不增加JSON属性、不升级协议或放大预算，完整往返回归不减断言。
 
 ## 显示数量与Internet条件
 
 `DisplayCountPlugin`的schema 1 `display.count`接受`comparison=at-least|exact`和1–16整数`count`，资源规范化为`at-least:N|exact:N`，Provider拒非canonical资源。`WindowsSessionEvents`追加`displayOnly`最后可选参数，只收WM_DISPLAYCHANGE/恢复，原系统/时钟/USB/供电租约语义不变。同隐藏窗口线程共享通知，64提示合并后一次`EnumDisplayMonitors`计数服务全部最多32条件；只有完整1–64个逻辑屏才Known，0/失败/超64/通知故障Unknown，不当单屏。首次/睡眠恢复/Unknown恢复baseline不补Command；Desired已知初始可持有，结束/Unknown/暂停释放。逻辑数量不是物理数量、设备身份或屏幕布局；不存HMONITOR/ID/坐标，窗口动作执行前自行核验。
 
 `InternetConnectivityPlugin`的schema 1 `network.internet-state`接受`state=available|unavailable`，编译同一`windows-report` bool资源的true/false条件。`WindowsInternetConnectivityEvents`共享MTA Network List Manager connection point，回调只排有界提示，之后读取当前IPv4/IPv6 Internet标志，无ping/HTTP或周期查询；订阅/查询/服务失败及未知标志保持Unknown，明确本地/断开才为false。通知或消费者队列溢出即标故障，包括COM查询仍阻塞的情形；Provider丢弃失效源全部缓存Known，先发布Unknown再释放/等待重启，不使用失效快照继续授权或触发。初始/重新启用/Unknown恢复只建baseline，持续条件可持有唤醒请求、未知释放；源故障不自动重订阅。组合为程序启动、打开目标、通知及保持唤醒，不把Windows报告当应用可达性或网络可信性，不采名称/SSID/IP/位置/设备标识。末租约注销/释放，各消费者独立取消。
+
+## Windows当前媒体控制
+
+`media.current-control`（schema 1）提供暂停、播放、上一项、下一项和Engine延迟，支持现有通用一次性命令星期/时段门禁。用户新增能完成：锁屏后暂停Windows当前媒体、进入指定前台程序后暂停，或用快捷键/定时请求当前媒体上一项/下一项。目标明确是执行时Windows选中的媒体会话；不是按完整exe路径指定播放器，也不是前台窗口或枚举的第一个会话。
+
+公开 [GetCurrentSession](https://learn.microsoft.com/uwp/api/windows.media.control.globalsystemmediatransportcontrolssessionmanager.getcurrentsession) 返回Windows认为用户最希望控制的会话。公开 `SourceAppUserModelId`只提供AUMID，不提供PID或完整exe路径映射，故本能力不声明“指定应用”，不保存或采集AUMID，也不调用媒体属性/标题/曲目API。现有指定应用播放音量能力继续独立使用Core Audio的完整路径核验。
+
+执行端按需 `RequestAsync`，固定当前会话引用，读 `GetPlaybackInfo().Controls.IsPauseEnabled/IsPlayEnabled/IsPreviousEnabled/IsNextEnabled`；请求前重读当前会话并按规范COM `IUnknown`身份及 `CurrentSessionChanged`代际核验，查询取得的引用在finally释放。切换后再切回同一会话也不补请求，不改控新的目标。校验与请求并非系统原子操作，校验后瞬间切换仍可能由刚才固定的旧会话接受请求。
+
+已暂停再暂停、已播放再播放明确成功且不发送请求。没有当前会话、操作未启用、已切换或访问拒绝明确失败。四种 `Try*Async`的true仅为请求接受，不确认实际状态或媒体内容改变；不做读回轮询。`BoundedNativeCommand`共用5秒有界单准入，原始WinRT操作未完成时不会提前释放占用；取消/超时可能已请求，不重试、不恢复，不创建无限线程。没有规则执行时不订阅媒体变化；UI关闭不停止规则。
+
+官方API标注 `globalMediaControl`，AppContainer使用 [uap7 capability](https://learn.microsoft.com/windows/uwp/packaging/app-capability-declarations#general-use-capabilities)。当前Agent为无包身份完整信任桌面程序；SDK WinRT投影已由项目Windows目标框架提供，无新生产依赖。独立 `Axiom.Providers.Windows.Tests`在Windows CI真正请求管理器并读取当前会话/操作支持，不发送播放命令、不吞权限或COM异常；没有媒体会话是正常空结果，不能等同API访问失败。Linux只验证合成会话及交叉编译，不证明Windows授权。真实播放器、浏览器、多会话切换、锁屏、操作支持性及实际播放效果须实机验收。
+
+## 当前交互会话屏幕电源
+
+`SessionDisplayPlugin` schema 1 `screen.state`接受`state=on|dim|off`，最多3个共享只读bool资源，对应同一当前交互会话显示电源报告；仅读GUID_SESSION_DISPLAY_STATUS的DWORD 0/1/2。`WindowsSessionEvents`追加最后可选`screenPowerOnly`，保留clockOnly/usbOnly/powerOnly/displayOnly参数与旧消费者过滤；原生注册失败仅拒新消费者，最后租约注销。仅复制通知值，不读输入、屏幕内容、设备身份或亮度，不主动查询/轮询。畸形长度/其他值、睡眠挂起/恢复及WTS控制台/远程连接切换转Unknown；不能用锁/解锁、WM_DISPLAYCHANGE或亮度代替报告。每次订阅首先Unknown，首次/恢复Known是snapshot基线，不补Command；64队列失效立即Failed、丢积压Known，Unknown先发布再清理，不自动重订阅。整体报告不保证每块物理屏/远程客户端状态，dim可能不报，Modern Standby会延迟或暂停动作。仅组合一次音频/麦克风、当前媒体控制、提醒和program.close；排除整个KeepAwake、亮度/HDR/电源方案/移屏等显示设置组合，无新参数级组合框架。
+
+## 窗口四角布局
+
+一次性`window.state`保持schema 1，`state`增量接受`top-left|top-right|bottom-left|bottom-right`，旧值与已保存参数不变；沿用完整exe多选、标题、等待、延迟、时段策略及独立目标结果。既有模板可选择新布局，不新增设备ID、持久坐标、结束恢复或持续控制。工作区宽高至少2个物理像素，2×2分割，奇数余量分到右侧/下侧；计算边界checked，兼容负坐标。
+
+仅布局（左右/中央/四角）补齐原移屏的进程创建时间核验；不改变关闭、最小化/最大化/置顶路径。`WindowsWindowLayout`固定当前匹配进程句柄、验证存活/创建时间及顶层无拥有者HWND，DPI scope在每次await前恢复，3秒linked deadline在还原后及SetWindowPos前再次核验。相关显示器/工作区变化与精确位置大小读回失败返回未确认，允许已经还原/发送请求；不声称撤销取消前的Windows请求，不重复写入或回写旧布局。主屏/上一屏/下一屏仍由`window.monitor`单独中央80%处理。

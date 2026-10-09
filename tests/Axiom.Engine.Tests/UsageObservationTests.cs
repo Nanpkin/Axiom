@@ -381,6 +381,14 @@ public sealed class UsageObservationTests
         Assert.InRange(feedbackDocument.RootElement.GetProperty("patterns").GetArrayLength(), 1, 12);
         Assert.Equal(catalog.Capabilities.Length, feedbackDocument.RootElement.GetProperty("capabilities").GetArrayLength());
         Assert.Equal(catalog.Combinations.ToArray(), feedbackDocument.RootElement.GetProperty("combinations").Deserialize<TaskCombination[]>());
+        var serializedFields = feedbackDocument.RootElement.GetProperty("capabilities").EnumerateArray()
+            .SelectMany(c => c.GetProperty("Fields").EnumerateArray()).ToArray();
+        Assert.Contains("默认false", feedbackDocument.RootElement.GetProperty("omissions").GetString());
+        Assert.Contains(serializedFields, f => f.TryGetProperty(nameof(TaskField.BrowseLocalPath), out var value) && value.GetBoolean());
+        Assert.Contains(serializedFields, f => f.TryGetProperty(nameof(TaskField.EditAsList), out var value) && value.GetBoolean());
+        foreach (var field in serializedFields)
+            foreach (var flag in new[] { nameof(TaskField.BrowseLocalPath), nameof(TaskField.EditAsList) })
+                if (field.TryGetProperty(flag, out var value)) Assert.True(value.GetBoolean());
         foreach (var actual in feedbackDocument.RootElement.GetProperty("capabilities").EnumerateArray().Select(c => c.Deserialize<TaskCapability>()!))
         {
             var expected = catalog.Capabilities.Single(c => c.Id == actual.Id);

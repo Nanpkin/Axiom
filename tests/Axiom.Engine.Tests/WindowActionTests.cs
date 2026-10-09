@@ -112,11 +112,67 @@ public sealed class WindowActionTests
         Assert.True(target.Visible);
         target.SetState(3); Assert.True(target.Maximized); // later user control remains possible
     }
+
+    [Theory(Timeout = 10000)]
+    [InlineData("top-left")]
+    [InlineData("top-right")]
+    [InlineData("bottom-left")]
+    [InlineData("bottom-right")]
+    public async Task NativeCornerLayoutReadsBackPhysicalBoundsAndLeavesOtherWindowsAndManualChangesAlone(string layout)
+    {
+        using var target = new TrayWindow(); using var other = new TrayWindow(); target.Show(); other.Show();
+        var otherBounds = PhysicalWindow(() => other.Bounds);
+        target.SetState(3); target.SetState(6);
+        var result = await WindowsWindowActions.CloseAsync(Environment.ProcessPath!, target.Title, TimeSpan.FromSeconds(2), default, layout);
+        Assert.True(result.Success, result.Reason); Assert.False(target.Maximized); Assert.False(target.Minimized);
+        var monitor = WindowsWindowMonitor.ReadMonitors().Single(m => m.Handle == PhysicalWindow(() => MonitorFromWindow(target.WindowHandle, 2)));
+        var expected = WindowLayoutGeometry.Calculate(layout, monitor.Work.Left, monitor.Work.Top, monitor.Work.Width, monitor.Work.Height);
+        Assert.Equal((expected.X, expected.Y, expected.X + expected.Width, expected.Y + expected.Height), PhysicalWindow(() => target.Bounds));
+        Assert.Equal(otherBounds, PhysicalWindow(() => other.Bounds)); Assert.Equal(0, target.CloseCount); Assert.Equal(0, other.CloseCount);
+        target.SetState(3); Assert.True(target.Maximized); // No continuing controller restores the requested corner.
+    }
+
     [Fact(Timeout = 10000)]
-    public async Task CancelledStateWaitDoesNotChangeALaterWindow()
+    public async Task WrongCreationOrCancelledLayoutDoesNotRestoreOrMoveTheSelectedWindow()
+    {
+        using var target = new TrayWindow(); target.Show(); target.SetState(3); var before = PhysicalWindow(() => target.Bounds);
+        using var events = new WindowsWindowEvents();
+        var stale = await WindowsWindowLayout.ApplyAsync(target.WindowHandle, Environment.ProcessId, Environment.ProcessPath!,
+            DateTime.UnixEpoch, "bottom-right", events, default);
+        Assert.False(stale.Success); Assert.Contains("进程已变化", stale.Reason); Assert.True(target.Maximized);
+        Assert.Equal(before, PhysicalWindow(() => target.Bounds));
+        using var process = Process.GetCurrentProcess(); using var cancellation = new CancellationTokenSource(); cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => WindowsWindowLayout.ApplyAsync(target.WindowHandle, Environment.ProcessId,
+            Environment.ProcessPath!, process.StartTime.ToUniversalTime(), "top-left", events, cancellation.Token));
+        Assert.True(target.Maximized); Assert.Equal(before, PhysicalWindow(() => target.Bounds)); Assert.Equal(0, target.CloseCount);
+    }
+
+    [Fact(Timeout = 10000)]
+    public async Task AWindowThatRejectsPlacementTimesOutWithoutRepeatedWritesOrLaterAutomaticRecovery()
+    {
+        using var target = new TrayWindow(); target.Show(); var before = PhysicalWindow(() => target.Bounds);
+        target.RejectPlacement = true;
+        var result = await WindowsWindowActions.CloseAsync(Environment.ProcessPath!, target.Title, TimeSpan.FromSeconds(2), default, "bottom-right");
+        Assert.False(result.Success); Assert.Contains("期限", result.Reason); Assert.Contains("不会自动重试", result.Reason);
+        Assert.Equal(1, target.RejectedPlacements); Assert.Equal(before, PhysicalWindow(() => target.Bounds));
+        target.RejectPlacement = false; target.SetState(3); Assert.True(target.Maximized);
+        Assert.Equal(1, target.RejectedPlacements); Assert.Equal(0, target.CloseCount);
+    }
+
+    private static T PhysicalWindow<T>(Func<T> read)
+    {
+        var previous = SetThreadDpiAwarenessContext(-4); Assert.NotEqual(0, previous);
+        try { return read(); } finally { SetThreadDpiAwarenessContext(previous); }
+    }
+    [DllImport("user32.dll")] private static extern nint SetThreadDpiAwarenessContext(nint context);
+    [DllImport("user32.dll")] private static extern nint MonitorFromWindow(nint window, uint flags);
+    [Theory(Timeout = 10000)]
+    [InlineData("maximize")]
+    [InlineData("top-left")]
+    public async Task CancelledStateWaitDoesNotChangeALaterWindow(string state)
     {
         using var target = new TrayWindow(); using var cancellation = new CancellationTokenSource();
-        var pending = WindowsWindowActions.CloseAsync(Environment.ProcessPath!, target.Title, TimeSpan.FromSeconds(3), cancellation.Token, "maximize");
+        var pending = WindowsWindowActions.CloseAsync(Environment.ProcessPath!, target.Title, TimeSpan.FromSeconds(3), cancellation.Token, state);
         cancellation.Cancel(); await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending);
         target.Show(); Assert.False(target.Maximized); Assert.Equal(0, target.CloseCount);
     }
@@ -250,6 +306,9 @@ public sealed class WindowActionTests
         private readonly TaskCompletionSource ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly bool ignoreClose;
         private int count;
+        private int rejectedPlacements;
+        public volatile bool RejectPlacement;
+        public int RejectedPlacements => Volatile.Read(ref rejectedPlacements);
         private nint handle;
         public string Title { get; } = "Axiom window fixture " + Guid.NewGuid();
         public nint WindowHandle => handle;
@@ -281,6 +340,12 @@ public sealed class WindowActionTests
         }
         private nint Handle(nint window,uint message,nint w,nint l)
         {
+            if (message == 0x0046 && RejectPlacement)
+            {
+                var position = Marshal.PtrToStructure<WindowPosition>(l);
+                position.Flags |= 0x0001 | 0x0002; // This fixture deliberately refuses resize and movement.
+                Marshal.StructureToPtr(position, l, false); Interlocked.Increment(ref rejectedPlacements); return 0;
+            }
             if (message == 0x0010) { Interlocked.Increment(ref count); if (!ignoreClose) ShowWindow(window, 0); return 0; }
             if (message == 0x8003) { ShowWindow(window, (int)w); return 0; }
             if (message == 0x8001) { DestroyWindow(window); return 0; }
@@ -290,6 +355,7 @@ public sealed class WindowActionTests
         public void Show() { SendMessage(handle, 0x8002, 0, 0); ShowWindow(handle, 5); }
         public void Dispose() { if (handle != 0) PostMessage(handle, 0x8001, 0, 0); thread.Join(TimeSpan.FromSeconds(2)); }
         private delegate nint Proc(nint window,uint message,nint w,nint l);
+        [StructLayout(LayoutKind.Sequential)] private struct WindowPosition { public nint Window, After; public int X, Y, Width, Height; public uint Flags; }
         [StructLayout(LayoutKind.Sequential,CharSet=CharSet.Unicode)] private struct WindowClass { public uint Size,Style; public Proc Procedure; public int ClassExtra,WindowExtra; public nint Instance,Icon,Cursor,Background; public string? Menu,Name; public nint SmallIcon; }
         [StructLayout(LayoutKind.Sequential)] private struct Message { public nint Window; public uint Id; public nint W,L; public uint Time; public int X,Y; public uint Private; }
         [DllImport("user32.dll",CharSet=CharSet.Unicode)] private static extern ushort RegisterClassEx(ref WindowClass cls);

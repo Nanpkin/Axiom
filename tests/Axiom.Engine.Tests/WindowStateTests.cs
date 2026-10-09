@@ -14,6 +14,10 @@ public sealed class WindowStateTests
     [InlineData("left")]
     [InlineData("right")]
     [InlineData("center")]
+    [InlineData("top-left")]
+    [InlineData("top-right")]
+    [InlineData("bottom-left")]
+    [InlineData("bottom-right")]
     [InlineData("topmost")]
     [InlineData("notopmost")]
     public void StateActionCompilesWithDelayAndMultipleTargets(string state)
@@ -36,6 +40,46 @@ public sealed class WindowStateTests
         Assert.Equal((-960, 40, 961, 1040), Axiom.Providers.Windows.WindowLayoutGeometry.Calculate("right", -1920, 40, 1921, 1040));
         Assert.Equal((192, 104, 1536, 832), Axiom.Providers.Windows.WindowLayoutGeometry.Calculate("center", 0, 0, 1920, 1040));
         Assert.Throws<ArgumentException>(() => Axiom.Providers.Windows.WindowLayoutGeometry.Calculate("left", 0, 0, 0, 10));
+    }
+
+    [Theory]
+    [InlineData(-1920, -1080, 1921, 1081)]
+    [InlineData(0, 40, 1920, 1040)]
+    [InlineData(-1, -1, 2, 2)]
+    public void FourCornersPartitionTheEntireWorkAreaWithoutGapsOrOverlaps(int x, int y, int width, int height)
+    {
+        var a = Axiom.Providers.Windows.WindowLayoutGeometry.Calculate("top-left", x, y, width, height);
+        var b = Axiom.Providers.Windows.WindowLayoutGeometry.Calculate("top-right", x, y, width, height);
+        var c = Axiom.Providers.Windows.WindowLayoutGeometry.Calculate("bottom-left", x, y, width, height);
+        var d = Axiom.Providers.Windows.WindowLayoutGeometry.Calculate("bottom-right", x, y, width, height);
+        Assert.Equal((x, y, width / 2, height / 2), a);
+        Assert.Equal((x + width / 2, y, width - width / 2, height / 2), b);
+        Assert.Equal((x, y + height / 2, width / 2, height - height / 2), c);
+        Assert.Equal((x + width / 2, y + height / 2, width - width / 2, height - height / 2), d);
+        Assert.Equal((long)width * height, new[] { a, b, c, d }.Sum(r => (long)r.Width * r.Height));
+        Assert.All(new[] { a, b, c, d }, r => { Assert.True(r.Width > 0); Assert.True(r.Height > 0); });
+        Assert.Equal(a.X + a.Width, b.X); Assert.Equal(a.Y + a.Height, c.Y);
+        Assert.Equal(x + width, d.X + d.Width); Assert.Equal(y + height, d.Y + d.Height);
+    }
+
+    [Theory]
+    [InlineData("top-left")]
+    [InlineData("top-right")]
+    [InlineData("bottom-left")]
+    [InlineData("bottom-right")]
+    public void CornerChoicesAreAdditiveSchemaOneAndRejectTinyOrOverflowingGeometry(string corner)
+    {
+        Assert.Equal(1, WindowCapabilities.StateDescriptor.SchemaVersion);
+        Assert.Contains(WindowCapabilities.StateDescriptor.Fields.Single(f => f.Id == "state").Choices, c => c.Value == corner);
+        Assert.Throws<ArgumentException>(() => Axiom.Providers.Windows.WindowLayoutGeometry.Calculate(corner, 0, 0, 1, 10));
+        Assert.Throws<ArgumentException>(() => Axiom.Providers.Windows.WindowLayoutGeometry.Calculate(corner, 0, 0, 10, 1));
+        // Existing usage evidence intentionally retains its three approximate layout categories.
+        var rect = Axiom.Providers.Windows.WindowLayoutGeometry.Calculate(corner, -1920, -1080, 1921, 1081);
+        Assert.Equal("normal", Axiom.Providers.Windows.WindowLayoutGeometry.Classify(rect.X, rect.Y, rect.Width, rect.Height, -1920, -1080, 1921, 1081, 16));
+        if (corner.EndsWith("right", StringComparison.Ordinal))
+            Assert.Throws<OverflowException>(() => Axiom.Providers.Windows.WindowLayoutGeometry.Calculate(corner, int.MaxValue, 0, 10, 10));
+        if (corner.StartsWith("bottom", StringComparison.Ordinal))
+            Assert.Throws<OverflowException>(() => Axiom.Providers.Windows.WindowLayoutGeometry.Calculate(corner, 0, int.MaxValue, 10, 10));
     }
     [Fact]
     public void LayoutCategoriesAllowFrameMarginsButDoNotInventAMatchForArbitraryPlacement()
