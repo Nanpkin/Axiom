@@ -1,18 +1,20 @@
 # 主动观察与自动化闭环
 
-四阶段最小闭环已接通：实用自动化→用户主动限时观察→本地证据/离线AI审阅→暂停规则或确认过的源码扩展。当前本轮十项实用能力已冻结，功能范围/API障碍见[功能清单](../../product/functional-roadmap.md)，操作与限制见[当前状态](../../product/current-state.md)。负责人只协调审查/Git操作，代理实施；最小必要验证，不重复铺框架或保留过期流水。
+四阶段最小闭环已接通：实用自动化→用户主动限时观察→本地证据/离线AI审阅→暂停规则或确认过的源码扩展。上一阶段十项实用能力已随预览 .3交付，所有者明确继续idea提出与实施，功能范围/API障碍见[功能清单](../../product/functional-roadmap.md)，操作与限制见[当前状态](../../product/current-state.md)。负责人只协调审查/Git操作，代理实施；最小必要验证，不重复铺框架或保留过期流水。
 
-## 当前交付
+## 当前交付与执行队列
 
-当前main `45f53fa1cf5fa9135109e3d4b1b5ebf9edc38a59`包含前八项增量、47能力/43暂停模板；PR #6及main检查37877099033已成功，PR #7的[准确检查及包37877168648](https://github.com/Starvan/Axiom/actions/runs/37877168648)全部成功并已合入main。[准确main检查37877715982](https://github.com/Starvan/Axiom/actions/runs/37877715982)已全部成功。
+当前main `9e87cbbb044d72411cdacf3bb55cde8937805bf7`已包含十项增量、49能力/45默认暂停模板；[准确main检查37878921158](https://github.com/Starvan/Axiom/actions/runs/37878921158)成功。
 
-已发布[预览 .2](https://github.com/Starvan/Axiom/releases/tag/v0.2.0-preview.20261009.2)仍为`e7ee2cb`的34模板，已核验便携zip、安装exe、BUILD-INFO.json、SHA256SUMS.txt四项资产，不能代表后续十项功能。第四批计划以[PR #8](https://github.com/Starvan/Axiom/pull/8)及[预览 .3](https://github.com/Starvan/Axiom/releases/tag/v0.2.0-preview.20261009.3)核对最终检查与包；目前尚未发布，不替换所有者本机版本。
+[预览 .3](https://github.com/Starvan/Axiom/releases/tag/v0.2.0-preview.20261009.3)已发布，[准确发布构建37879255109](https://github.com/Starvan/Axiom/actions/runs/37879255109)成功，来源为`9e87cbb`；便携zip、安装exe、BUILD-INFO.json和SHA256SUMS.txt四项资产均已核验。本轮未替换所有者本机版本；实机与完整性能验收仍独立。
 
-- [x] 前八项：当前媒体控制、会话屏电、四角布局、程序优先级、关屏请求、相对播放音量、麦克风切换、媒体播放状态；各准确PR检查与包成功、已合main，实机另验。
-- [x] 第四批批量打开工作目标与快捷键前台布局整合，49能力/45默认暂停模板；保留媒体检测、音频动作、原单目标和路径窗口语义。
-- [x] 整批只5项必要模板/实际注册/严格导入/配置保存/原64KiB完整字段及允许对往返检查通过；最终Agent/Host交叉构建零警告/错误。不增序列化/预算、登记现有两套动作案例供CI。
-- [ ] 准确第四批Windows检查、main及预览 .3由负责人核验；本轮结束后按具体新需求延展。
-- [ ] 实机重点：批量默认关联/权限/多窗口与中途停止；前台快速切换/销毁/拒绝/混合DPI及超时租约释放。此前媒体权限/通知、电源请求、设备及安装性能也继续待验，CI不能代替。
+- [x] 十项增量、49能力/45模板已合main并发布准确 .3，必要注册/模板/导入/保存及原64KiB完整参数/组合往返、Agent/Host和Windows/main检查成功，实机另验。
+- [x] 新一轮已启动四场景的用户价值、最小验收路径及八个按收益/API排序候选记入[功能清单](../../product/functional-roadmap.md)；规划记录单独提交，继续功能主线而非等待新需求。
+- [ ] 三个代理实现：公开NLM公用/专用/域分类条件、快捷键当前窗口移主/相邻屏、默认播放静音切换、有限系统提示音。只有四项已启动，其他候选不预造框架。
+- [ ] 实现提交到齐后在`codex/functional-round-two-integration`整批仅一次注册/模板/严格导入/保存/原64KiB完整fields/pairs和Agent/Host构建；准确Windows/main/阶段包由负责人核验，不做半批重复或旧代码全量复审。
+- [ ] 实机重点：多网络分类/Unknown、当前窗口快速切换/销毁/混合DPI、播放设备两向静音及设备变更、系统音受理与实际可听。既有媒体/电源/外设/安装性能待验继续有效。
+
+用户要求持续提出并实施有价值能力，保持`gpt-6.1-sol` / `high`；完成阶段/PR/发布后按收益推进后续独立增量。候选先查API与具体消费者，不自行加入自动睡眠/关机，不增加常驻轮询或通用工作流前置。
 
 ## 使用与边界
 

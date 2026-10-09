@@ -32,9 +32,9 @@
 
 ## 本轮持续开发
 
-本轮冻结十项实用能力增量：当前媒体控制、会话屏幕亮/暗/关检测、窗口四角布局、程序优先级、请求关闭屏幕、相对播放音量、麦克风静音切换、当前媒体播放状态、批量打开工作目标、快捷键整理当前前台窗口。当前源码49能力/45默认暂停模板，复用注册、通用编辑保存、Engine和Session Agent；UI退出后台继续。
+当前main `9e87cbbb044d72411cdacf3bb55cde8937805bf7`已包含十项增量、49能力/45默认暂停模板；[准确main检查37878921158](https://github.com/Starvan/Axiom/actions/runs/37878921158)成功。 [预览 .3](https://github.com/Starvan/Axiom/releases/tag/v0.2.0-preview.20261009.3)已发布，[准确发布构建37879255109](https://github.com/Starvan/Axiom/actions/runs/37879255109)成功，来源为`9e87cbb`；便携zip、安装exe、BUILD-INFO.json和SHA256SUMS.txt四项资产均已核验。本轮未替换所有者本机版本；实机与完整性能验收仍独立。
 
-当前main `45f53fa1cf5fa9135109e3d4b1b5ebf9edc38a59`包含前八项增量、47能力/43暂停模板；PR #6及main检查37877099033已成功，PR #7的[准确检查及包37877168648](https://github.com/Starvan/Axiom/actions/runs/37877168648)全部成功并已合入main。[准确main检查37877715982](https://github.com/Starvan/Axiom/actions/runs/37877715982)已全部成功。 第四批`codex/workspace-shortcuts-integration`基于第三批`1e9a4a9`独立整合最后两项，保留媒体播放状态及两项音频动作；该批准确Windows检查、main及阶段发布由负责人核验。所有者要求最小必要验证、及时交付，负责人只协调/审查/Git操作，代理实施；本轮完成后按后续具体需求延展，不继续铺框架。目标与API边界见[功能清单](functional-roadmap.md)。
+已发布的十项新增用户能力包括媒体控制/播放状态、会话屏电、四角布局、程序优先级、关屏请求、相对音量/麦克风切换、批量工作目标和前台布局。所有者已明确继续功能开发和idea提出，不以完成这批或发布预览为停止点。下一批四项已分派：公用/专用/域网络分类、快捷键移动当前前台窗口到主/相邻屏、同键切换默认播放静音、系统提示音；最小用户路径及后续八个候选见[功能清单](functional-roadmap.md)。当前仅规划及实施中，未计入已发布49能力/45模板；保留`gpt-6.1-sol` / `high`和最小必要验证，负责人协调审查、代理实施。
 
 | 阶段 | 已接通的用户路径 |
 |---|---|
@@ -90,17 +90,17 @@
 
 ## 验证及分发
 
-当前main `45f53fa1cf5fa9135109e3d4b1b5ebf9edc38a59`包含前八项增量、47能力/43暂停模板；PR #6及main检查37877099033已成功，PR #7的[准确检查及包37877168648](https://github.com/Starvan/Axiom/actions/runs/37877168648)全部成功并已合入main。[准确main检查37877715982](https://github.com/Starvan/Axiom/actions/runs/37877715982)已全部成功。
+当前main `9e87cbbb044d72411cdacf3bb55cde8937805bf7`已包含十项增量、49能力/45默认暂停模板；[准确main检查37878921158](https://github.com/Starvan/Axiom/actions/runs/37878921158)成功。
 
-已发布[预览 .2](https://github.com/Starvan/Axiom/releases/tag/v0.2.0-preview.20261009.2)仍为`e7ee2cb`的34模板，已核验便携zip、安装exe、BUILD-INFO.json、SHA256SUMS.txt四项资产，不能代表后续十项功能。第四批计划以[PR #8](https://github.com/Starvan/Axiom/pull/8)及[预览 .3](https://github.com/Starvan/Axiom/releases/tag/v0.2.0-preview.20261009.3)核对最终检查与包；目前尚未发布，不替换所有者本机版本。
+[预览 .3](https://github.com/Starvan/Axiom/releases/tag/v0.2.0-preview.20261009.3)已发布，[准确发布构建37879255109](https://github.com/Starvan/Axiom/actions/runs/37879255109)成功，来源为`9e87cbb`；便携zip、安装exe、BUILD-INFO.json和SHA256SUMS.txt四项资产均已核验。本轮未替换所有者本机版本；实机与完整性能验收仍独立。
 
-第四批两实施代理已各完成4项直接风险案例及必要构建。整合只运行5项模板、实际注册/严格导入、已审阅批量配置SQLite保存读回、完整生产目录最大摘要检查，全部通过；最终Agent/Host Windows目标交叉构建零警告/错误。49能力加HDR合成设备、128对象、12handled、提示词/CRLF保持原64KiB；完整字段/分类/标签/非空约束/选项与全部允许对往返保留。既有组合分组fallback足够，未新增格式、放宽预算或重复全套回归；现有两新动作套件登记CI。
+上一批模板、实际注册/严格导入、已审阅批量配置SQLite保存读回、完整目录最大摘要及Agent/Host构建已通过，并取得准确main和发布检查。49能力加HDR合成设备、128对象、12handled、提示词/CRLF保持原64KiB，完整字段/分类/标签/非空约束/选项和全部允许对往返保留。已有组合分组fallback有效，不改原单目标或路径窗口行为。
 
-此前八项已通过各批准确Windows检查与包；Linux不执行原生API。自动检查不打开真实工作目标、移动用户窗口、发送媒体/锁屏/关屏请求或修改真实麦克风/优先级。前台窗口及Shell真实默认关联/DPI/策略仍待实机，CI不能替代硬件和完整性能验收。包内/包旁BUILD-INFO及SHA256SUMS必须对应最终提交；发布状态由上述PR/Release链接核验，不能沿用34模板旧包。
+新一轮四项提交全部到齐后仅做一次必要整合验证，不先全量复审/构建旧代码，不重复半批预算；准确Windows检查与新包另核验。Linux不执行原生API，CI不能替代网络分类/多屏/实际音频和性能验收。包内/包旁BUILD-INFO及SHA256SUMS须对应目标提交，不把 .3当下一批新功能证据。
 
 ## 最短体验与待办
 
-1. 从PR成功检查下载匹配head的私有包，核对来源；先用独立便携目录体验。
+1. 从已核验预览 .3下载匹配来源的私有包；先用独立便携目录体验，后续新功能核对自己的准确包。
 2. 自动化→从常用场景开始→填写实际目标→保存暂停草稿→审阅后启用；检查活动结果，再暂停。
 3. 使用观察→选范围/期限/排除应用→开启→进行真实重复准备/收尾→暂停或结束→查看证据；无足够证据可以没有建议。
 4. 接受候选进入暂停草稿；或预览/删减摘要→复制提示词交给自选AI→导入结构化候选→确认。缺能力时生成确认过的扩展任务。
