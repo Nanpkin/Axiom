@@ -4,10 +4,16 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      source_ref:
+        type: string
+        required: false
+        default: ''
 permissions:
   contents: read
 concurrency:
-  group: check-${{ github.ref }}
+  group: check-${{ github.workflow }}-${{ github.ref }}
   # Let a verified milestone finish packaging while newer pushes replace the pending run.
   cancel-in-progress: false
 jobs:
@@ -20,12 +26,17 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.source_ref || github.sha }}
       - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
       - name: Check source privacy
         shell: pwsh
         run: ./tools/check-source-privacy.ps1
+      - name: Release version and provenance guard regressions
+        shell: pwsh
+        run: ./tools/test-release.ps1
       - name: Core behavior and architecture
         shell: pwsh
         run: ./tools/test-core.ps1

@@ -6,12 +6,16 @@ on:
         type: string
         required: false
         default: '0.1.0-preview.observation'
+      source_ref:
+        type: string
+        required: false
+        default: ''
   workflow_dispatch:
     inputs:
       version:
         description: '版本号（如 0.1.0-preview.1 或 1.0.0）'
         required: true
-        default: '0.1.0-preview.1'
+        default: '0.2.0-preview.20261009.1'
 permissions:
   contents: read
 jobs:
@@ -21,7 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ inputs.source_ref || github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
@@ -29,7 +33,7 @@ jobs:
         shell: pwsh
         env:
           AXIOM_RELEASE_VERSION: ${{ inputs.version }}
-          AXIOM_SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+          AXIOM_SOURCE_COMMIT: ${{ inputs.source_ref || github.event.pull_request.head.sha || github.sha }}
         run: ./tools/publish-package.ps1 -Version $env:AXIOM_RELEASE_VERSION
       - uses: actions/upload-artifact@v7
         with:

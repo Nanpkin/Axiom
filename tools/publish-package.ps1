@@ -5,6 +5,8 @@ param(
     [switch]$SkipInstaller
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'release-validation.ps1')
+$Version = Get-AxiomReleaseVersion $Version
 . (Join-Path $PSScriptRoot 'artifact-paths.ps1')
 New-Item -ItemType Directory -Path (Join-Path $AxiomRepoRoot 'artifacts') -Force | Out-Null
 $buildLock = [IO.File]::Open((Join-Path $AxiomRepoRoot 'artifacts/build.lock'), [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
