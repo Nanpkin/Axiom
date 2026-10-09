@@ -13,9 +13,13 @@ public static class AutomationTemplates
     private static readonly Recipe[] Recipes =
     [
         new("lock-pause-current-media", "锁屏后暂停Windows当前媒体", "锁屏的新通知后，向Windows选中的当前媒体会话请求暂停一次；目标可能是播放器或浏览器，不指定程序。没有媒体会话或播放器不支持时会说明，解锁不自动播放。", SystemEventCapabilities.Event, CurrentMediaCapabilities.Control, [("event", "locked")], [("operation", "pause")]),
+        new("multi-display-awake", "多屏工作期间保持系统唤醒", "Windows逻辑桌面至少2个显示器且状态已知时持有系统唤醒请求，屏幕仍可关闭；退回单屏、未知或暂停后释放。首次已多屏即可生效，不保证物理屏幕数量，不阻止用户手动睡眠。", DisplayCountCapabilities.Count, KeepAwakeCapabilities.Hold, [("comparison", "at-least"), ("count", "2")], [("target", "system")]),
+        new("single-display-primary-window", "返回单屏后整理工作窗口", "选择程序完整路径；只在Windows逻辑桌面新变为恰好1屏时，把一个匹配主窗口放到主屏中央80%。最小化或最大化先还原，首次单屏和睡眠恢复不补移动，不保存或恢复旧布局。", DisplayCountCapabilities.Count, WindowMonitorCapabilities.Move, [("comparison", "exact"), ("count", "1")], [("monitor", "primary")]),
+        new("internet-tools", "Windows报告Internet可用后启动工具", "选择同步或工作工具；只在Windows报告的新可用状态后请求启动，首次已有Internet不补执行。不主动探测，不保证目标服务可达，VPN或NCSI策略可能影响报告；未知不当作离线。", InternetConnectivityCapabilities.State, "program.start", [("state", "available")], []),
         new("launch-companion", "打开程序后启动配套工具", "选择检测程序和要启动的工具；工具已运行时跳过，结束后不自动关闭。", "process.running", "program.start", [], []),
         new("cleanup-companion", "程序退出后关闭配套工具", "只请求正常关闭最近启动的一个匹配实例；不强制结束、不自动重开，未保存内容可能需要确认。", "process.exited", "program.close", [], [("mode", "graceful"), ("instances", "latest")]),
         new("window-cleanup", "工作窗口全部消失后收尾", "选择工作程序和配套工具；全部工作主窗口隐藏或销毁后请求正常关闭配套工具最新实例。最小化不触发，程序可能仍在后台；不强杀、不自动重开。", WindowPresenceCapabilities.Absent, "program.close", [], [("mode", "graceful"), ("instances", "latest")]),
+        new("maximized-window-awake", "指定程序窗口最大化期间保持唤醒", "选择程序完整路径；任意一个可见主窗口最大化时持有系统及屏幕唤醒请求。全部还原、最小化、隐藏或未知后释放，暂停也释放；首次已最大化即可生效。最大化不等于全屏演示，不阻止用户主动睡眠。", WindowStateDetectionCapabilities.StateIs, KeepAwakeCapabilities.Hold, [("state", "maximized")], [("target", "display")]),
         new("restore-work", "睡眠恢复后打开工作工具", "选择要启动的程序；恢复不等于已经解锁，已运行则跳过，不补发之前的唤醒。", SystemEventCapabilities.Event, "program.start", [("event", "resumed")], []),
         new("low-battery-dim-panel", "电池电量低于阈值时调暗内置屏幕", "默认低于25%且使用电池时，把支持的活动内置屏幕设为30%；可修改阈值。首次已低电量不补执行，接电或电量恢复不自动改回，外接屏幕不受此动作控制。", PowerStateCapabilities.State, BuiltInBrightnessCapabilities.Set, [("mode", "battery-below"), ("threshold", "25")], [("percent", "30")]),
         new("plugged-in-awake", "接电期间保持系统唤醒", "接电且状态已知时持有Axiom自己的系统电源请求，允许屏幕关闭；拔电、状态未知或暂停后释放。首次接电即生效，不修改全局电源方案，不阻止用户主动睡眠。", PowerStateCapabilities.State, KeepAwakeCapabilities.Hold, [("mode", "ac")], [("target", "system")]),

@@ -92,6 +92,19 @@ Engine在新条件边沿/事件进入延迟前、延迟deadline以及队列取�
 
 `PowerStatePlugin`的`power.state`使用`mode=ac|battery|battery-below`及1–99整数`threshold`，只将低电模式编码成`battery-below:N`；严格低于且电池供电，接电结束低电条件。`WindowsPowerState`复用`WindowsSessionEvents(powerOnly:true)`的供电来源/电量通知，每批最多64提示后GetSystemPowerStatus读取共享快照，无轮询；新增GUID注册失败只拒绝power消费者。供电255、电量255、查询故障或无电池却报告电池供电等矛盾状态为相关Unknown，无电池不当低电。首次/恢复/睡眠恢复baseline不补Command；持续保持唤醒按已知当前条件持有，结束、Unknown、暂停或停止释放。
 
+## 窗口状态条件
+
+`WindowStateDetectionPlugin`提供schema 1检测`window.state-is`，`executable`为1–32完整exe路径，`state=minimized|maximized|normal`；每个路径/状态是独立bool资源，多路径编译Any true。只认可见顶层无拥有者HWND，最小化优先于最大化位，normal不包含隐藏/不存在。同名路径不合并；文件名只排除明确无关进程，最终核验SID/会话/完整路径、固定进程句柄/创建时间/存活和HWND所属PID。不读取标题或正文；已知满足压过Unknown，只有可能满足所选状态的未知身份影响该状态。
+
+先接共享`WindowsWindowEvents`再一次`EnumWindows`，随后仅按事件读当前HWND，最多256已排队提示去重，无周期扫描。新增最小化开始/结束hook由`requireMinimizeEvents`显式要求，注册失败只拒新检测，既有窗口动作/出现/观察保持原hook。最多128订阅资源、4096相关窗口，源/容量故障整体Unknown、不自动重连；首次及Unknown后恢复逐资源baseline，不补Command，已知初始Desired可保持唤醒。短暂往返变化可能合并，最大化不等于全屏或手动调整证据；组合排除`window.state`/`window.monitor`自身反馈，允许程序、窗口关闭、打开目标、通知及保持唤醒。
+
+新增声明进入真实注册、Agent及导入校验；AI只能用当前观察应用别名映射本地路径。最大匿名摘要仍限定64KiB，完整字段ID/schema/类型/必填/长度/非空范围/默认值/选项与组合保留；在既有说明/hint缩减仍超限时，Infrastructure的compact序列化仅省略`TaskField.DefaultValue/Minimum/Maximum/Group`为null的可选字段，反序列化仍为null、非null原样保留。分类/字段展示名/能力名称和选项标签保留，omissions解释缺失表示未声明值，不改变授权或校验；Domain不增加JSON属性、不升级协议或放大预算，完整往返回归不减断言。
+
+## 显示数量与Internet条件
+
+`DisplayCountPlugin`的schema 1 `display.count`接受`comparison=at-least|exact`和1–16整数`count`，资源规范化为`at-least:N|exact:N`，Provider拒非canonical资源。`WindowsSessionEvents`追加`displayOnly`最后可选参数，只收WM_DISPLAYCHANGE/恢复，原系统/时钟/USB/供电租约语义不变。同隐藏窗口线程共享通知，64提示合并后一次`EnumDisplayMonitors`计数服务全部最多32条件；只有完整1–64个逻辑屏才Known，0/失败/超64/通知故障Unknown，不当单屏。首次/睡眠恢复/Unknown恢复baseline不补Command；Desired已知初始可持有，结束/Unknown/暂停释放。逻辑数量不是物理数量、设备身份或屏幕布局；不存HMONITOR/ID/坐标，窗口动作执行前自行核验。
+
+`InternetConnectivityPlugin`的schema 1 `network.internet-state`接受`state=available|unavailable`，编译同一`windows-report` bool资源的true/false条件。`WindowsInternetConnectivityEvents`共享MTA Network List Manager connection point，回调只排有界提示，之后读取当前IPv4/IPv6 Internet标志，无ping/HTTP或周期查询；订阅/查询/服务失败及未知标志保持Unknown，明确本地/断开才为false。通知或消费者队列溢出即标故障，包括COM查询仍阻塞的情形；Provider丢弃失效源全部缓存Known，先发布Unknown再释放/等待重启，不使用失效快照继续授权或触发。初始/重新启用/Unknown恢复只建baseline，持续条件可持有唤醒请求、未知释放；源故障不自动重订阅。组合为程序启动、打开目标、通知及保持唤醒，不把Windows报告当应用可达性或网络可信性，不采名称/SSID/IP/位置/设备标识。末租约注销/释放，各消费者独立取消。
 
 ## Windows当前媒体控制
 

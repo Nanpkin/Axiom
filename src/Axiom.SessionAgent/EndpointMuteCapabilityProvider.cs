@@ -20,6 +20,7 @@ internal sealed class EndpointMuteCapabilityProvider(Func<string[], IEndpointMut
             source = (connect ?? ConnectWindows)([.. resources.Select(r => r.ResourceId)]);
             await foreach (var sample in source.Events.ReadAllAsync(token))
             {
+                if (source.Failed) throw new IOException("静音状态源已失效；丢弃积压状态。");
                 var resource = resources.SingleOrDefault(r => r.ResourceId == sample.Endpoint);
                 if (resource is null) continue;
                 publish(new(sample.Baseline, [new(resource, sample.Muted.HasValue ? StateQuality.Known : StateQuality.Unknown,
@@ -29,9 +30,9 @@ internal sealed class EndpointMuteCapabilityProvider(Func<string[], IEndpointMut
         }
         catch (Exception error) when (!token.IsCancellationRequested && error is not (OutOfMemoryException or StackOverflowException))
         {
-            source?.Dispose(); source = null;
             publish(new(false, [.. resources.Select(r => new ProviderSample(r, StateQuality.Unknown, "axiom.bool", 1,
                 Reason: "默认设备静音通知不可用；请检查Windows音频服务，再暂停并重新启用规则或重启后台。"))]));
+            source?.Dispose(); source = null;
             await Task.Delay(Timeout.Infinite, token); // Do not spin COM reactivation or interrupt unrelated providers.
         }
         finally { source?.Dispose(); }
