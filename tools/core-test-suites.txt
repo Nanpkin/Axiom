@@ -69,3 +69,4 @@ ForegroundWindowMonitorTests
 PowerSchemeStateTests
 PowerSaverStateTests
 ForegroundScreenCoverTests
+WorkPreparationTests
