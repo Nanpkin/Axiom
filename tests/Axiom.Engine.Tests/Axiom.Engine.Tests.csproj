@@ -1,5 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <Compile Include="../../src/Axiom.Providers.Windows/NetworkCategoryState.cs" Link="NetworkCategoryState.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/NetworkCategoryObservation.cs" Link="NetworkCategoryObservation.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsNetworkCategoryEvents.cs" Link="WindowsNetworkCategoryEvents.cs" />
+    <Compile Include="../../src/Axiom.SessionAgent/NetworkCategoryCapabilityProvider.cs" Link="NetworkCategoryCapabilityProvider.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/MediaPlaybackEvents.cs" Link="MediaPlaybackEvents.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/MediaPlaybackCapabilityProvider.cs" Link="MediaPlaybackCapabilityProvider.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/CurrentMediaOperation.cs" Link="CurrentMediaOperation.cs" />

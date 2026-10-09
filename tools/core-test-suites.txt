@@ -59,3 +59,4 @@ AudioPlaybackAdjustTests
 MediaPlaybackTests
 OpenTargetBatchTests
 ForegroundWindowLayoutTests
+NetworkCategoryTests
