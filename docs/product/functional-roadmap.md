@@ -50,6 +50,8 @@
 
 | 26 / 源码接通，Windows待验 | 新切入标准节能方案时调暗内屏，标准高性能期间保持唤醒 | `power.scheme-state`选择标准平衡/节能/高性能GUID，共享GUID_ACTIVE_POWERSCHEME通知后PowerGetActiveScheme只读、64提示合并 | 有效自定义GUID已知false，空GUID/失败/畸形/挂起Unknown；首次/恢复baseline，不切方案或匹配电源模式滑块，排除方案动作反馈。暂停模板、4项合成与Agent/Provider构建通过；原生/策略待Windows与实机 |
 
+| 27 / 源码接通，Windows待验 | Windows新报告离开后静音播放设备，或新在场后提醒 | `session.user-presence`在场/离开/不活跃，GUID_SESSION_USER_PRESENCE的USER_ACTIVITY_PRESENCE DWORD 0/1/2；无需选择exe/设备，无同步初读、输入hook或轮询 | 不是实际离座或任意空闲分钟；初次/Unknown恢复仅基线，挂起/恢复/会话变化Unknown，64合并保留重置且丢失立即失效清缓存。仅通知/默认播放音量静音，排除输入/屏幕/唤醒/锁定/媒体/开工具反馈；暂停静音模板、4直接案例及Agent/Provider构建通过，原生通知待WindowsCI/实机 |
+
 ## 保留的后续想法与已知 API 障碍
 
 - 有限有序动作仍有价值：一次打开计划文档、启动工具、整理窗口；之后围绕具体场景做最小逐项结果、失败策略和取消。当前不把工作流大框架或任意 AND 条件当作交付前置。

@@ -118,3 +118,11 @@
 用户可在通用编辑器选择“当前Windows电源方案”并组合亮度、音量、提醒、打开工具或保持唤醒，保存后独立暂停/启用；“使用标准节能方案后调暗内置屏幕”模板默认暂停。首次已成立可建立Desired请求，一次性动作只响应新边沿；结束、Unknown、暂停或停止收回Desired。UI退出仍由Session Agent检测。
 
 公开GUID_ACTIVE_POWERSCHEME通知为提示，64有界合并后一次PowerGetActiveScheme并LocalFree，无轮询或电源写入。有效自定义GUID是已知false；空GUID、读取失败、畸形通知/挂起为Unknown，恢复仅建基线。新注册失败仅拒新消费者，新消息不形成旧供电/电量动作边沿；队列溢出只使对应租约未知。4项合成状态/Provider/Engine/保存与严格导入检查，以及Agent/Provider交叉构建通过。新增Windows原生只读查询/自有窗口过滤与旧共享过滤复跑交由Windows CI；实际方案/策略/挂起恢复待设备验证，不称实机通过。
+
+## 本批Windows用户在场报告
+
+通用编辑器选择“Windows报告用户在场状态”，选择在场/离开/不活跃，再选通知或默认播放设备音量/静音；保存后暂停/启用，UI退出后台仍检测。“Windows报告离开后静音播放设备”模板默认暂停、明确mute（percent=30、delaySeconds=0），首次已离开不补执行，不自动恢复音量或静音。
+
+`session.user-presence`只读[公开GUID_SESSION_USER_PRESENCE](https://learn.microsoft.com/en-us/windows/win32/power/power-setting-guids)通知的USER_ACTIVITY_PRESENCE DWORD：0在场、1离开、2不活跃。在场是Windows报告输入活动，不活跃是系统活动超时；不支持任意空闲分钟，也不证明实际离座，无键盘内容/hook、轮询、同步初读或时间习惯推测。首次/重新启用/Unknown恢复只建基线；挂起/恢复/会话连接、登录或远程控制变化为Unknown。64提示按批合并到最新报告但保留Unknown→Known基线；快速中间状态可能合并。注册失败只拒新检测，溢出立即Failed丢缓存并保持Unknown直到暂停重启。媒体控制、开工具、合成输入、唤醒、屏幕及锁定动作排除。
+
+4项直接合成三态/Provider基线/失效缓存/Engine命令/保存和严格导入已通过，Agent及Windows Provider交叉构建零警告/错误。自有窗口通知解析/过滤/独立溢出案例及直接受影响旧过滤交Windows CI；Linux未执行原生API，没有实际静音、锁屏、关屏或输入。实际Windows三态出现、睡眠/会话通知时序与音频效果仍待实机验证；持续交付其他实用能力。

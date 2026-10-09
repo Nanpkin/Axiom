@@ -262,4 +262,40 @@ public sealed class WindowsSessionEventTests
         // Only reads and messages to our own window; never changes the real scheme.
     }
 
+    [Fact(Timeout = 15000)]
+    public async Task PresenceDwordStaysOptInResetsOnSessionChangeAndOverflowDiscardsItsCacheOnly()
+    {
+        using var system = new WindowsSessionEvents(); using var clock = new WindowsSessionEvents(clockOnly: true);
+        using var power = new WindowsSessionEvents(powerOnly: true); using var usb = new WindowsSessionEvents(usbOnly: true);
+        using var screen = new WindowsSessionEvents(screenPowerOnly: true); using var scheme = new WindowsSessionEvents(schemeOnly: true);
+        using var presence = new WindowsSessionEvents(presenceOnly: true);
+        Assert.Equal(system.NotificationWindow, presence.NotificationWindow);
+        while (presence.Events.TryRead(out _)) { }
+        var buffer = Marshal.AllocHGlobal(24); using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+        try
+        {
+            Marshal.StructureToPtr(new Guid("3C0F4548-C03F-4C4D-B9F2-237EDE686376"), buffer, false);
+            Marshal.WriteInt32(buffer, 16, 4);
+            foreach (var (raw, expected) in new[] { (0, "presence-present"), (1, "presence-absent"), (2, "presence-inactive"), (3, "presence-reset") })
+            {
+                Marshal.WriteInt32(buffer, 20, raw); SendMessage(presence.NotificationWindow, 0x0218, 0x8013, buffer);
+                Assert.Equal(expected, await presence.Events.ReadAsync(deadline.Token));
+            }
+            Marshal.WriteInt32(buffer, 16, 0); SendMessage(presence.NotificationWindow, 0x0218, 0x8013, buffer);
+            Assert.Equal("presence-reset", await presence.Events.ReadAsync(deadline.Token));
+            foreach (var source in new[] { system, power, usb, screen, scheme })
+                while (source.Events.TryRead(out var kind)) Assert.DoesNotContain("presence-", kind);
+            Assert.False(clock.ClockChanges.TryRead(out _));
+            SendMessage(presence.NotificationWindow, 0x02B1, 2, 0);
+            Assert.Equal("presence-reset", await presence.Events.ReadAsync(deadline.Token));
+            Marshal.WriteInt32(buffer, 16, 4); Marshal.WriteInt32(buffer, 20, 1);
+            for (var i = 0; i < 65; i++) SendMessage(presence.NotificationWindow, 0x0218, 0x8013, buffer);
+            Assert.True(presence.Failed); Assert.False(presence.Events.TryRead(out _));
+            foreach (var source in new[] { system, clock, power, usb, screen, scheme }) Assert.False(source.Failed);
+        }
+        finally { Marshal.FreeHGlobal(buffer); }
+        presence.Dispose(); Assert.False(system.Events.Completion.IsCompleted);
+        // Only messages to our own window; no user input, session switch, audio or display changes.
+    }
+
 }
