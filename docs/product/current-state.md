@@ -92,7 +92,7 @@ USB/移屏/锁屏批次 **6 Domain + 417 Engine = 423项**核心与最终Agent/H
 
 提交前按既有源码私路径/凭据/排除产物模式检查490个暂存可见文件并人工审阅本批41文件通过。原隐私脚本在云端用户名`agent`下把通用技术词Agent判为个人信息，故当地canonical检查未通过；未修改守卫，准确提交仍须GitHub通用runner运行原脚本验证。
 
-PR #3提交`2a05a53`的[Windows CI 37871863025](https://github.com/Starvan/Axiom/actions/runs/37871863025)已过549核心，原生58通过/1失败：窗口状态读取夹具同步void声明Timeout，执行前被xUnit拒绝。现改为真实异步Task，保留10秒超时和全部断言；Architecture元数据守卫直接使用当前xUnit的AsyncUtility.IsAsync核对整个测试程序集全部带Timeout的Fact/Theory，不运行原生API。修复前守卫准确失败、修复后Architecture9项通过；其余5项新增原生签名已核对，修复后的Windows执行与完整应用/包仍待准确head CI，不把失败夹具称为通过。静音窄修PR #2已过488核心/53原生及私有包，尚待合并授权，main仍f7814b6，首tag尚未发布。
+PR #3提交`2a05a53`的[Windows CI 37871863025](https://github.com/Starvan/Axiom/actions/runs/37871863025)已过549核心，原生58通过/1失败：窗口状态读取夹具同步void声明Timeout，执行前被xUnit拒绝。现改为真实异步Task，保留10秒超时和全部断言；Architecture元数据守卫直接使用当前xUnit的AsyncUtility.IsAsync核对整个测试程序集全部带Timeout的Fact/Theory，不运行原生API。修复前守卫准确失败、修复后Architecture9项通过；其余5项新增原生签名已核对，修复后的Windows执行与完整应用/包仍待准确head CI，不把失败夹具称为通过。静音窄修PR #2已过488核心/53原生及私有包；所有者已明确回复“允许合并并持续分批发布”，负责人已合入main e2602f965dc4ef4aa84a824c6b950be69629bbbf，首tag等待该main检查后发布，不再需要反复询问。
 
 原生跨阶段合成夹具已贯穿真实Win32事件→SQLite保存读回→证据/匿名摘要→暂停草稿→实际编译→删除；不在正式UI播种假记录。修复并保留了模式恢复边沿竞态、线程池退出等待句柄释放、最大化后最小化的两步还原回归。观察不再对无变化的重复/范围外样本重写整段SQLite记录；SQL触发器计数证明修复前应1次却3次，修复后通过，缺口与到期仍保存。这些不证明完整CPU/内存预算达标。
 
@@ -112,3 +112,5 @@ PR #3提交`2a05a53`的[Windows CI 37871863025](https://github.com/Starvan/Axiom
 尚未实现：按USB容器/型号或特定音频设备身份筛选、持久显示器身份/特定显示器组合匹配、任意窗口坐标复原、持续状态的时间段释放、通用多动作、自定义电源方案选择及外屏DDC/CI。窗口最小化/最大化/普通、逻辑显示数量和Windows报告Internet条件已接通，待下一批Windows验证。持续提出并交付实用能力，实机局部障碍不阻止其他独立源码。完整优先级及API障碍见[功能清单](functional-roadmap.md)。
 
 实现定位：[使用观察](../development/usage-observation.md)、[扩展任务指南](../development/extension-task-guide.md)、[代码定位表](../development/code-map.md)、[云端工作流](../development/cloud-workflow.md)。
+
+PR #3的fc41修复签名后，[run37872329703](https://github.com/Starvan/Axiom/actions/runs/37872329703) Linux测试543通过/1失败，Internet清理计数断言先于Dispose完成。合成门闩已准确复现“Unknown已发布、清理尚未完成”；测试改等SyntheticSource的清理完成TCS，再保留Disposed=1及只释放自身租约断言，另一个相同清理断言同步补等待，不改Provider先Unknown后Dispose顺序、不sleep。Internet30项针对回归通过；下一批分支待接入已合入main的静音窄修后核对最终核心、构建及Windows结果。
