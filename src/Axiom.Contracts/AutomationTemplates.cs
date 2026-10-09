@@ -13,6 +13,7 @@ public static class AutomationTemplates
     private static readonly Recipe[] Recipes =
     [
         new("lock-pause-current-media", "锁屏后暂停Windows当前媒体", "锁屏的新通知后，向Windows选中的当前媒体会话请求暂停一次；目标可能是播放器或浏览器，不指定程序。没有媒体会话或播放器不支持时会说明，解锁不自动播放。", SystemEventCapabilities.Event, CurrentMediaCapabilities.Control, [("event", "locked")], [("operation", "pause")]),
+        new("screen-off-mute", "当前会话屏幕关闭后静音", "Windows当前会话报告屏幕关闭后，将默认播放设备静音一次；不自动恢复。首次及睡眠恢复不补执行，不证明锁屏或每块物理屏已关闭，现代待机可能延迟执行。", SessionDisplayCapabilities.State, AudioPlaybackCapabilities.Set, [("state", "off")], [("operation", "mute"), ("percent", "30"), ("delaySeconds", "0")]),
         new("multi-display-awake", "多屏工作期间保持系统唤醒", "Windows逻辑桌面至少2个显示器且状态已知时持有系统唤醒请求，屏幕仍可关闭；退回单屏、未知或暂停后释放。首次已多屏即可生效，不保证物理屏幕数量，不阻止用户手动睡眠。", DisplayCountCapabilities.Count, KeepAwakeCapabilities.Hold, [("comparison", "at-least"), ("count", "2")], [("target", "system")]),
         new("single-display-primary-window", "返回单屏后整理工作窗口", "选择程序完整路径；只在Windows逻辑桌面新变为恰好1屏时，把一个匹配主窗口放到主屏中央80%。最小化或最大化先还原，首次单屏和睡眠恢复不补移动，不保存或恢复旧布局。", DisplayCountCapabilities.Count, WindowMonitorCapabilities.Move, [("comparison", "exact"), ("count", "1")], [("monitor", "primary")]),
         new("internet-tools", "Windows报告Internet可用后启动工具", "选择同步或工作工具；只在Windows报告的新可用状态后请求启动，首次已有Internet不补执行。不主动探测，不保证目标服务可达，VPN或NCSI策略可能影响报告；未知不当作离线。", InternetConnectivityCapabilities.State, "program.start", [("state", "available")], []),

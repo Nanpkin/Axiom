@@ -51,3 +51,4 @@ PowerStateTests
 InternetConnectivityTests
 DisplayCountTests
 CurrentMediaTests
+SessionDisplayTests
