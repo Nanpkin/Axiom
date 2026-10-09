@@ -100,4 +100,7 @@
 - [ ] 下一批准确提交的canonical隐私及Windows CI待统一完成；新增原生三类各2项已追加筛选，保留旧原生和发布守卫，不把尚未发布的新功能记入首发30模板。
 
 - [x] PR #3的2a05a53已推送，Windows run37871863025通过549核心、原生58通过/1失败；失败为同步窗口状态夹具带Timeout而未执行。已改async Task，保留10秒与全部断言；新增Architecture全测试程序集Timeout元数据守卫复用当前xUnit异步签名分类，修前准确失败、修后9项通过，另5新增原生签名已核对。
-- [ ] 修复后的准确head Windows原生/完整应用与包仍待CI；静音窄修PR #2的488核心/53原生及包已过、未获合并授权，main仍f7814b6且首tag未发布。
+- [ ] 修复后的准确head Windows原生/完整应用与包仍待CI；静音窄修PR #2的488核心/53原生及包已过，所有者明确授权“允许合并并持续分批发布”后已合入main e2602f9，首tag待main检查，不再重复询问。
+
+- [x] fc41的Linux run37872329703暴露Internet测试在Unknown之后立即读Disposed计数的竞态；合成清理门闩准确复现，改等Dispose完成TCS且保留次数断言，另一个同序列断言一并同步。产品Unknown先于cleanup不变、无sleep，Internet30项针对回归通过。
+- [ ] 接入main e2602f9静音窄修，实际验证最终核心计数、顺序构建后推送整合head；修复后的Windows原生结果仍待准确CI。
