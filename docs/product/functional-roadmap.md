@@ -10,13 +10,15 @@
 
 ## 已接通与不重复开发的范围
 
-已有程序/窗口/前台/系统/默认音频/文件到达/快捷键/多种定时检测及实用动作，时间门禁、保持唤醒、应用音量、Wi-Fi、标准电源方案、精确USB、移屏、锁屏、内屏亮度、默认静音和供电条件均已接通。已发布版本基线`e7ee2cb`已包含静音窄修、PR #3窗口状态/显示数量/Internet及PR #4发布输出修正；[准确main Windows检查37874601682](https://github.com/Starvan/Axiom/actions/runs/37874601682)成功。版本标签`v0.2.0-preview.20261009.2`指向该提交，[发布构建37874889575](https://github.com/Starvan/Axiom/actions/runs/37874889575)完成，[私有预览Release .2](https://github.com/Starvan/Axiom/releases/tag/v0.2.0-preview.20261009.2)已核验发布，含便携zip、安装exe、BUILD-INFO.json和SHA256SUMS.txt四项资产；范围为该基线34模板，不含后续39/42/43模板。主动观察、证据建议、离线AI与源码扩展路径继续复用；CI不能替代实机。
+既有程序/窗口/前台/系统/音频/文件/快捷键/定时及时间门禁、保持唤醒、应用音量、Wi-Fi、电源方案、USB、移屏、锁屏、亮度/静音/供电路径继续复用。当前main `45f53fa1cf5fa9135109e3d4b1b5ebf9edc38a59`包含前八项增量、47能力/43暂停模板；PR #6及main检查37877099033已成功，PR #7的[准确检查及包37877168648](https://github.com/Starvan/Axiom/actions/runs/37877168648)全部成功并已合入main。[准确main检查37877715982](https://github.com/Starvan/Axiom/actions/runs/37877715982)已全部成功。
+
+已发布[预览 .2](https://github.com/Starvan/Axiom/releases/tag/v0.2.0-preview.20261009.2)仍为`e7ee2cb`的34模板，已核验便携zip、安装exe、BUILD-INFO.json、SHA256SUMS.txt四项资产，不能代表后续十项功能。第四批计划以[PR #8](https://github.com/Starvan/Axiom/pull/8)及[预览 .3](https://github.com/Starvan/Axiom/releases/tag/v0.2.0-preview.20261009.3)核对最终检查与包；目前尚未发布，不替换所有者本机版本。
 
 已核对实际注册及相关声明：原系统USB事件仍是任意接口类别通知，显示检测仍是模式变化，普通网络检测是本机接口可用性，原音频检测是默认角色变化。独立Wi-Fi检测按配置文件名，独立USB检测按`USB_DEVICE`接口对应完整实例；移屏动作只选执行时主屏/相邻屏。它们不提供持久显示器身份、USB容器/型号筛选或具体音频设备选择。指定应用音量已独立接通；新候选不重做这些已有能力。
 
 ## 当前实现与下一批独立能力
 
-下表区分已验证源码和待发布能力。第一批`79f3202`的准确PR #5检查/包成功，已合main70c1b1a；44能力/39暂停模板。第二批`codex/audio-shortcuts`追加相对播放音量与麦克风切换，46能力/42暂停模板、5项整合检查及最终Agent/Host构建通过；最大目录实测超限后仅添加最后级组合分组fallback，原64KiB与完整参数/组合往返断言保持。第三批`codex/playback-state-integration`新增当前媒体状态及唤醒模板，当前47能力/43模板、4项必要整合检查和Agent/Host构建通过，原64KiB及完整往返保持。第二/三批Windows检查与实机另验，新功能尚未发布。每项贯穿配置保存→真实检测/动作→结果及失败原因→暂停→UI退出仍工作；按需通知与一次性动作不常驻扫描。
+本轮十项增量冻结，当前49能力/45暂停模板。第四批两项为批量打开工作目标、快捷键整理当前前台窗口，5项必要整合/原64KiB完整往返及Agent/Host构建通过；准确提交Windows CI、main和预览 .3待负责人核验。配置保存→真实检测/动作→结果/原因→暂停→UI退出仍工作；不以测试数或框架数量代替可用性。
 
 | 顺序 / 状态 | 日常痛点与组合价值 | 最小可靠实现与独立边界 | 恢复、未知与验收边界 |
 |---|---|---|---|
@@ -36,13 +38,15 @@
 | 14 / 当前main Windows已验 | 多屏期间保持系统唤醒，退回单屏后把工作窗口移主屏 | `display.count`至少/恰好1–16逻辑屏条件，共享显示变化/恢复通知；64提示合并后一次EnumDisplayMonitors计数服务最多32条件，不存ID/坐标、不轮询 | 空/失败/超64/通知故障Unknown，不能假单屏；首次/睡眠恢复/Unknown恢复不补Command，已知初始Desired可持有、结束或未知释放。镜像/RDP/虚拟屏不是物理数量；17项合成及2个新增暂停模板已过、2项只读原生已过main CI |
 | 15 / 当前main Windows已验 | Windows报告Internet新可用后启动同步/工作工具，或在已知状态期间保持唤醒 | `network.internet-state`选择available/unavailable，同一Windows报告bool资源；共享MTA Network List Manager connection point通知后读IPv4/IPv6 Internet flags，无ping/HTTP/周期查询，不采网络标识 | 仅明确本地网络/断开为不可用；服务/查询/订阅失败及未知标志Unknown，失效后先Unknown并丢弃旧Known缓存。首次/重新启用/恢复不补Command，Unknown释放Desired；VPN/NCSI可能影响，不保证任意网站/服务可达。30项合成回归和暂停工具启动模板已接，2项只读订阅原生已过main CI |
 | 16 / 第一批Windows已验 | 背景工具启动后降低CPU调度优先级，或按快捷键/定时一次恢复正常 | `program.priority`选择1–32完整exe路径、below-normal/normal/above-normal；执行时捕获同用户同会话实例，固定句柄/创建时间/路径/SID核验，GetPriorityClass/SetPriorityClass后读回，5秒单准入有界执行，无后台扫描 | 未运行/权限不足/身份未知/读回差异和部分完成明确；不启动或控制未来实例，暂停/结束不恢复，取消/超时可能已写。程序运行模板按文件名组从无到有，组仍运行时新增实例不补发；4项合成与模板验收已过，第一批最大匿名目录已过原64KiB及完整往返检查 |
-| 17 / 已接通，合成已验、Windows待验 | 同一全局快捷键切换通信麦克风静音，避免为静音/开麦记两组按键 | 独立`audio.microphone-toggle`保持原明确静音动作schema；对执行开始时默认eCapture/eCommunications端点GetMute→SetMute反向值→GetMute一次确认，复用WindowsAudioPlayback单准入与端点绑定 | 当前状态读失败不写，取消静音可能恢复收音；不改输入音量、录音内容、应用路由或硬件状态，取消/超时可能已写，不重试或恢复。4项合成与暂停快捷键模板通过，不操作真实麦克风；实机角色/设备变化待验，第二批全目录原64KiB及完整往返已过 |
+| 17 / 已合main，Windows已验 | 同一全局快捷键切换通信麦克风静音，避免为静音/开麦记两组按键 | 独立`audio.microphone-toggle`保持原明确静音动作schema；对执行开始时默认eCapture/eCommunications端点GetMute→SetMute反向值→GetMute一次确认，复用WindowsAudioPlayback单准入与端点绑定 | 当前状态读失败不写，取消静音可能恢复收音；不改输入音量、录音内容、应用路由或硬件状态，取消/超时可能已写，不重试或恢复。4项合成与暂停快捷键模板通过，不操作真实麦克风；实机角色/设备变化待验，第二批全目录原64KiB及完整往返已过 |
 | 18 / 第一批Windows已验 | 锁屏或快捷键暂停当前媒体，屏幕关闭后停止播放 | `media.current-control`公开GSMTC，执行时Windows选中会话，pause/play/previous/next；支持核验、当前会话代次、单次接受回执，不采集曲目 | 已暂停/播放明确no-op；无会话/不支持/权限失败明确。检查后切换可能仍操作固定旧会话，不改控新会话；取消不恢复/重试，真实播放器和权限待实机 |
 | 19 / 第一批Windows已验 | 当前会话屏幕关闭后静音或暂停媒体 | `screen.state`共享GUID_SESSION_DISPLAY_STATUS通知，亮/暗/关三态；无初始同步查询/轮询，挂起/恢复/连接变化Unknown | 首次及Unknown恢复建基线不补Command，状态不证明物理每块面板；2项自有窗口合成消息已过PR #5 CI，真实亮暗关闭待验 |
 | 20 / 第一批Windows已验 | 快捷键或前台切换把窗口摆到四角，减少拖动 | 原`window.state`追加四角2×2布局，当前工作区、完整路径/身份及创建时间核验、一次还原/移动并读回 | 无持续压制或旧布局恢复；7项自有窗口原生已过PR #5 CI，混合DPI/负坐标/拒绝调整待实机；观察近似布局分类不扩展 |
 | 21 / 第一批已接通，实机待验 | 锁屏后请求关闭屏幕，或快捷键关闭屏幕而后台工作继续 | `display.off-request`仅快捷键/系统事件；SID与WTS活动会话核验，已锁定也可，临时自有窗口一次SC_MONITORPOWER，5秒有界单准入 | 只表示Windows接受，物理状态未确认；输入/驱动/保持屏幕唤醒请求可能影响，不锁屏/睡眠/改计划、不恢复或重试。自动检查不关屏，真实效果待实机 |
 | 22 / 第二批已接通，实机待验 | 快捷键逐次提高/降低播放音量，或时段内间隔调整 | `audio.playback-adjust`±1–100整数百分点，当前默认eRender/eConsole一次绑定、读当前值→限幅0–100→写/读回，共用音频准入；两个±5暂停模板 | 未知/非有限初值不写，不碰静音，默认变化不改控新设备；外部修改可能交错，取消/超时可能已写，不恢复/重试。5项整合含严格导入/最大目录通过，实际设备/路由待验 |
-| 23 / 第三批已接通，实机待验 | 播放视频期间避免自动睡眠，暂停/停止后释放；新状态边沿调整音频或提醒 | `media.playback-state`playing/paused/stopped，按需共享GSMTC通知；当前会话代际、先订阅后读及原生身份核验，无轮询/应用ID/曲目 | 无会话三个条件均false，访问/查询/通知失败Unknown释放；首次/切换/Unknown恢复不补Command，首次已知Desired可持有。允许相对音量/麦克风切换，排除媒体控制/程序启停/合成输入反馈；六项源风险及四项整合通过，真实权限/回调/Power Request待验 |
+| 23 / 已合main，实机待验 | 播放视频期间避免自动睡眠，暂停/停止后释放；新状态边沿调整音频或提醒 | `media.playback-state`playing/paused/stopped，按需共享GSMTC通知；当前会话代际、先订阅后读及原生身份核验，无轮询/应用ID/曲目 | 无会话三个条件均false，访问/查询/通知失败Unknown释放；首次/切换/Unknown恢复不补Command，首次已知Desired可持有。允许相对音量/麦克风切换，排除媒体控制/程序启停/合成输入反馈；六项源风险及四项整合通过，准确PR #7 CI及包通过，真实权限/回调/Power Request待验 |
+| 24 / 第四批已接通，实机待验 | 一个快捷键打开工作目录、计划文档和网页，减少逐项准备 | `open-target.batch`最多8项手工类型名单，每项255字符；全体类型/存在性/本机预检后顺序打开，复用原Shell入口/单准入和整批8秒 | 失败/取消/超时停止后续，只计数/序号回执，未确认项可能已打开；不回滚/重试，AI空名单待手填。原target.open不变，默认关联/混合目标与权限待实机 |
+| 25 / 第四批已接通，实机待验 | 快捷键将当前正在用的窗口摆到左右或四角，无需预设每个exe | `window.foreground-layout`仅快捷键、七种布局；先事件订阅再捕获一个HWND，固定用户/会话/创建身份；Unknown/销毁/切走停止，每写前核验、一次还原/布局读回 | 不改控新前台或同应用别的窗口，排除自身/桌面/任务栏/对话框，5秒单准入/3秒确认、原生工作未完保留租约；取消可能已改、不恢复，实际DPI/限制/竞态待实机 |
 
 ## 保留的后续想法与已知 API 障碍
 
@@ -52,8 +56,8 @@
 - 文件自动归档：已有文件名新建/重命名通知不证明写入/下载完成。若做复制/移动，要先选具体受支持流程，说明重名、占用、取消和数据保留；不存在通用“文件已下载完成”事件，不能默默轮询所有目录。
 - 用户空闲/持续无操作：通用 `GetLastInputInfo` 只提供查询，并无可靠的任意空闲阈值系统通知。没有合规低成本设计及取舍证据时不提升为下一项，更不能开启键盘 hook 或采集输入正文。
 
-## 多代理接续与持续交付
+## 多代理接续与阶段交付
 
-所有者授权多agent并行、负责人只监督协调，主力`gpt-6.1-sol` / `high`。本批五项用户能力固定范围，完成相关验证及时commit/push，再由负责人核对准确提交CI、合并main及阶段发布。第二批相对播放音量和麦克风静音切换、第三批当前媒体状态均独立整合，不扩大已完成第一批范围。第一批[PR #5](https://github.com/Starvan/Axiom/pull/5)已在准确head[检查及打包37875465496](https://github.com/Starvan/Axiom/actions/runs/37875465496)全部成功后合入main `70c1b1a6f06300e2e9b9a28d817e251a57d2939c`；[main检查37876183404](https://github.com/Starvan/Axiom/actions/runs/37876183404)进行中。第二批[PR #6](https://github.com/Starvan/Axiom/pull/6)已改以main为目标，[准确检查37875957769](https://github.com/Starvan/Axiom/actions/runs/37875957769)进行Windows应用/打包，尚未合并发布。包与提交一一绑定，局部实机阻塞不阻止其他独立源码。
+所有者授权多agent实施、负责人只协调审查和Git/GitHub操作，主力`gpt-6.1-sol` / `high`；完成相关检查及时commit/push，以准确PR、main、版本标签与包核验。本轮十项功能固定范围，第四批结束后完成预览 .3交付，后续具体需求再延展，不无限开框架或追加无功能回归。
 
-每轮只补会挡住用户功能、构建、隐私或真实正确性的接入与修复。新能力使用通用编辑保存、注册、Provider与严格导入；需要持续恢复才定义本能力接管/释放。第二批最大目录触及预算，最后级组合按检测分组，全部允许对往返、参数和原64KiB均实际通过；不因候选增长降低约束或铺压缩框架。已发布版本基线`e7ee2cb`已包含静音窄修、PR #3窗口状态/显示数量/Internet及PR #4发布输出修正；[准确main Windows检查37874601682](https://github.com/Starvan/Axiom/actions/runs/37874601682)成功。版本标签`v0.2.0-preview.20261009.2`指向该提交，[发布构建37874889575](https://github.com/Starvan/Axiom/actions/runs/37874889575)完成，[私有预览Release .2](https://github.com/Starvan/Axiom/releases/tag/v0.2.0-preview.20261009.2)已核验发布，含便携zip、安装exe、BUILD-INFO.json和SHA256SUMS.txt四项资产；范围为该基线34模板，不含后续39/42/43模板。
+每项只补挡住用户路径、构建、隐私或真实正确性的接入与修复。原64KiB、完整机器参数/允许对往返和状态Unknown边界保持；实机局部障碍记录后由所有者安排，不能冒充已通过，也不重复过期流水。

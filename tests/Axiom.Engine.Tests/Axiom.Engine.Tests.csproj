@@ -25,6 +25,8 @@
     <Compile Include="../../src/Axiom.SessionAgent/EndpointMuteCapabilityProvider.cs" Link="EndpointMuteCapabilityProvider.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/EndpointMuteState.cs" Link="EndpointMuteState.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsEndpointMuteEvents.cs" Link="WindowsEndpointMuteEvents.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/CapturedWindowLifetime.cs" Link="CapturedWindowLifetime.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/ForegroundWindowLayoutOperation.cs" Link="ForegroundWindowLayoutOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowMonitorGeometry.cs" Link="WindowMonitorGeometry.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsWindowMonitor.cs" Link="WindowsWindowMonitor.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/UsbDeviceCapabilityProvider.cs" Link="UsbDeviceCapabilityProvider.cs" />
@@ -45,6 +47,7 @@
     <Compile Include="../../src/Axiom.Providers.Windows/FileArrivalSource.cs" Link="FileArrivalSource.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/MicrophoneToggleOperation.cs" Link="MicrophoneToggleOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/AudioPlaybackAdjustOperation.cs" Link="AudioPlaybackAdjustOperation.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/OpenTargetBatchOperation.cs" Link="OpenTargetBatchOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/AudioPlaybackOperation.cs" Link="AudioPlaybackOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/ProgramPriorityOperation.cs" Link="ProgramPriorityOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/ApplicationAudioOperation.cs" Link="ApplicationAudioOperation.cs" />

@@ -145,3 +145,11 @@ Internet条件：`InternetConnectivityCapabilities → InternetConnectivityPlugi
 
 匿名摘要最后级组合压缩：`UsageAnalysis.Summary`仅在原64KiB真实超限时把允许组合按检测ID分组；Prompt/omissions说明键和值。严格Import和CapabilityCatalog不变。`UsageObservationTests.FullProductionCatalogAndMaximumObjectDictionaryFitExportWithoutDeviceIdentityOrLostParameters`验证128对象/12handled/提示词/CRLF、全部字段约束及分组展开后的完整允许对；`core-test-suites.txt`登记四个现有新动作针对性套件，无新增测试框架。
 当前媒体播放条件：`MediaPlaybackCapabilities/MediaPlaybackPlugin` → `MediaPlaybackCapabilityProvider` → `WindowsMediaPlayback`的公开GSMTC投影 → `MediaPlaybackHub`共享有界工作线程。CurrentSessionChanged立即失效代际；先订阅选中会话PlaybackInfoChanged再读并核验当前选择，旧会话回调不入队。末消费者取消并在原线程注销，未完成清理阻止新共享线程。`MediaPlaybackTests`6项覆盖共享/取消、旧代际、查询Unknown恢复、无会话、溢出先Unknown和Engine/严格导入/保存/暂停模板；Windows实际API与权限待验。第三批整合追加相对播放音量/麦克风切换组合，原注册/严格导入/模板/保存回归直接验证新组合，同时保持媒体控制与程序启停排除；最大47能力匿名摘要沿原分组fallback，完整机器参数与允许对往返保留。
+
+
+一组工作目标：`OpenTargetBatchCapabilities/Plugin/CapabilityProvider` → `WindowsOpenTarget.Batch` → `OpenTargetBatchOperation`。按中文类型标签分行，复用`OpenTargetCapabilities.Validate`的本机路径/文档白名单/无凭据http(s)规则；最多8项、每项255字符，通用TextList/EditAsList弹窗。全部配置与可访问性/DriveType预检先完成，复用原`WindowsOpenTarget.Open`和同一Commands准入、整批8秒；逐项顺序请求，失败/取消/超时停止后续，线程安全进度只输出数量/项序号。`OpenTargetBatchTests`4项合成案例覆盖保存/导入/模板、全部预检/顺序/部分失败、取消和超时仍持有准入；不真正启动Shell，原单目标动作语义不变。
+
+
+当前前台窗口布局：`ForegroundWindowLayoutCapabilities/Plugin/CapabilityProvider` → `WindowsForegroundWindowLayout` → `ForegroundWindowLayoutOperation`。hotkey-only、布局字段，无exe或HWND输入；共享`WindowsWindowEvents(trackCaptureLifetime:true)`在捕获前订阅、一次Bind，`CapturedWindowLifetime`有界记录绑定前销毁和绑定后失效。固定HWND/PID/thread、进程句柄/创建时间/完整路径/SID/session，每次写前仍须前台；复用`RestoreNormalAsync`新增可选guard（旧默认不改）及`WindowLayoutGeometry`，3秒事件读回、`BoundedNativeCommand`5秒单准入/关停Drain。`ForegroundWindowLayoutTests`4项合成覆盖参数/严格导入、身份/前台/销毁、结果和取消，不操作真实窗口；暂停模板走已有编辑器与注册。
+
+第四批共用注册/模板/严格导入仍在`BuiltInAutomationPlugins`、`GameHdrAgent`、`AutomationTemplates`、`UsageAnalysis`；`OpenTargetBatchTests`原注册用例追加合成SQLite保存读回，`ForegroundWindowLayoutTests`核验快捷键唯一组合及layout-only导入。`core-test-suites.txt`登记两个既有套件；49能力最大匿名字段/组合回归保持原64KiB及已有压缩，不新增框架。

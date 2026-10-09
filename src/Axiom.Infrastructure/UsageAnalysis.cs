@@ -354,6 +354,8 @@ public static class UsageAnalysis
                 missing.Contains(field.Id) ? field with { Required = false } : field)] });
             if (resolved.CapabilityId == NotificationCapabilities.Show)
                 NotificationCapabilities.Validate(resolved with { Parameters = resolved.Parameters.SetItem("title", "review").SetItem("body", "review") });
+            if (resolved.CapabilityId == OpenTargetBatchCapabilities.Open)
+                OpenTargetBatchCapabilities.Validate(missing.Contains("targets") ? resolved with { Parameters = resolved.Parameters.SetItem("targets", "网页 | https://example.invalid/review") } : resolved);
             if (missing.Count > 0) return resolved;
             // Provider-specific constraints are also checked before offering the draft.
             if (resolved.CapabilityId == InternetConnectivityCapabilities.State) InternetConnectivityCapabilities.Validate(resolved);
@@ -369,6 +371,7 @@ public static class UsageAnalysis
             if (resolved.CapabilityId == SessionLockCapabilities.Lock) SessionLockCapabilities.Validate(resolved);
             if (resolved.CapabilityId == CurrentMediaCapabilities.Control) CurrentMediaCapabilities.Validate(resolved);
             if (resolved.CapabilityId is UsbDeviceCapabilities.Present or UsbDeviceCapabilities.Absent) UsbDeviceCapabilities.Validate(resolved);
+            if (resolved.CapabilityId == ForegroundWindowLayoutCapabilities.Layout) ForegroundWindowLayoutCapabilities.Validate(resolved);
             if (resolved.CapabilityId == WindowMonitorCapabilities.Move) WindowMonitorCapabilities.ValidateTargets(resolved);
             if (resolved.CapabilityId == PowerSchemeCapabilities.Set) PowerSchemeCapabilities.Validate(resolved);
             if (resolved.CapabilityId == ProgramPriorityCapabilities.Set) ProgramPriorityCapabilities.Validate(resolved);
