@@ -14,7 +14,7 @@ public sealed class OpenTargetBatchTests
     private static (string Kind, string Target)[] Targets => [("url", "https://example.invalid/first"), ("url", "https://example.invalid/second"), ("url", "https://example.invalid/third")];
 
     [Fact]
-    public void ConfigurationUsesExistingSafeTypesAndManualOnlyImportWithPausedRegisteredTemplate()
+    public async Task ConfigurationUsesExistingSafeTypesAndManualOnlyImportWithPausedRegisteredTemplate()
     {
         var path = Path.Combine(Path.GetTempPath(), "SyntheticBatch");
         var invocation = Invocation($"目录 | {path}\r\n网页 | https://example.invalid/work\r\n文档 | {path}.pdf", "5");
@@ -41,6 +41,17 @@ public sealed class OpenTargetBatchTests
         Assert.True(draft.Paused); Assert.Equal(new[] { "工作目标列表" }, UsageAnalysis.MissingManualFields(draft, catalog));
         foreach (var invalid in new[] { invocation, Invocation("", "0.5"), Invocation("", "-1"), Invocation("", "86401"), Invocation("") with { Parameters = Invocation("").Parameters.Add("script", "") } })
             Assert.Throws<ArgumentException>(() => UsageAnalysis.Import(JsonSerializer.Serialize(proposal with { Action = invalid }), recorder.Session, catalog));
+        var completed = draft with { Action = invocation };
+        Assert.NotNull(compiler.Compile(completed, "owner", ResourceScope.Session("owner", 1)));
+        var database = Path.Combine(Path.GetTempPath(), "axiom-open-batch-" + Guid.NewGuid().ToString("N") + ".db");
+        try
+        {
+            using var store = new SqliteAutomationTaskStore(database);
+            await store.SaveAsync(completed, default);
+            var saved = Assert.Single(await store.ListAsync());
+            Assert.True(saved.Paused); Assert.Equal(invocation.Parameters["targets"], saved.Action.Parameters["targets"]);
+        }
+        finally { foreach (var suffix in new[] { "", "-wal", "-shm" }) File.Delete(database + suffix); }
     }
 
     [Fact]
