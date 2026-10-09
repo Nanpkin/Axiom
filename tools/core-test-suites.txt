@@ -64,3 +64,4 @@ SystemSoundTests
 
 NetworkCategoryTests
 ForegroundWindowMonitorTests
+ForegroundScreenCoverTests

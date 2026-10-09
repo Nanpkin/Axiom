@@ -231,4 +231,23 @@ public sealed class WindowsSessionEventTests
         // Empty snapshots are valid on runners without exposed USB hardware. This is API coverage, not an unplug test.
     }
 
+    [Fact(Timeout = 15000)]
+    public async Task ForegroundCoverReadOnlySharesSourcesAndReleasesItsLeases()
+    {
+        using var sibling = new WindowsForegroundEvents(); using var session = new WindowsSessionEvents();
+        var count = WindowsForegroundEvents.ActiveConsumers; var sessions = WindowsSessionEvents.ActiveConsumers;
+        using (var cover = new WindowsForegroundScreenCover())
+        {
+            Assert.Equal(count + 1, WindowsForegroundEvents.ActiveConsumers); Assert.Equal(sessions + 1, WindowsSessionEvents.ActiveConsumers);
+            var reading = cover.Read();
+            if (reading.Covers == true) Assert.NotNull(reading.Selection); // true always has a pinned app identity
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+            await cover.Events.ReadAsync(deadline.Token); // foreground subscription delivers its baseline hint
+            Assert.False(cover.Failed);
+        }
+        Assert.Equal(count, WindowsForegroundEvents.ActiveConsumers); Assert.Equal(sessions, WindowsSessionEvents.ActiveConsumers);
+        Assert.False(sibling.Failed); Assert.False(session.Failed);
+        // Reads only; never activates, moves, minimizes or maximizes the current user's window.
+    }
+
 }

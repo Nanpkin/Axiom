@@ -75,6 +75,9 @@
     <Compile Include="../../src/Axiom.Providers.Windows/ObservedProcessExitTracker.cs" Link="ObservedProcessExitTracker.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowPresenceState.cs" Link="WindowPresenceState.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsWindowPresence.cs" Link="WindowsWindowPresence.cs" />
+    <Compile Include="../../src/Axiom.SessionAgent/ForegroundScreenCoverCapabilityProvider.cs" Link="ForegroundScreenCoverCapabilityProvider.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/ForegroundScreenCoverObservation.cs" Link="ForegroundScreenCoverObservation.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsForegroundScreenCover.cs" Link="WindowsForegroundScreenCover.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsForegroundIdentity.cs" Link="WindowsForegroundIdentity.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsProcessIdentity.cs" Link="WindowsProcessIdentity.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsForegroundEvents.cs" Link="WindowsForegroundEvents.cs" />
