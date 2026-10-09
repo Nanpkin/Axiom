@@ -10,6 +10,7 @@ using Axiom.WinUI;
 namespace Axiom.Engine.Tests;
 
 [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+[Collection("Native application windows")]
 public sealed class WindowActionTests
 {
     [Fact]
@@ -84,8 +85,165 @@ public sealed class WindowActionTests
         Assert.True((await WindowsWindowActions.CloseAsync(Environment.ProcessPath!, first.Title, TimeSpan.FromSeconds(1), default)).Success);
     }
 
+    [Theory(Timeout = 10000)]
+    [InlineData("minimize")]
+    [InlineData("maximize")]
+    [InlineData("restore")]
+    public async Task WindowStateCommandsReadBackNativeStateAndLeaveLaterUserChangesAlone(string state)
+    {
+        using var target = new TrayWindow(); target.Show();
+        target.SetState(state == "restore" ? 3 : 9);
+        if (state == "restore") target.SetState(6); // native restore first returns this window to maximized
+        var result = await WindowsWindowActions.CloseAsync(Environment.ProcessPath!, target.Title, TimeSpan.FromSeconds(2), default, state);
+        Assert.True(result.Success, result.Reason);
+        Assert.True(state == "minimize" ? target.Minimized : state == "maximize" ? target.Maximized : !target.Minimized && !target.Maximized);
+        target.SetState(9); Assert.False(target.Minimized); Assert.False(target.Maximized);
+        Assert.Equal(0, target.CloseCount);
+    }
+    [Theory(Timeout = 10000)]
+    [InlineData("left")]
+    [InlineData("right")]
+    [InlineData("center")]
+    public async Task NativeLayoutMovesAndResizesWithinCurrentWorkArea(string layout)
+    {
+        using var target = new TrayWindow(); target.Show(); target.SetState(3); target.SetState(6);
+        var result = await WindowsWindowActions.CloseAsync(Environment.ProcessPath!, target.Title, TimeSpan.FromSeconds(2), default, layout);
+        Assert.True(result.Success, result.Reason); Assert.False(target.Maximized); Assert.False(target.Minimized); Assert.Equal(0, target.CloseCount);
+        Assert.True(target.Visible);
+        target.SetState(3); Assert.True(target.Maximized); // later user control remains possible
+    }
+    [Fact(Timeout = 10000)]
+    public async Task CancelledStateWaitDoesNotChangeALaterWindow()
+    {
+        using var target = new TrayWindow(); using var cancellation = new CancellationTokenSource();
+        var pending = WindowsWindowActions.CloseAsync(Environment.ProcessPath!, target.Title, TimeSpan.FromSeconds(3), cancellation.Token, "maximize");
+        cancellation.Cancel(); await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending);
+        target.Show(); Assert.False(target.Maximized); Assert.Equal(0, target.CloseCount);
+    }
+
+    [Fact(Timeout = 15000)]
+    public async Task WindowPresenceTracksShowHideAndRetainsSharedCommandSubscription()
+    {
+        using var target = new TrayWindow(); using var cancellation = new CancellationTokenSource();
+        var changes = System.Threading.Channels.Channel.CreateUnbounded<WindowPresenceValue[]>();
+        var observing = WindowsWindowPresence.ObserveAsync([Path.GetFileName(Environment.ProcessPath!)], s => changes.Writer.TryWrite(s), cancellation.Token);
+        var initial = await changes.Reader.ReadAsync(); Assert.False(initial.Single().Visible);
+        target.Show(); Assert.True((await changes.Reader.ReadAsync()).Single().Visible);
+        var result = await WindowsWindowActions.CloseAsync(Environment.ProcessPath!, target.Title, TimeSpan.FromSeconds(2), default);
+        Assert.True(result.Success, result.Reason); Assert.False((await changes.Reader.ReadAsync()).Single().Visible);
+        cancellation.Cancel(); await Assert.ThrowsAnyAsync<OperationCanceledException>(() => observing);
+        target.Show(); Assert.True(target.Visible);
+        Assert.True((await WindowsWindowActions.CloseAsync(Environment.ProcessPath!, target.Title, TimeSpan.FromSeconds(2), default)).Success);
+    }
+
+    [Fact(Timeout = 10000)]
+    public async Task TopmostAndUndoReadBackNativeStyleAndPreserveWindowSizeAndVisibility()
+    {
+        using var target = new TrayWindow(); target.Show();
+        var initial = target.Bounds;
+        var pinned = await WindowsWindowActions.CloseAsync(Environment.ProcessPath!, target.Title, TimeSpan.FromSeconds(2), default, "topmost");
+        Assert.True(pinned.Success, pinned.Reason); Assert.True(target.Topmost); Assert.Equal(initial, target.Bounds); Assert.True(target.Visible);
+        var unpinned = await WindowsWindowActions.CloseAsync(Environment.ProcessPath!, target.Title, TimeSpan.FromSeconds(2), default, "notopmost");
+        Assert.True(unpinned.Success, unpinned.Reason); Assert.False(target.Topmost); Assert.Equal(initial, target.Bounds); Assert.Equal(0, target.CloseCount);
+        target.SetState(6); Assert.True(target.Minimized); // no ongoing control after either command
+    }
+
+    [Fact(Timeout = 15000)]
+    public async Task WindowObservationReadsActualStatesAndStopsWithoutAffectingCommandConsumers()
+    {
+        using var target = new TrayWindow(); using var cancellation = new CancellationTokenSource();
+        var changes = System.Threading.Channels.Channel.CreateUnbounded<string>();
+        var observing = WindowsUsageWindows.RunAsync([], (_, kind, path) => { if (string.Equals(path, Environment.ProcessPath, StringComparison.OrdinalIgnoreCase)) changes.Writer.TryWrite(kind); }, cancellation.Token);
+        var received = new List<string>();
+        async Task ReadKind(string expected)
+        {
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+            try
+            {
+                while (true)
+                {
+                    var read = changes.Reader.ReadAsync(deadline.Token).AsTask();
+                    if (await Task.WhenAny(read, observing) == observing) await observing;
+                    var kind = await read; received.Add(kind); if (kind == expected) return;
+                }
+            }
+            catch (OperationCanceledException) when (deadline.IsCancellationRequested)
+            { throw new TimeoutException($"Expected {expected}; observed: {string.Join(", ", received)}; minimized={target.Minimized}, maximized={target.Maximized}, visible={target.Visible}."); }
+        }
+        try
+        {
+            target.Show(); await ReadKind("window-shown");
+            target.SetState(3); await ReadKind("window-maximized");
+            target.SetState(6); await ReadKind("window-minimized");
+            target.SetState(9); await ReadKind("window-maximized");
+            target.SetState(9); await ReadKind("window-normal");
+            foreach (var layout in new[] { "left", "right", "center" })
+            {
+                Assert.True((await WindowsWindowActions.CloseAsync(Environment.ProcessPath!, target.Title, TimeSpan.FromSeconds(2), default, layout)).Success);
+                await ReadKind("window-" + layout);
+            }
+            Assert.True((await WindowsWindowActions.CloseAsync(Environment.ProcessPath!, target.Title, TimeSpan.FromSeconds(2), default)).Success);
+            await ReadKind("window-hidden");
+        }
+        finally { cancellation.Cancel(); await Assert.ThrowsAnyAsync<OperationCanceledException>(() => observing); }
+        target.Show(); Assert.True((await WindowsWindowActions.CloseAsync(Environment.ProcessPath!, target.Title, TimeSpan.FromSeconds(2), default)).Success);
+    }
+
+    [Fact(Timeout = 20000)]
+    public async Task SyntheticNativeWindowEvidenceRoundTripsStorageAndBecomesOnlyAReviewedPausedDraft()
+    {
+        using var cancellation = new CancellationTokenSource();
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var records = System.Threading.Channels.Channel.CreateBounded<UsageSample>(128);
+        var recorder = new UsageRecorder(new(1, false, false, [], Purpose: "synthetic native window fixture", WindowStates: true), DateTimeOffset.UtcNow);
+        var observing = WindowsUsageWindows.RunAsync([], (at, kind, path) =>
+        {
+            if (string.Equals(path, Environment.ProcessPath, StringComparison.OrdinalIgnoreCase) && !records.Writer.TryWrite(new(at, kind, path)))
+                throw new IOException("Synthetic fixture queue overflowed.");
+        }, cancellation.Token);
+        async Task ReadThrough(string expected)
+        {
+            while (true)
+            {
+                var next = records.Reader.ReadAsync(deadline.Token).AsTask();
+                if (await Task.WhenAny(next, observing) == observing) await observing;
+                var sample = await next; recorder.Add(sample); if (sample.Kind == expected) return;
+            }
+        }
+        try
+        {
+            for (var i = 0; i < 3; i++)
+            {
+                using var window = new TrayWindow(); window.Show(); await ReadThrough("window-shown");
+                window.SetState(6); await ReadThrough("window-minimized");
+                window.SetState(0); await ReadThrough("window-hidden");
+            }
+        }
+        finally { cancellation.Cancel(); await Assert.ThrowsAnyAsync<OperationCanceledException>(() => observing); }
+        recorder.State("stopped", atUtc: DateTimeOffset.UtcNow);
+        var path = Path.Combine(Path.GetTempPath(), "axiom-synthetic-observation-" + Guid.NewGuid() + ".db");
+        try
+        {
+            using var journal = new UsageJournal(path); journal.Save(recorder.Session);
+            var session = Assert.Single(journal.Read(DateTimeOffset.UtcNow)); Assert.Equal("stopped", session.State);
+            var suggestion = Assert.Single(UsageAnalysis.Analyze(session)); Assert.Equal(3, suggestion.Occurrences); Assert.Equal(3, suggestion.Opportunities);
+            var modules = new IAutomationPlugin[] { new WindowPresencePlugin(), new WindowPlugin() };
+            var catalog = new AutomationSnapshot([], [.. modules.SelectMany(m => m.Detections.Select(d => d.Descriptor).Concat(m.Actions.Select(a => a.Descriptor)))],
+                [.. modules.SelectMany(m => m.Combinations)], true, "ready", "", DateTimeOffset.UtcNow, []);
+            var summary = UsageAnalysis.Summary(session, catalog);
+            Assert.Contains("synthetic native window fixture", summary); Assert.DoesNotContain(Environment.ProcessPath!, summary);
+            var draft = UsageAnalysis.Draft(session, suggestion, catalog);
+            Assert.True(draft.Paused); Assert.Equal(0, draft.Version); Assert.Equal("minimize", draft.Action.Parameters["state"]);
+            var compiler = new AutomationTaskCompiler();
+            foreach (var module in modules) { foreach (var d in module.Detections) compiler.Register(d); foreach (var a in module.Actions) compiler.Register(a); }
+            Assert.NotNull(compiler.Compile(draft, "owner", ResourceScope.Session("owner", 1)));
+            journal.Delete(session.Id); Assert.Empty(journal.Read(DateTimeOffset.UtcNow));
+        }
+        finally { File.Delete(path); }
+    }
+
     // Native fixture deliberately implements × as hide-to-tray, retaining its process.
-    private sealed class TrayWindow : IDisposable
+    internal sealed class TrayWindow : IDisposable
     {
         private readonly Thread thread;
         private readonly Proc procedure;
@@ -94,7 +252,16 @@ public sealed class WindowActionTests
         private int count;
         private nint handle;
         public string Title { get; } = "Axiom window fixture " + Guid.NewGuid();
+        public nint WindowHandle => handle;
         public int CloseCount => Volatile.Read(ref count);
+        public bool Topmost => (GetWindowLongPtr(handle, -20).ToInt64() & 8) != 0;
+        public (int Left, int Top, int Right, int Bottom) Bounds { get { Assert.True(GetWindowRect(handle, out var rect)); return (rect.Left, rect.Top, rect.Right, rect.Bottom); } }
+        [StructLayout(LayoutKind.Sequential)] private struct Rect { public int Left, Top, Right, Bottom; }
+        [DllImport("user32.dll", EntryPoint="GetWindowLongPtrW")] private static extern nint GetWindowLongPtr(nint window, int index);
+        [DllImport("user32.dll")] private static extern bool GetWindowRect(nint window, out Rect rect);
+        public bool Minimized => IsIconic(handle);
+        public bool Maximized => IsZoomed(handle);
+        public void SetState(int state) => SendMessage(handle, 0x8003, state, 0);
         public bool Visible => IsWindowVisible(handle);
         public TrayWindow(bool ignoreClose = false)
         {
@@ -115,6 +282,7 @@ public sealed class WindowActionTests
         private nint Handle(nint window,uint message,nint w,nint l)
         {
             if (message == 0x0010) { Interlocked.Increment(ref count); if (!ignoreClose) ShowWindow(window, 0); return 0; }
+            if (message == 0x8003) { ShowWindow(window, (int)w); return 0; }
             if (message == 0x8001) { DestroyWindow(window); return 0; }
             if (message == 0x0002) { PostQuitMessage(0); return 0; }
             return DefWindowProc(window,message,w,l);
@@ -132,6 +300,8 @@ public sealed class WindowActionTests
         [DllImport("user32.dll")] private static extern bool TranslateMessage(ref Message message);
         [DllImport("user32.dll")] private static extern nint DispatchMessage(ref Message message);
         [DllImport("user32.dll")] private static extern bool ShowWindow(nint window,int state);
+        [DllImport("user32.dll")] private static extern bool IsIconic(nint window);
+        [DllImport("user32.dll")] private static extern bool IsZoomed(nint window);
         [DllImport("user32.dll")] private static extern bool IsWindowVisible(nint window);
         [DllImport("user32.dll")] private static extern bool DestroyWindow(nint window);
         [DllImport("user32.dll")] private static extern void PostQuitMessage(int code);

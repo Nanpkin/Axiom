@@ -53,3 +53,73 @@ Host 自身生命周期检测位于 Host：`AxiomStartupPlugin → PluginTaskRun
 ## 用最少上下文完成任务
 
 先读当前交接和本轮相关入口，沿真实调用链补读必要实现/测试。变更前核对当前文件；不因摘要而跳过授权或关键语义检查。文档维护不启动应用、不重跑功能测试；代码行为变更按直接风险验证，真实 UI / 系统动作需相应实际证据。实现职责或文件名变化后更新本表，无需逐行复制代码说明。
+
+## 主动观察入口
+
+`WorkbenchWindow.Usage → AutomationProtocol usage → UsageObservationController → ProviderProtocol observe-usage → UsageObservationStream → WindowsUsageObservation`。前台 WinEvent 与共享进程启动通知；UI 租约和绝对截止时间同时约束生命周期。核心对象/请求在 `Contracts/UsageObservation.cs`，有界聚合和 SQLite 在 `Infrastructure/UsageJournal.cs`，统计/脱敏/导入/扩展任务在 `UsageAnalysis.cs`。测试 `UsageObservationTests`，行为见 [使用观察](usage-observation.md)。窗口整理通过原 WindowPlugin/Provider，声明 `window.state`；测试 `WindowStateTests`。
+
+系统会话/供电通知：`SystemEventCapabilities → SystemEventPlugin → SystemEventCapabilityProvider → WindowsSessionEvents`。同一共享订阅亦供主动观察使用，零消费者关闭隐藏消息窗口，无轮询；初始状态不补事件。测试 `SystemEventTests`。
+
+目录/网页动作：`OpenTargetCapabilities → OpenTargetPlugin → OpenTargetCapabilityProvider → WindowsOpenTarget`。仅目录或 http/https，Engine 延迟与取消，系统接受请求即返回明确回执；不能当页面加载确认。`OpenTargetTests` 验证协议/路径/编译。网络事件加入 `WindowsSessionEvents` 的按需 NetworkChange 订阅，不收集地址。
+
+前台应用：`ForegroundCapabilities → ForegroundPlugin → ForegroundCapabilityProvider → WindowsForegroundEvents/WindowsForegroundIdentity`。前台通知由规则与主动观察共享，规则事件唤醒后核验当前对象，Unknown 不当 false；先发布新的 true 再发布旧的 false，保持多选 Any 条件在组内切换时不误触发。`ForegroundTests` 和 Windows 共享租约回归覆盖对应边界。
+
+- 窗口出现检测：`WindowPresenceCapabilities` / `WindowPresencePlugin` / `WindowPresenceCapabilityProvider`；`WindowsWindowPresence` 初始枚举后接共享 `WindowsWindowEvents`，`WindowPresenceState` 有界聚合。`WindowsProcessIdentity` 复用进程路径/SID核验；纯逻辑 `WindowPresenceTests`，原生回归 `WindowActionTests`。
+
+- 使用观察的进程退出：`WindowsUsageObservation` 核验新进程后交 `ObservedProcessExitTracker` 持有有界等待句柄；暂停/退出全释放。`UsageOptions.ProcessExits` 显式范围，`UsageAnalysis` 退出对生成正常关闭暂停草稿；`ObservedProcessExitTests`、`UsageObservationTests` 验证边界。
+
+- 窗口状态观察：`WindowsUsageWindows` / `UsageWindowHistory` 接共享窗口源，仅状态变化记录；`UsageOptions.WindowStates` 显式范围，`UsageAnalysis.WindowPairs` 经证据形成暂停草稿。`UsageWindowTests` 和原生 `WindowActionTests` 验证基线、去重、容量及真实状态。
+
+常用场景：`AutomationTemplates` 从当前能力目录组合暂停草稿，`WorkbenchWindow.Templates` 选择并进入通用编辑器；`AutomationTemplateTests` 用实际插件注册验证补齐对象后可编译，缺能力/组合/枚举项时不展示。
+
+低电量事件：`WindowsSessionEvents` 注册/注销电量百分比系统通知；`BatteryThresholdEvents` 只从连续已知读数发出20%/10%向下穿越。复用 `SystemEventCapabilities`、观察与建议链，`BatteryThresholdTests` 验证未知/重启基线/重复/跨阈值，`WindowsSessionEventTests` 合成原生电量消息验证共享投递。
+
+窗口消失：`WindowAbsenceTaskDetection` 将用户的“全部消失”配置编译为现有 `window.visible` 资源的全否条件，不另开原生订阅；`WindowPresenceTests` 覆盖多选/未知及真实Engine的首次、重连、暂停、恢复边沿。
+
+周期计时：`IntervalCapabilities` 参数与整数校验，`IntervalPlugin` 事件编译和组合，`IntervalCapabilityProvider` 首快照零计数与会话事件，`IntervalEventSource` 单调时钟/最近到期单计时器/过期合并/取消；`IntervalTests` 用可控时钟验证共享、跳时及释放。计时检测不是动作延迟，后者仍由Engine负责。
+
+显示模式变化：共享 `WindowsSessionEvents` 接收 `WM_DISPLAYCHANGE` 但不保留载荷，复用系统事件能力和主动范围；`UsageAnalysis.DisplayLayoutPairs` 提取每次事件后同应用首个近似布局，`Draft` 将系统事件与窗口状态组合；合成原生通知与证据/暂停草稿回归分开验证。
+
+USB类别通知：`WindowsSessionEvents` 注册USB接口GUID、处理接入/移除头并注销句柄，不解析设备名称字段；经系统检测及主动观察进入 `UsageAnalysis.SystemPairs`，保留任意设备/重复通知限制。`WindowsSessionEventTests` 的合成通知验证共享投递，不模拟物理插拔。
+
+默认音频：`AudioCapabilities`/`AudioPlugin` 声明与事件编译，`AudioCapabilityProvider` 计数/Unknown隔离；`WindowsAudioEvents` 的MTA COM通知注册与共享租约，不读设备标识；`UsageOptions.AudioEvents` 独立默认关闭，复用观察/证据/导入链。`SessionCapabilityProvider.cs` 承载原有Provider接口和更新类型，服务器职责不变，便于验证音频失败不结束其他检测。
+
+日历定时：`DailyTimeCapabilities` 声明、星期掩码和DST计算，`DailyTimePlugin` 编译，Agent 的 `DailyTimeCapabilityProvider`/`DailyEventSource` 管理最近deadline和失败隔离；`WindowsSessionEvents(clockOnly: true)` 仅交付时钟/设置/恢复信号，不积累普通系统事件。`DailyTimeTests` 验证合成时区与可控时钟，`WindowsSessionEventTests` 验证真实隐藏窗口消息与租约。
+
+单次日期：`OnceTimeCapabilities` 校验真实日期/资源与DST，`OnceTimePlugin` 编译，Agent `OnceTimeCapabilityProvider`/`OnceEventSource` 共享时钟通知和最近deadline；过期/已到期状态由Host转为可读检测原因。`OnceTimeTests` 覆盖时区重算、远期分块、终止不重发与取消；导入继续强制校验后才提供暂停草稿。
+
+播放音量：`AudioPlaybackCapabilities` 参数/边界，`AudioPlaybackPlugin` 共用默认播放资源仲裁，`AudioPlaybackCapabilityProvider` 调用 `WindowsAudioPlayback` 的Core Audio COM适配。`AudioPlaybackOperation` 只写所选字段并读回；`BoundedNativeCommand` 以单个准入和专用后台线程保护原生阻塞，避免占用公共线程池，调用者超时不提前释放准入。`AudioPlaybackTests` 为合成端点逻辑，不替代真实设备验收。
+
+通信麦克风：`MicrophoneCapabilities`/`MicrophonePlugin`/`MicrophoneCapabilityProvider`，资源与播放分开，沿用 `WindowsAudioPlayback.SetMicrophoneAsync` 的单个原生入口、eCapture/eCommunications默认角色及立即静音读回；不改输入音量。合成逻辑与导入验证位于 `AudioPlaybackTests`/`UsageObservationTests`。
+
+环境布局证据由 `UsageAnalysis.EnvironmentLayoutPairs` 按六类通知与目标/布局分组，处理边界与首个布局去重；草稿继续走实际系统/音频检测和窗口动作。`UsageObservationTests.RepeatedEnvironmentPreparationOffersWindowLayoutWithSeparateEventEvidence` 覆盖分类、混合不足、Axiom来源与边界中断。
+
+文件到达：`FileArrivalCapabilities`/`FileArrivalPlugin` 声明与事件编译，`FileArrivalCapabilityProvider` 提供计数和独立Unknown隔离；`FileArrivalSource` 按目录共享 `FileSystemWatcher`，只开FileName通知、非递归、固定一秒事件批次，无扫描或内容读取。`FileArrivalTests` 覆盖真实临时目录新建/重命名、按类型匹配、初始不补发、取消释放和16组合上限。
+
+完整插件注册入口为 `Infrastructure/BuiltInAutomationPlugins`，Host组合根与模板/导出检查共用；HDR仍走独立生命周期。完整摘要回归另并入HDR和合成设备选择，验证64 KiB、匿名字典上限与完整参数/组合保留。扩展任务包同时指向此入口和Agent注册。
+
+桌面提醒：`NotificationCapabilities` / `NotificationPlugin` / `NotificationCapabilityProvider` 使用通用动作链；`WindowsDesktopNotification` 以消息窗口、原生清理计时器和临时通知区图标完成一次请求，`BoundedNativeCommand` 拒绝并发且调用者超时不释放原生准入。`WindowsNotificationTests` 使用真实HWND和合成Shell验证生命周期，不声称真实通知显示。
+
+工作时段间隔：`WindowedIntervalCapabilities` / `WindowedIntervalSpec` 定义星期、跨午夜、固定钟点与DST；`WindowedIntervalPlugin` 编译事件计数，`WindowedIntervalCapabilityProvider` 复用共享clockOnly租约；`WindowedIntervalEventSource` 仅一个最近deadline及有界时钟消息等待，取消全部释放。`WindowedIntervalTests` 覆盖时段边界、错过/回拨/DST/导入；它不是通用规则时间守卫。
+
+命令时间门禁：`Domain/WeeklyTimeWindow`、`AutomationTask.TimeWindow`（schema 2）、`AutomationTaskCompiler`映射`RuleTiming`，`EngineHost.Rules/Execution`在新边沿/延迟/取队列检查；`WorkbenchWindow.TimeWindow`及`TaskEditorState`保存与编辑，`TimeWindowTests`覆盖。
+
+应用音量：`ApplicationAudioCapabilities/Plugin/CapabilityProvider` → `WindowsAudioPlayback.Applications`，`ApplicationAudioOperation`核验/多会话/部分结果；`ApplicationAudioTests`为合成端点测试，真实播放会话单列。
+
+保持唤醒：`KeepAwakeCapabilities/Plugin` → `PluginTaskRuntime.KeepAwake` → `SessionDesiredLeaseStream/KeepAwakeCapabilityProvider` → `WindowsPowerRequest`；Engine窄`ILeasedDesiredExecutor`通知授权收回，`KeepAwakeTests`及Windows管道`WindowsKeepAwakeRuntimeTests`验证独立请求生命周期。
+
+Wi-Fi配置：`WifiProfileCapabilities/Plugin/CapabilityProvider` → `WindowsWifiProfiles`共享Wlan通知及`WifiProfileState`多网卡合并；`WifiProfileTests`验证已知/未知、基线、保存及隐私。`TaskField.EditAsList`由`WorkbenchWindow.NamedLists`显示有界名单弹窗，保存仍由能力校验。
+
+电源方案：`PowerSchemeCapabilities/Plugin/CapabilityProvider` → `WindowsPowerScheme` → `PowerSchemeOperation`；只操作本机已存在标准方案，枚举、Set、Get读回，单准入5秒有界原生执行/关停Drain。`PowerSchemeTests`用合成API验证缺失、读回及阻塞取消，不替代实机方案支持性。
+
+精确USB实例：`UsbDeviceCapabilities/Plugin/CapabilityProvider` → `WindowsUsbDevices`的SetupAPI present接口/实例查询 → `UsbDeviceObservation/UsbDeviceState`；复用`WindowsSessionEvents(usbOnly: true)`的USB类别/恢复提示和原生注册。完整实例16项`EditAsList`，presence Any / absence All false，共用bool资源；Unknown/容量/恢复不假移除或补命令。`UsbDeviceTests`覆盖规范、队列合并、故障、Engine边沿、保存/导入；`WindowsSessionEventTests`新增消费者过滤/释放和真实SetupAPI有界查询，不能代替真实插拔。
+
+窗口移屏：`WindowMonitorCapabilities/Plugin/CapabilityProvider` → `WindowsWindowActions.MoveToMonitorAsync` → `WindowsWindowMonitor/WindowMonitorGeometry`；沿用窗口等待/恢复和完整路径/SID/会话/创建时间核验，实时主屏/上一屏/下一屏工作区中央80%，单屏切换跳过。`WindowMonitorTests`为拓扑/几何/参数纯逻辑，`WindowsWindowMonitorTests`为6项新增原生用例（f6de1bd已过CI）；与`WindowActionTests`共享原生窗口集合，不并行干扰。持久显示器身份/完整布局恢复未接通。
+
+单次锁屏：`SessionLockCapabilities/Plugin/CapabilityProvider` → `WindowsSessionLock` → `SessionLockOperation/SessionLockStateReader`；WTSInfoEx仅读连接与锁元数据，活动未锁定会话才请求`LockWorkStation`，5秒有界单准入与ReceiptOnly回执，不重试/解锁。`SessionLockTests`覆盖合成API、WTS头解析、保存/组合/时段及有界阻塞取消；不实际锁CI桌面。注册/导入依然走现有`BuiltInAutomationPlugins`、`GameHdrAgent`与`UsageAnalysis`。
+
+内置亮度：`BuiltInBrightnessCapabilities → BuiltInBrightnessPlugin → BuiltInBrightnessCapabilityProvider → WindowsBuiltInBrightness/BuiltInBrightnessOperation`。执行时查询活动内置连接与WMI可写接口，0–100一次设置并读回，未知身份拒绝、外接面板忽略；`BuiltInBrightnessTests`使用合成API，不写真实面板，支持性及驱动效果待实机。
+
+默认静音状态：`EndpointMuteCapabilities → EndpointMutePlugin → EndpointMuteCapabilityProvider → WindowsEndpointMuteEvents/EndpointMuteState`。通信输入/常规播放共用按需MTA端点通知，回调后GetMute、选择变化计数保留baseline、同ID清单通知不重绑；`WindowsAudioEvents(includeEndpointState:true)`共享默认角色/清单通知。`EndpointMuteTests`验证代次/Unknown/Engine，`WindowsEndpointMuteTests`新增3项待Windows CI，不切换或修改真实设备。
+
+供电条件：`PowerStateCapabilities → PowerStatePlugin → PowerStateCapabilityProvider → WindowsPowerState/PowerStateObservation/PowerStateState`。`WindowsSessionEvents(powerOnly:true)`共享隐藏窗口和AC/DC、电量通知；合并后一次只读快照，ac/battery/严格battery-below条件，无电池与未知不假低电。`PowerStateTests`验证阈值、基线与Desired释放；`WindowsSessionEventTests`新增2项共享过滤/独立溢出/只读原生快照待CI，不改系统电源。

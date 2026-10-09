@@ -5,6 +5,7 @@ namespace Axiom.Engine;
 public interface IEngineClock
 {
     DateTimeOffset UtcNow { get; }
+    TimeZoneInfo LocalTimeZone => TimeZoneInfo.Local;
     TimeSpan MonotonicNow { get; }
 }
 
@@ -21,6 +22,16 @@ public interface ICapabilityExecutor
 {
     ValueTask<Outcome> ExecuteCommandAsync(Command command, CancellationToken cancellationToken);
     ValueTask<Outcome> ApplyDesiredAsync(DesiredState desired, CancellationToken cancellationToken);
+}
+
+// Optional, narrow lifecycle for executors that own removable requests (for example power requests).
+// Called under Engine's gate: implementations must only update memory and signal asynchronously.
+// A cancelled Apply must close its owned request lease before returning; its latest ownership
+// observation remains usable when a replacement generation reconciles.
+public interface ILeasedDesiredExecutor
+{
+    void SetDesiredAuthorization(ResourceKey key, long generation, bool authorized);
+    void ReleaseAllDesired();
 }
 
 public sealed record AuthorizationDecision(bool Allowed, string Reason);

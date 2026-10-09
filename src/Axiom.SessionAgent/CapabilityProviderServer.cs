@@ -7,14 +7,6 @@ using Axiom.Providers.Windows;
 
 namespace Axiom.SessionAgent;
 
-internal sealed record ProviderUpdate(bool Snapshot, ProviderSample[] Samples);
-internal interface ISessionCapabilityProvider
-{
-    IReadOnlyCollection<string> Capabilities { get; }
-    Task ObserveAsync(ProviderResource[] resources, Action<ProviderUpdate> publish, CancellationToken token);
-    Task<(OutcomeStatus Status, string Reason)> InvokeAsync(TaskInvocation invocation, CancellationToken token);
-}
-
 // The transport knows only registered capability IDs, never individual program parameters.
 internal sealed class CapabilityProviderServer(string sid, IEnumerable<ISessionCapabilityProvider> providers)
 {
@@ -50,6 +42,11 @@ internal sealed class CapabilityProviderServer(string sid, IEnumerable<ISessionC
                 if (caller != sid) throw new UnauthorizedAccessException("Provider 用户不匹配。");
                 GameHdrPipePeer.RequireHost(pipe);
                 ProviderProtocol.Validate(request, DateTimeOffset.UtcNow);
+                if (request.Type == "observe-usage")
+                {
+                    lifetime.CancelAfter(TimeSpan.FromMinutes(request.UsageOptions!.Minutes));
+                    await UsageObservationStream.RunAsync(pipe, request, lifetime.Token); return;
+                }
                 if (request.Type == "read-tray")
                 {
                     lifetime.CancelAfter(request.DeadlineUtc!.Value - DateTimeOffset.UtcNow);
@@ -67,10 +64,19 @@ internal sealed class CapabilityProviderServer(string sid, IEnumerable<ISessionC
                     TrayCatalogValidation.Validate(catalog);
                     await ProviderProtocol.WriteAsync(pipe, new(1, "tray", request.RequestId, Tray: catalog), lifetime.Token); return;
                 }
+                if (request.Type == "lease")
+                {
+                    var provider = registry.GetValueOrDefault(request.Invocation!.CapabilityId) as ISessionDesiredCapabilityProvider
+                        ?? throw new ArgumentException("未注册此条件租约能力。");
+                    lifetime.CancelAfter(Timeout.InfiniteTimeSpan);
+                    await SessionDesiredLeaseStream.RunAsync(pipe, request, provider, lifetime.Token);
+                    return;
+                }
                 if (request.Type == "invoke")
                 {
                     lifetime.CancelAfter(request.DeadlineUtc!.Value - DateTimeOffset.UtcNow);
                     var provider = registry.GetValueOrDefault(request.Invocation!.CapabilityId) ?? throw new ArgumentException("未注册此能力。");
+                    UsageObservationStream.MarkAction(request.Invocation);
                     var invocation = provider.InvokeAsync(request.Invocation, lifetime.Token);
                     var disconnected = ProviderProtocol.ReadAsync(pipe, lifetime.Token);
                     if (await Task.WhenAny(invocation, disconnected) != invocation)

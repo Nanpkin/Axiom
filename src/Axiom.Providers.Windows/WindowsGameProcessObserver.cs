@@ -100,7 +100,7 @@ public sealed class WindowsGameProcessObserver : IAsyncDisposable
         // Dedupe only after reading creation time: an exited PID can already have
         // been reused while its old wait callback is still being dispatched.
         Process? process = null;
-        ManualResetEvent? processExit = null;
+        OwnedProcessWaitHandle? processExit = null;
         try
         {
             process = Process.GetProcessById(pid);
@@ -110,13 +110,10 @@ public sealed class WindowsGameProcessObserver : IAsyncDisposable
             // SYNCHRONIZE allows an OS wait without scanning for exit.
             var handle = OpenProcess(0x00101000, false, pid);
             if (handle == IntPtr.Zero) throw new Win32Exception(Marshal.GetLastWin32Error());
-            processExit = new ManualResetEvent(false)
-            {
-                SafeWaitHandle = new SafeWaitHandle(handle, ownsHandle: true)
-            };
-            var path = ReadImagePath(handle);
+            processExit = new OwnedProcessWaitHandle(handle);
+            var path = WindowsProcessIdentity.ReadImagePath(handle);
             if (expectedPath is not null && !string.Equals(expectedPath, path, StringComparison.OrdinalIgnoreCase)) return;
-            if (!string.Equals(ReadOwnerSid(handle), ownerSid, StringComparison.Ordinal))
+            if (!string.Equals(WindowsProcessIdentity.ReadOwnerSid(handle), ownerSid, StringComparison.Ordinal))
                 throw new UnauthorizedAccessException("Matching process belongs to another user.");
             if (!GetProcessTimes(handle, out var created, out _, out _, out _))
                 throw new Win32Exception(Marshal.GetLastWin32Error());
@@ -188,27 +185,6 @@ public sealed class WindowsGameProcessObserver : IAsyncDisposable
         }
     }
 
-    private static string ReadImagePath(IntPtr handle)
-    {
-        var buffer = new StringBuilder(32768);
-        uint length = (uint)buffer.Capacity;
-        if (!QueryFullProcessImageName(handle, 0, buffer, ref length))
-            throw new Win32Exception(Marshal.GetLastWin32Error());
-        return Path.GetFullPath(buffer.ToString());
-    }
-
-    private static string ReadOwnerSid(IntPtr handle)
-    {
-        if (!OpenProcessToken(handle, 0x0008, out var token))
-            throw new Win32Exception(Marshal.GetLastWin32Error());
-        try
-        {
-            using var identity = new WindowsIdentity(token);
-            return identity.User?.Value ?? throw new UnauthorizedAccessException("Process has no owner SID.");
-        }
-        finally { CloseHandle(token); }
-    }
-
     public async ValueTask DisposeAsync()
     {
         stopping.Cancel();
@@ -226,11 +202,6 @@ public sealed class WindowsGameProcessObserver : IAsyncDisposable
         }
     }
 
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool QueryFullProcessImageName(IntPtr process, uint flags,
-        StringBuilder path, ref uint length);
-
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern IntPtr OpenProcess(uint access, [MarshalAs(UnmanagedType.Bool)] bool inherit, int processId);
 
@@ -238,10 +209,6 @@ public sealed class WindowsGameProcessObserver : IAsyncDisposable
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetProcessTimes(IntPtr process, out long creation, out long exit,
         out long kernel, out long user);
-
-    [DllImport("advapi32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
 
     [DllImport("kernel32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]

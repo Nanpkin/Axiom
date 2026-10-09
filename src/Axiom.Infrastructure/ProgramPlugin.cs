@@ -34,6 +34,7 @@ public sealed class ProcessExitedTaskDetection : ITaskDetectionCompiler
 }
 public sealed class ProgramTaskAction(bool start) : ITaskActionCompiler
 {
+    public bool SupportsTimeWindow => true;
     public TaskCapability Descriptor { get; } = ProgramCapabilities.Describe(start);
     public RuleAction Compile(TaskInvocation configuration, ResourceScope scope)
     {

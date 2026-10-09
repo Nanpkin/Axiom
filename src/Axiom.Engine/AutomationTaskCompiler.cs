@@ -12,6 +12,7 @@ public interface ITaskDetectionCompiler
 }
 public interface ITaskActionCompiler
 {
+    bool SupportsTimeWindow => false;
     TaskCapability Descriptor { get; }
     RuleAction Compile(TaskInvocation configuration, ResourceScope scope);
     RuleTiming Timing(TaskInvocation configuration) => new();
@@ -57,22 +58,25 @@ public sealed class AutomationTaskCompiler
         CheckDescriptor(compiler.Descriptor, TaskCapabilityKind.Action);
         if (!actions.TryAdd(compiler.Descriptor.Id, compiler)) throw new ArgumentException("动作类型重复。");
     }
-    public ImmutableArray<TaskCapability> Catalog => [.. detections.Values.Select(x => x.Descriptor), .. actions.Values.Select(x => x.Descriptor)];
+    public ImmutableArray<TaskCapability> Catalog => [.. detections.Values.Select(x => x.Descriptor), .. actions.Values.Select(x => x.Descriptor with { SupportsTimeWindow = x.SupportsTimeWindow })];
     public RuleDefinition Compile(AutomationTask task, string principal, ResourceScope scope)
     {
         Validate(task);
+        var timing = actions[task.Action.CapabilityId].Timing(task.Action);
         return new(task.Id, Math.Max(1, task.Version), principal, scope,
             detections[task.Detection.CapabilityId].Compile(task.Detection, scope, task.Id),
             actions[task.Action.CapabilityId].Compile(task.Action, scope), enabled: !task.Paused,
-            timing: actions[task.Action.CapabilityId].Timing(task.Action));
+            timing: new(timing.Debounce, timing.MinimumDuration, timing.Cooldown, timing.MaximumInputAge, task.TimeWindow));
     }
     public void Validate(AutomationTask task)
     {
-        if (task.SchemaVersion != 1 || !Guid.TryParseExact(task.Id, "D", out _) || task.Version < 0 ||
+        if (task.SchemaVersion != (task.TimeWindow is null ? 1 : 2) || !Guid.TryParseExact(task.Id, "D", out _) || task.Version < 0 ||
             string.IsNullOrWhiteSpace(task.Title) || task.Title.Length > 120 || task.Detection is null || task.Action is null)
             throw new ArgumentException("任务格式或版本无效。");
         if (!detections.TryGetValue(task.Detection.CapabilityId, out var detection) ||
             !actions.TryGetValue(task.Action.CapabilityId, out var action)) throw new ArgumentException("任务使用了未注册的检测或动作。");
+        task.TimeWindow?.Validate();
+        if (task.TimeWindow is not null && !action.SupportsTimeWindow) throw new ArgumentException("此动作暂不支持时间段限制，请关闭限制或选择一次性动作。");
         ValidateInvocation(task.Detection, detection.Descriptor);
         ValidateInvocation(task.Action, action.Descriptor);
     }

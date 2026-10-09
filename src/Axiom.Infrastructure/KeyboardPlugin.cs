@@ -34,6 +34,7 @@ public sealed class HotkeyTaskDetection : ITaskDetectionCompiler
 }
 public sealed class SendKeysTaskAction : ITaskActionCompiler
 {
+    public bool SupportsTimeWindow => true;
     public TaskCapability Descriptor => HotkeyCapabilities.Action;
     public RuleAction Compile(TaskInvocation config, ResourceScope scope)
     {
