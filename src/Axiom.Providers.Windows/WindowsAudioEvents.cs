@@ -11,11 +11,13 @@ public sealed class WindowsAudioEvents : IDisposable
     private static Hub? shared;
     private readonly Channel<string> queue = Channel.CreateBounded<string>(64);
     private readonly Hub owner;
+    private readonly bool includeEndpointState;
     private bool disposed;
     public ChannelReader<string> Events => queue.Reader;
     public static int ActiveConsumers { get { lock (Gate) return shared?.Clients.Count ?? 0; } }
-    public WindowsAudioEvents()
+    public WindowsAudioEvents(bool includeEndpointState = false)
     {
+        this.includeEndpointState = includeEndpointState;
         lock (Gate)
         {
             // Keep a blocked native shutdown bounded to one hub, rather than creating more COM threads on retries.
@@ -55,12 +57,15 @@ public sealed class WindowsAudioEvents : IDisposable
         private void Publish(string kind)
         {
             lock (Gate) foreach (var client in Clients)
+            {
+                if (kind == "endpoints" && !client.includeEndpointState) continue;
                 if (!client.queue.Writer.TryWrite(kind)) client.queue.Writer.TryComplete(new IOException("音频通知队列已满，状态未知。"));
+            }
         }
         private void Run()
         {
             IAudioDeviceEnumerator? enumerator = null; var initialized = false; var registered = false;
-            var sink = new NotificationSink(Publish);
+            var sink = new NotificationSink(Publish, () => Publish("endpoints"));
             try
             {
                 Marshal.ThrowExceptionForHR(CoInitializeEx(0, 0)); initialized = true;
@@ -90,11 +95,11 @@ public sealed class WindowsAudioEvents : IDisposable
     }
     // Callbacks are notifications only. Device ID pointers and property payloads are never dereferenced.
     [ComVisible(true), ClassInterface(ClassInterfaceType.None)]
-    internal sealed class NotificationSink(Action<string> publish) : IAudioNotificationClient
+    internal sealed class NotificationSink(Action<string> publish, Action? endpointStateChanged = null) : IAudioNotificationClient
     {
-        public int OnDeviceStateChanged(nint id, uint state) => 0;
-        public int OnDeviceAdded(nint id) => 0;
-        public int OnDeviceRemoved(nint id) => 0;
+        public int OnDeviceStateChanged(nint id, uint state) { endpointStateChanged?.Invoke(); return 0; }
+        public int OnDeviceAdded(nint id) { endpointStateChanged?.Invoke(); return 0; }
+        public int OnDeviceRemoved(nint id) { endpointStateChanged?.Invoke(); return 0; }
         public int OnDefaultDeviceChanged(int flow, int role, nint id)
         {
             if (flow == 0 && role == 0) publish("output");

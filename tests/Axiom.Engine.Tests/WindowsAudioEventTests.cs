@@ -7,6 +7,7 @@ using Axiom.Domain;
 namespace Axiom.Engine.Tests;
 
 [SupportedOSPlatform("windows")]
+[Collection("Native audio observers")]
 public sealed class WindowsAudioEventTests
 {
     [Fact(Timeout = 20000)]
