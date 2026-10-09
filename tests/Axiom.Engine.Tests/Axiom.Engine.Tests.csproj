@@ -26,6 +26,7 @@
     <Compile Include="../../src/Axiom.Providers.Windows/EndpointMuteState.cs" Link="EndpointMuteState.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsEndpointMuteEvents.cs" Link="WindowsEndpointMuteEvents.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/CapturedWindowLifetime.cs" Link="CapturedWindowLifetime.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/ForegroundWindowMonitorOperation.cs" Link="ForegroundWindowMonitorOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/ForegroundWindowLayoutOperation.cs" Link="ForegroundWindowLayoutOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowMonitorGeometry.cs" Link="WindowMonitorGeometry.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsWindowMonitor.cs" Link="WindowsWindowMonitor.cs" />
