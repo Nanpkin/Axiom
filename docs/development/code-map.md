@@ -148,3 +148,6 @@ Internet条件：`InternetConnectivityCapabilities → InternetConnectivityPlugi
 
 
 一组工作目标：`OpenTargetBatchCapabilities/Plugin/CapabilityProvider` → `WindowsOpenTarget.Batch` → `OpenTargetBatchOperation`。按中文类型标签分行，复用`OpenTargetCapabilities.Validate`的本机路径/文档白名单/无凭据http(s)规则；最多8项、每项255字符，通用TextList/EditAsList弹窗。全部配置与可访问性/DriveType预检先完成，复用原`WindowsOpenTarget.Open`和同一Commands准入、整批8秒；逐项顺序请求，失败/取消/超时停止后续，线程安全进度只输出数量/项序号。`OpenTargetBatchTests`4项合成案例覆盖保存/导入/模板、全部预检/顺序/部分失败、取消和超时仍持有准入；不真正启动Shell，原单目标动作语义不变。
+
+
+当前前台窗口布局：`ForegroundWindowLayoutCapabilities/Plugin/CapabilityProvider` → `WindowsForegroundWindowLayout` → `ForegroundWindowLayoutOperation`。hotkey-only、布局字段，无exe或HWND输入；共享`WindowsWindowEvents(trackCaptureLifetime:true)`在捕获前订阅、一次Bind，`CapturedWindowLifetime`有界记录绑定前销毁和绑定后失效。固定HWND/PID/thread、进程句柄/创建时间/完整路径/SID/session，每次写前仍须前台；复用`RestoreNormalAsync`新增可选guard（旧默认不改）及`WindowLayoutGeometry`，3秒事件读回、`BoundedNativeCommand`5秒单准入/关停Drain。`ForegroundWindowLayoutTests`4项合成覆盖参数/严格导入、身份/前台/销毁、结果和取消，不操作真实窗口；暂停模板走已有编辑器与注册。
