@@ -133,23 +133,31 @@ public static class WindowsWindowActions
         }
         catch (Exception error) when (error is Win32Exception or InvalidOperationException) { return false; }
     }
-    internal static async Task<bool> RestoreNormalAsync(nint window, int pid, WindowsWindowEvents events, CancellationToken token)
+    internal static async Task<bool> RestoreNormalAsync(nint window, int pid, WindowsWindowEvents events, CancellationToken token, Func<bool>? beforeWrite = null)
     {
         // A minimized maximized window first restores to maximized on Windows.
         // Normalize each state once, under the caller's single deadline.
         if (IsIconic(window))
         {
             token.ThrowIfCancellationRequested();
-            if (!Visible(window, pid) || !ShowWindowAsync(window, 9)) return false;
-            while (IsIconic(window)) await events.Events.Reader.ReadAsync(token);
+            if (beforeWrite?.Invoke() == false || !Visible(window, pid) || !ShowWindowAsync(window, 9)) return false;
+            while (IsIconic(window))
+            {
+                if (beforeWrite?.Invoke() == false) return false;
+                await events.Events.Reader.ReadAsync(token);
+            }
         }
         if (IsZoomed(window))
         {
             token.ThrowIfCancellationRequested();
-            if (!Visible(window, pid) || !ShowWindowAsync(window, 9)) return false;
-            while (IsZoomed(window) || IsIconic(window)) await events.Events.Reader.ReadAsync(token);
+            if (beforeWrite?.Invoke() == false || !Visible(window, pid) || !ShowWindowAsync(window, 9)) return false;
+            while (IsZoomed(window) || IsIconic(window))
+            {
+                if (beforeWrite?.Invoke() == false) return false;
+                await events.Events.Reader.ReadAsync(token);
+            }
         }
-        return Visible(window, pid);
+        return Visible(window, pid) && beforeWrite?.Invoke() != false;
     }
     private static bool Topmost(nint window)
     {

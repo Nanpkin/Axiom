@@ -57,3 +57,5 @@ DisplayOffTests
 MicrophoneToggleTests
 AudioPlaybackAdjustTests
 MediaPlaybackTests
+OpenTargetBatchTests
+ForegroundWindowLayoutTests
