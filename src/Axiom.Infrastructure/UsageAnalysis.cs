@@ -375,6 +375,7 @@ public static class UsageAnalysis
             if (resolved.CapabilityId == WindowMonitorCapabilities.Move) WindowMonitorCapabilities.ValidateTargets(resolved);
             if (resolved.CapabilityId == PowerSchemeCapabilities.Set) PowerSchemeCapabilities.Validate(resolved);
             if (resolved.CapabilityId == ProgramPriorityCapabilities.Set) ProgramPriorityCapabilities.Validate(resolved);
+            if (resolved.CapabilityId == ApplicationAudioActivityCapabilities.Active) ApplicationAudioActivityCapabilities.Validate(resolved);
             if (resolved.CapabilityId == ApplicationAudioCapabilities.Set) ApplicationAudioCapabilities.Validate(resolved);
             if (resolved.CapabilityId == KeepAwakeCapabilities.Hold) KeepAwakeCapabilities.Validate(resolved);
             if (resolved.CapabilityId == MicrophoneToggleCapabilities.Toggle) MicrophoneToggleCapabilities.Validate(resolved);

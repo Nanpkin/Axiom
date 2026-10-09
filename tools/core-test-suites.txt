@@ -37,6 +37,7 @@ NotificationTests
 WindowedIntervalTests
 TimeWindowTests
 ApplicationAudioTests
+ApplicationAudioActivityTests
 KeepAwakeTests
 
 WifiProfileTests

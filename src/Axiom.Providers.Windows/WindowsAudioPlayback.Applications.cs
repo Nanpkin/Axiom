@@ -67,6 +67,13 @@ public static partial class WindowsAudioPlayback
         private long creationTime;
         private string? pinnedPath;
         private Guid context = new("0DE0208A-126F-4C92-9CA8-4C0AD69ADBFC");
+        // The observer uses this same pinned identity and only borrows the handle until unregister completes.
+        internal bool ProcessExited => process is not null && WaitForSingleObject(process, 0) == 0;
+        internal WaitHandle? BorrowProcessWait() => process is null ? null : new BorrowedProcessWait(process);
+        private sealed class BorrowedProcessWait : WaitHandle
+        {
+            internal BorrowedProcessWait(SafeProcessHandle handle) => SafeWaitHandle = new SafeWaitHandle(handle.DangerousGetHandle(), ownsHandle: false);
+        }
         private IAudioSessionControl2 Control => (IAudioSessionControl2)control;
         private ISimpleAudioVolume Volume => (ISimpleAudioVolume)control;
         public bool IsActive
