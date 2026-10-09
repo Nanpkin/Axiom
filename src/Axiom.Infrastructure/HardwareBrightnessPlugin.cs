@@ -13,7 +13,7 @@ public sealed class HardwareBrightnessPlugin : IAutomationPlugin
     public ImmutableArray<TaskCombination> Combinations => [.. new[] { "process.running", "process.exited", AxiomStartupPlugin.CapabilityId,
         HotkeyCapabilities.Pressed, SystemEventCapabilities.Event, ForegroundCapabilities.Active, WindowPresenceCapabilities.Visible,
         WindowPresenceCapabilities.Absent, WifiProfileCapabilities.Connected, WifiProfileCapabilities.Disconnected, UsbDeviceCapabilities.Present,
-        UsbDeviceCapabilities.Absent, IntervalCapabilities.Elapsed, DailyTimeCapabilities.Due, OnceTimeCapabilities.Due, WindowedIntervalCapabilities.Due, PowerStateCapabilities.State }
+        UsbDeviceCapabilities.Absent, IntervalCapabilities.Elapsed, DailyTimeCapabilities.Due, OnceTimeCapabilities.Due, WindowedIntervalCapabilities.Due, PowerStateCapabilities.State, PowerSchemeStateCapabilities.State, PowerSaverStateCapabilities.State }
         .Select(d => new TaskCombination(d, HardwareBrightnessCapabilities.Set))];
     public IEnumerable<CapabilityBinding> Bindings => [new(new(HardwareBrightnessCapabilities.Set, TaskInvocationCommands.Schema, new("axiom.bool", 1),
         ScopeKind.Session, false, true, false, ExecutionLocation.SessionAgent, "same-user-session", true, "available", false,
