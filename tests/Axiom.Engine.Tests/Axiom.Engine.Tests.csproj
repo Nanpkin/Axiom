@@ -41,6 +41,7 @@
     <Compile Include="../../src/Axiom.Providers.Windows/BoundedNativeCommand.cs" Link="BoundedNativeCommand.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/FileArrivalCapabilityProvider.cs" Link="FileArrivalCapabilityProvider.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/FileArrivalSource.cs" Link="FileArrivalSource.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/MicrophoneToggleOperation.cs" Link="MicrophoneToggleOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/AudioPlaybackOperation.cs" Link="AudioPlaybackOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/ProgramPriorityOperation.cs" Link="ProgramPriorityOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/ApplicationAudioOperation.cs" Link="ApplicationAudioOperation.cs" />

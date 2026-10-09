@@ -36,6 +36,7 @@
 | 14 / 当前main Windows已验 | 多屏期间保持系统唤醒，退回单屏后把工作窗口移主屏 | `display.count`至少/恰好1–16逻辑屏条件，共享显示变化/恢复通知；64提示合并后一次EnumDisplayMonitors计数服务最多32条件，不存ID/坐标、不轮询 | 空/失败/超64/通知故障Unknown，不能假单屏；首次/睡眠恢复/Unknown恢复不补Command，已知初始Desired可持有、结束或未知释放。镜像/RDP/虚拟屏不是物理数量；17项合成及2个新增暂停模板已过、2项只读原生已过main CI |
 | 15 / 当前main Windows已验 | Windows报告Internet新可用后启动同步/工作工具，或在已知状态期间保持唤醒 | `network.internet-state`选择available/unavailable，同一Windows报告bool资源；共享MTA Network List Manager connection point通知后读IPv4/IPv6 Internet flags，无ping/HTTP/周期查询，不采网络标识 | 仅明确本地网络/断开为不可用；服务/查询/订阅失败及未知标志Unknown，失效后先Unknown并丢弃旧Known缓存。首次/重新启用/恢复不补Command，Unknown释放Desired；VPN/NCSI可能影响，不保证任意网站/服务可达。30项合成回归和暂停工具启动模板已接，2项只读订阅原生已过main CI |
 | 16 / 已接通，合成已验、Windows待验 | 背景工具启动后降低CPU调度优先级，或按快捷键/定时一次恢复正常 | `program.priority`选择1–32完整exe路径、below-normal/normal/above-normal；执行时捕获同用户同会话实例，固定句柄/创建时间/路径/SID核验，GetPriorityClass/SetPriorityClass后读回，5秒单准入有界执行，无后台扫描 | 未运行/权限不足/身份未知/读回差异和部分完成明确；不启动或控制未来实例，暂停/结束不恢复，取消/超时可能已写。程序运行模板按文件名组从无到有，组仍运行时新增实例不补发；4项合成与模板验收已过，最大匿名目录实际超64 KiB待批量整合，不修改上限 |
+| 17 / 已接通，合成已验、Windows待验 | 同一全局快捷键切换通信麦克风静音，避免为静音/开麦记两组按键 | 独立`audio.microphone-toggle`保持原明确静音动作schema；对执行开始时默认eCapture/eCommunications端点GetMute→SetMute反向值→GetMute一次确认，复用WindowsAudioPlayback单准入与端点绑定 | 当前状态读失败不写，取消静音可能恢复收音；不改输入音量、录音内容、应用路由或硬件状态，取消/超时可能已写，不重试或恢复。4项合成与暂停快捷键模板通过，不操作真实麦克风；实机角色/设备变化待验，全目录预算由批量整合检查 |
 
 本轮接续已整合原未合媒体/屏电/四角分支，追加屏幕关闭→暂停当前媒体，42能力、37暂停模板；源码功能与限制如下，Windows原生和实机尚待验收。
 
