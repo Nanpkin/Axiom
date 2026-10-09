@@ -12,13 +12,13 @@ public sealed class AutomationTemplateTests
     [Fact]
     public void EveryAvailableRecipeIsPausedUnsavedAndCompilesAfterTheUserSelectsItsRequiredObjects()
     {
-        var catalog = Catalog(); var templates = AutomationTemplates.Build(catalog); Assert.Equal(21, templates.Length);
+        var catalog = Catalog(); var templates = AutomationTemplates.Build(catalog); Assert.Equal(22, templates.Length);
         var compiler = new AutomationTaskCompiler();
         foreach (var module in Modules()) { foreach (var d in module.Detections) compiler.Register(d); foreach (var a in module.Actions) compiler.Register(a); }
         foreach (var template in templates)
         {
             Assert.True(template.Draft.Paused); Assert.Equal(0, template.Draft.Version);
-            if (template.Id != "lock-mute") Assert.Throws<ArgumentException>(() => compiler.Compile(template.Draft, "owner", ResourceScope.Session("owner", 1)));
+            if (template.Id is not ("lock-mute" or "battery-power-saver")) Assert.Throws<ArgumentException>(() => compiler.Compile(template.Draft, "owner", ResourceScope.Session("owner", 1)));
             else Assert.NotNull(compiler.Compile(template.Draft, "owner", ResourceScope.Session("owner", 1)));
             var completed = template.Draft with { Detection = Complete(template.Draft.Detection), Action = Complete(template.Draft.Action) };
             Assert.NotNull(compiler.Compile(completed, "owner", ResourceScope.Session("owner", 1)));

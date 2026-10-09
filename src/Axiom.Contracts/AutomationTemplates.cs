@@ -16,6 +16,7 @@ public static class AutomationTemplates
         new("cleanup-companion", "程序退出后关闭配套工具", "只请求正常关闭最近启动的一个匹配实例；不强制结束、不自动重开，未保存内容可能需要确认。", "process.exited", "program.close", [], [("mode", "graceful"), ("instances", "latest")]),
         new("window-cleanup", "工作窗口全部消失后收尾", "选择工作程序和配套工具；全部工作主窗口隐藏或销毁后请求正常关闭配套工具最新实例。最小化不触发，程序可能仍在后台；不强杀、不自动重开。", WindowPresenceCapabilities.Absent, "program.close", [], [("mode", "graceful"), ("instances", "latest")]),
         new("restore-work", "睡眠恢复后打开工作工具", "选择要启动的程序；恢复不等于已经解锁，已运行则跳过，不补发之前的唤醒。", SystemEventCapabilities.Event, "program.start", [("event", "resumed")], []),
+        new("battery-power-saver", "切换到电池时使用节能方案", "切换到电池的新通知后，一次切换为本机标准节能方案；若本机没有该方案会失败，不创建。之后保留节能方案，接电不自动恢复；请审阅后启用。", SystemEventCapabilities.Event, PowerSchemeCapabilities.Set, [("event", "battery")], [("scheme", "saver")]),
         new("open-work-folder", "解锁后打开工作目录", "填写本机目录路径；每次新解锁请求打开一次，之后不会自动关闭目录窗口。", SystemEventCapabilities.Event, OpenTargetCapabilities.Open, [("event", "unlocked")], [("kind", "folder")]),
         new("wifi-work-folder", "连接工作 Wi-Fi 后打开目录", "手工填写本机保存的 Wi-Fi 配置文件名和工作目录；任一所选配置新连接后打开一次，同组选项间切换不重复打开。首次已连接不补发，暂停不关闭已打开的目录。", WifiProfileCapabilities.Connected, OpenTargetCapabilities.Open, [], [("kind", "folder")]),
         new("window-prepare", "窗口出现后整理", "选择检测和目标程序，再选择布局；初始已有窗口不补执行，多窗口时只处理一个匹配窗口。", WindowPresenceCapabilities.Visible, WindowCapabilities.State, [], [("state", "maximize")]),
