@@ -1,6 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
-    <Compile Include="../../src/Axiom.Providers.Windows/PowerSchemeOperation.cs" Link="PowerSchemeOperation.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowMonitorGeometry.cs" Link="WindowMonitorGeometry.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsWindowMonitor.cs" Link="WindowsWindowMonitor.cs" />
+    <Compile Include="../../src/Axiom.SessionAgent/UsbDeviceCapabilityProvider.cs" Link="UsbDeviceCapabilityProvider.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/UsbDeviceState.cs" Link="UsbDeviceState.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/UsbDeviceObservation.cs" Link="UsbDeviceObservation.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsUsbDevices.cs" Link="WindowsUsbDevices.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/WifiProfileCapabilityProvider.cs" Link="WifiProfileCapabilityProvider.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WifiProfileState.cs" Link="WifiProfileState.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsWifiProfiles.cs" Link="WindowsWifiProfiles.cs" />
@@ -15,6 +20,9 @@
     <Compile Include="../../src/Axiom.Providers.Windows/FileArrivalSource.cs" Link="FileArrivalSource.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/AudioPlaybackOperation.cs" Link="AudioPlaybackOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/ApplicationAudioOperation.cs" Link="ApplicationAudioOperation.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/PowerSchemeOperation.cs" Link="PowerSchemeOperation.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/SessionLockOperation.cs" Link="SessionLockOperation.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/SessionLockStateReader.cs" Link="SessionLockStateReader.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/OnceEventSource.cs" Link="OnceEventSource.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/DailyEventSource.cs" Link="DailyEventSource.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/SessionCapabilityProvider.cs" Link="SessionCapabilityProvider.cs" />

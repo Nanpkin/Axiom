@@ -41,3 +41,6 @@ KeepAwakeTests
 
 WifiProfileTests
 PowerSchemeTests
+UsbDeviceTests
+WindowMonitorTests
+SessionLockTests

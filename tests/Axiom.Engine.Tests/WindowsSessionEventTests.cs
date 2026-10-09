@@ -128,4 +128,51 @@ public sealed class WindowsSessionEventTests
     }
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern nint SendMessage(nint window, uint message, nint w, nint l);
 
+    [Fact(Timeout = 10000)]
+    public async Task UsbOnlyLeaseFiltersOtherEventsAndReleasesWithoutStoppingSystemOrClockConsumers()
+    {
+        using var system = new WindowsSessionEvents(); using var clock = new WindowsSessionEvents(clockOnly: true);
+        using var usb = new WindowsSessionEvents(usbOnly: true);
+        Assert.Equal(3, WindowsSessionEvents.ActiveConsumers); Assert.Equal(system.NotificationWindow, usb.NotificationWindow);
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+        SendMessage(usb.NotificationWindow, 0x007E, 32, 0);
+        Assert.False(usb.Events.TryRead(out _)); Assert.False(clock.Events.TryRead(out _)); Assert.False(usb.Failed);
+        Assert.Equal("display-changed", await Next(system, "display-changed"));
+        var buffer = Marshal.AllocHGlobal(32);
+        try
+        {
+            Marshal.WriteInt32(buffer, 0, 32); Marshal.WriteInt32(buffer, 4, 5); Marshal.WriteInt32(buffer, 8, 0);
+            Marshal.StructureToPtr(new Guid("A5DCBF10-6530-11D2-901F-00C04FB951ED"), buffer + 12, false); Marshal.WriteInt32(buffer, 28, 0);
+            SendMessage(usb.NotificationWindow, 0x0219, 0x8000, buffer);
+            Assert.Equal("usb-arrived", await Next(usb, "usb-arrived")); Assert.Equal("usb-arrived", await Next(system, "usb-arrived"));
+            Assert.False(clock.Events.TryRead(out _));
+            SendMessage(usb.NotificationWindow, 0x0218, 0x12, 0);
+            Assert.Equal("resumed", await Next(usb, "resumed")); Assert.Equal("resumed", await Next(system, "resumed"));
+            Assert.Equal((byte)1, await clock.ClockChanges.ReadAsync(deadline.Token));
+            usb.Dispose(); Assert.Equal(2, WindowsSessionEvents.ActiveConsumers);
+            Assert.False(system.Events.Completion.IsCompleted); Assert.False(clock.ClockChanges.Completion.IsCompleted);
+            SendMessage(system.NotificationWindow, 0x0219, 0x8004, buffer);
+            Assert.Equal("usb-removed", await Next(system, "usb-removed"));
+            SendMessage(clock.NotificationWindow, 0x001E, 0, 0);
+            Assert.Equal((byte)1, await clock.ClockChanges.ReadAsync(deadline.Token));
+        }
+        finally { Marshal.FreeHGlobal(buffer); }
+        async Task<string> Next(WindowsSessionEvents source, string expected)
+        {
+            string value; do { value = await source.Events.ReadAsync(deadline.Token); } while (value != expected);
+            return value;
+        }
+    }
+
+    [Fact(Timeout = 10000)]
+    public void NativeSetupApiUsbSnapshotReadsBoundedInstancesWithoutRecordingTheirValues()
+    {
+        using var source = new WindowsSessionEvents(usbOnly: true);
+        var instances = WindowsUsbDevices.ReadPresentInstances(default);
+        Assert.True(instances.Length <= 256);
+        Assert.True(instances.All(id => id.Length is > 0 and <= 255 && !id.Any(char.IsControl)));
+        Assert.Equal(instances.Length, instances.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+        // Empty snapshots are valid on runners without exposed USB hardware. This is API coverage, not an unplug test.
+    }
+
 }

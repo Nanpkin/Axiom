@@ -15,15 +15,18 @@ public sealed class WindowsSessionEvents : IDisposable
     private readonly Channel<string> queue = Channel.CreateBounded<string>(64);
     private readonly Channel<byte> clocks = Channel.CreateBounded<byte>(new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropOldest });
     private readonly bool clockOnly;
+    private readonly bool usbOnly;
+    private volatile bool failed;
     private bool disposed;
     private readonly Hub owner;
     public static int ActiveConsumers { get { lock (Gate) return shared?.Clients.Count ?? 0; } }
     public ChannelReader<string> Events => queue.Reader;
     public ChannelReader<byte> ClockChanges => clocks.Reader;
+    public bool Failed => failed;
     internal nint NotificationWindow => owner.Window;
-    public WindowsSessionEvents(bool clockOnly = false)
+    public WindowsSessionEvents(bool clockOnly = false, bool usbOnly = false)
     {
-        this.clockOnly = clockOnly;
+        this.clockOnly = clockOnly; this.usbOnly = usbOnly;
         lock (Gate)
         {
             shared ??= new Hub(); owner = shared; owner.Clients.Add(this);
@@ -153,12 +156,13 @@ public sealed class WindowsSessionEvents : IDisposable
         }
         private void Complete(Exception error)
         {
-            lock (Gate) foreach (var client in Clients) { client.queue.Writer.TryComplete(error); client.clocks.Writer.TryComplete(error); }
+            lock (Gate) foreach (var client in Clients) { client.failed = true; client.queue.Writer.TryComplete(error); client.clocks.Writer.TryComplete(error); }
         }
         private void Publish(string kind)
         {
             lock (Gate) foreach (var client in Clients)
-                if (!client.clockOnly && !client.queue.Writer.TryWrite(kind)) client.queue.Writer.TryComplete(new IOException("系统事件队列已满，检测状态未知。"));
+                if (!client.clockOnly && (!client.usbOnly || kind is "usb-arrived" or "usb-removed" or "resumed") && !client.queue.Writer.TryWrite(kind))
+                { client.failed = true; client.queue.Writer.TryComplete(new IOException("系统事件队列已满，检测状态未知。")); }
         }
     }
     [StructLayout(LayoutKind.Sequential)] private struct DeviceInterface { public uint Size, DeviceType, Reserved; public Guid ClassGuid; public ushort Name; }

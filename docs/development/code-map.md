@@ -111,3 +111,9 @@ USB类别通知：`WindowsSessionEvents` 注册USB接口GUID、处理接入/移�
 Wi-Fi配置：`WifiProfileCapabilities/Plugin/CapabilityProvider` → `WindowsWifiProfiles`共享Wlan通知及`WifiProfileState`多网卡合并；`WifiProfileTests`验证已知/未知、基线、保存及隐私。`TaskField.EditAsList`由`WorkbenchWindow.NamedLists`显示有界名单弹窗，保存仍由能力校验。
 
 电源方案：`PowerSchemeCapabilities/Plugin/CapabilityProvider` → `WindowsPowerScheme` → `PowerSchemeOperation`；只操作本机已存在标准方案，枚举、Set、Get读回，单准入5秒有界原生执行/关停Drain。`PowerSchemeTests`用合成API验证缺失、读回及阻塞取消，不替代实机方案支持性。
+
+精确USB实例：`UsbDeviceCapabilities/Plugin/CapabilityProvider` → `WindowsUsbDevices`的SetupAPI present接口/实例查询 → `UsbDeviceObservation/UsbDeviceState`；复用`WindowsSessionEvents(usbOnly: true)`的USB类别/恢复提示和原生注册。完整实例16项`EditAsList`，presence Any / absence All false，共用bool资源；Unknown/容量/恢复不假移除或补命令。`UsbDeviceTests`覆盖规范、队列合并、故障、Engine边沿、保存/导入；`WindowsSessionEventTests`新增消费者过滤/释放和真实SetupAPI有界查询，不能代替真实插拔。
+
+窗口移屏：`WindowMonitorCapabilities/Plugin/CapabilityProvider` → `WindowsWindowActions.MoveToMonitorAsync` → `WindowsWindowMonitor/WindowMonitorGeometry`；沿用窗口等待/恢复和完整路径/SID/会话/创建时间核验，实时主屏/上一屏/下一屏工作区中央80%，单屏切换跳过。`WindowMonitorTests`为拓扑/几何/参数纯逻辑，`WindowsWindowMonitorTests`为6项新增原生用例（当前待CI）；与`WindowActionTests`共享原生窗口集合，不并行干扰。持久显示器身份/完整布局恢复未接通。
+
+单次锁屏：`SessionLockCapabilities/Plugin/CapabilityProvider` → `WindowsSessionLock` → `SessionLockOperation/SessionLockStateReader`；WTSInfoEx仅读连接与锁元数据，活动未锁定会话才请求`LockWorkStation`，5秒有界单准入与ReceiptOnly回执，不重试/解锁。`SessionLockTests`覆盖合成API、WTS头解析、保存/组合/时段及有界阻塞取消；不实际锁CI桌面。注册/导入依然走现有`BuiltInAutomationPlugins`、`GameHdrAgent`与`UsageAnalysis`。
