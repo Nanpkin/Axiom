@@ -56,3 +56,4 @@ ProgramPriorityTests
 DisplayOffTests
 MicrophoneToggleTests
 AudioPlaybackAdjustTests
+MediaPlaybackTests
