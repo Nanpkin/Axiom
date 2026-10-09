@@ -1,5 +1,16 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <Compile Include="../../src/Axiom.SessionAgent/DisplayCountCapabilityProvider.cs" Link="DisplayCountCapabilityProvider.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/DisplayCountState.cs" Link="DisplayCountState.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/DisplayCountObservation.cs" Link="DisplayCountObservation.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsDisplayCount.cs" Link="WindowsDisplayCount.cs" />
+    <Compile Include="../../src/Axiom.SessionAgent/InternetConnectivityCapabilityProvider.cs" Link="InternetConnectivityCapabilityProvider.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/InternetConnectivityState.cs" Link="InternetConnectivityState.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/InternetConnectivityObservation.cs" Link="InternetConnectivityObservation.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsInternetConnectivityEvents.cs" Link="WindowsInternetConnectivityEvents.cs" />
+    <Compile Include="../../src/Axiom.SessionAgent/WindowStateDetectionCapabilityProvider.cs" Link="WindowStateDetectionCapabilityProvider.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowStateObservation.cs" Link="WindowStateObservation.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsWindowState.cs" Link="WindowsWindowState.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/PowerStateCapabilityProvider.cs" Link="PowerStateCapabilityProvider.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/PowerStateState.cs" Link="PowerStateState.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/PowerStateObservation.cs" Link="PowerStateObservation.cs" />

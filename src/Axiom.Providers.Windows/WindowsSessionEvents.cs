@@ -17,6 +17,7 @@ public sealed class WindowsSessionEvents : IDisposable
     private readonly bool clockOnly;
     private readonly bool usbOnly;
     private readonly bool powerOnly;
+    private readonly bool displayOnly;
     private volatile bool failed;
     private bool disposed;
     private readonly Hub owner;
@@ -25,9 +26,9 @@ public sealed class WindowsSessionEvents : IDisposable
     public ChannelReader<byte> ClockChanges => clocks.Reader;
     public bool Failed => failed;
     internal nint NotificationWindow => owner.Window;
-    public WindowsSessionEvents(bool clockOnly = false, bool usbOnly = false, bool powerOnly = false)
+    public WindowsSessionEvents(bool clockOnly = false, bool usbOnly = false, bool powerOnly = false, bool displayOnly = false)
     {
-        this.clockOnly = clockOnly; this.usbOnly = usbOnly; this.powerOnly = powerOnly;
+        this.clockOnly = clockOnly; this.usbOnly = usbOnly; this.powerOnly = powerOnly; this.displayOnly = displayOnly;
         lock (Gate)
         {
             shared ??= new Hub(); owner = shared; owner.Clients.Add(this);
@@ -181,7 +182,7 @@ public sealed class WindowsSessionEvents : IDisposable
         private void Publish(string kind)
         {
             lock (Gate) foreach (var client in Clients)
-                if (!client.clockOnly && (!client.powerOnly || kind == "resumed") && (!client.usbOnly || kind is "usb-arrived" or "usb-removed" or "resumed") && !client.queue.Writer.TryWrite(kind))
+                if (!client.clockOnly && (!client.displayOnly || kind is "display-changed" or "resumed") && (!client.powerOnly || kind == "resumed") && (!client.usbOnly || kind is "usb-arrived" or "usb-removed" or "resumed") && !client.queue.Writer.TryWrite(kind))
                 { client.failed = true; client.queue.Writer.TryComplete(new IOException("系统事件队列已满，检测状态未知。")); }
         }
         private void PowerStateChanged()
