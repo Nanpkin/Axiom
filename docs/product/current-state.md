@@ -38,11 +38,13 @@
 
 当前main `9e87cbbb044d72411cdacf3bb55cde8937805bf7`已包含十项增量、49能力/45默认暂停模板；[准确main检查37878921158](https://github.com/Starvan/Axiom/actions/runs/37878921158)成功。 [预览 .3](https://github.com/Starvan/Axiom/releases/tag/v0.2.0-preview.20261009.3)已发布，[准确发布构建37879255109](https://github.com/Starvan/Axiom/actions/runs/37879255109)成功，来源为`9e87cbb`；便携zip、安装exe、BUILD-INFO.json和SHA256SUMS.txt四项资产均已核验。本轮未替换所有者本机版本；实机与完整性能验收仍独立。
 
-本轮`codex/functional-round-two-integration`已接通四项，当前源码53能力/49默认暂停模板，尚未计入已发布 .3：`network.category-state`按Windows公用/专用/域分类触发提醒、系统音或其他允许动作；`window.foreground-monitor`仅快捷键，把执行开始捕获的当前窗口移主/上/下屏并居中80%；`audio.playback-toggle`先读默认播放静音，已知才反向写一次并读回；`notification.sound`只请求默认/信息/警告/错误内置系统音。取消静音可能立即发声，提示音受理不保证可听；Unknown不写/不作否定，前台切走/销毁/身份或拓扑未知停止，单屏相邻屏跳过，不重试、改控新目标或恢复旧值。
+上一批`codex/functional-round-two-integration`已接通四项，当前源码53能力/49默认暂停模板，尚未计入已发布 .3：`network.category-state`按Windows公用/专用/域分类触发提醒、系统音或其他允许动作；`window.foreground-monitor`仅快捷键，把执行开始捕获的当前窗口移主/上/下屏并居中80%；`audio.playback-toggle`先读默认播放静音，已知才反向写一次并读回；`notification.sound`只请求默认/信息/警告/错误内置系统音。取消静音可能立即发声，提示音受理不保证可听；Unknown不写/不作否定，前台切走/销毁/身份或拓扑未知停止，单屏相邻屏跳过，不重试、改控新目标或恢复旧值。
+
+[PR #9](https://github.com/Starvan/Axiom/pull/9)固定头`c6cc196`，准确CI [37882233614](https://github.com/Starvan/Axiom/actions/runs/37882233614)进行中。本批在新分支`codex/functional-round-three-integration`接入两个电源条件，等待指定程序音频活动和用户在场条件到齐，仅整批一次必要验证；不改PR9交付头或把半批视为已验收。
 
 最小整合验收已过：8项实际注册/模板/严格导入/暂停保存、原64KiB完整机器参数/全部允许对往返；沿用已有分组fallback，无新增序列化。Agent/Host构建均零警告/错误，准确Windows CI由负责人核验，真实多网络/通知、多屏DPI/切换、音频端点和声音策略仍待实机。用户入口见[功能清单](functional-roadmap.md)：保存暂停草稿→审阅启用→查看活动→暂停，UI退出后台继续。
 
-所有者要求持续提出idea并实施，不以批次或发布结束为停止点；下一批两个电源通知条件和指定程序音频会话活动条件已独立实施，提交到齐后另批整合，不混入本四项。Windows用户在场仍为候选；保留`gpt-6.1-sol` / `high`和最小必要验证，负责人协调审查、代理实施。
+所有者要求持续提出idea并实施，不以批次或发布结束为停止点；下一批两个电源通知条件和指定程序音频会话活动条件已独立实施，提交到齐后另批整合，不混入本四项。Windows用户在场`session.user-presence`已启动实施（公开`USER_ACTIVITY_PRESENCE`的0/1/2，初始Unknown，通知而非任意空闲阈值）；保留`gpt-6.1-sol` / `high`和最小必要验证，负责人协调审查、代理实施。
 
 | 阶段 | 已接通的用户路径 |
 |---|---|
