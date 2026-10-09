@@ -41,6 +41,7 @@ public static class AutomationTemplates
         new("workday-reminder", "仅工作时段定期提醒", "默认工作日9–18点，每30分钟请求安静提醒；填写内容后审阅启用。结束时刻不触发，无节假日判断，不补发错过机会。", WindowedIntervalCapabilities.Due, NotificationCapabilities.Show, [], []),
         new("desktop-reminder", "定期显示桌面提醒", "填写提醒内容；默认每30分钟请求一次安静提醒。Windows勿扰可能隐藏通知，不适合紧急提醒。", IntervalCapabilities.Elapsed, NotificationCapabilities.Show, [], []),
         new("pdf-arrival", "文件夹出现PDF后打开工具", "填写本机文件夹和配套程序；新建或重命名出现PDF后一秒合并触发，不读取内容、不证明下载完成、不传递文件名。可给动作增加延迟。", FileArrivalCapabilities.Arrived, "program.start", [("kind", "pdf")], []),
+        new("microphone-toggle-shortcut", "按同一快捷键切换麦克风静音", "填写快捷键；读取默认通信麦克风当前软件静音状态后反向设置一次并读回，无法读取时不修改。取消静音可能立即恢复收音；不是硬件隐私开关、不停止录音程序、不修改输入音量，暂停/结束不恢复。请审阅后启用。", HotkeyCapabilities.Pressed, MicrophoneToggleCapabilities.Toggle, [], []),
         new("microphone-shortcut", "按快捷键静音默认通信麦克风", "选择快捷键；只静音Windows默认通信麦克风一次，不自动取消静音。应用选择的其他输入设备可能仍收音，请核对应用。", HotkeyCapabilities.Pressed, MicrophoneCapabilities.Set, [], [("operation", "mute")]),
         new("lock-display-off", "锁屏后请求关闭屏幕", "锁屏新通知后向Windows请求关闭屏幕一次，电脑与后台工作继续；不睡眠、不改电源方案。输入可能唤醒屏幕，驱动与保持屏幕唤醒请求可能影响效果，接受请求不代表物理屏幕已关闭。", SystemEventCapabilities.Event, DisplayOffCapabilities.Request, [("event", "locked")], []),
         new("lock-mute", "锁屏后静音默认播放设备", "锁屏时静音一次，不停止播放、不改麦克风，解锁不自动恢复。之后可手动取消静音；请审阅后启用。", SystemEventCapabilities.Event, AudioPlaybackCapabilities.Set, [("event", "locked")], [("operation", "mute")]),
