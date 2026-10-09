@@ -25,6 +25,9 @@ public sealed partial class EngineHost
             if (flights.Values.Any(f => (f.Work.RequiredResources.IsDefault ? [f.Work.Key] : f.Work.RequiredResources).Contains(key))) return false;
             if (running && !recovery && GetObservationPlan().References.ContainsKey(key)) return false;
             readyObservations.Remove(key);
+            foreach (var target in targetRules.Keys.ToArray())
+                if (ExpandResources(targetRules[target].SelectMany(id => rules[id].Definition.Condition.Dependencies).Append(target)).Contains(key))
+                    Recompute(target);
             foreach (var work in pendingWork.ToArray())
                 if ((work.RequiredResources.IsDefault ? [work.Key] : work.RequiredResources).Contains(key)) RemovePending(work.Key);
             SignalWork();

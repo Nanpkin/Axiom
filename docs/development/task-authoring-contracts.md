@@ -56,10 +56,20 @@ WinUI 经 `AutomationProtocol` 的受权本地管道读取目录及任务，提�
 3. 在 `Infrastructure/BuiltInAutomationPlugins` 的模块列表和 Agent `GameHdrAgent` 的 Provider 列表各登记一次；Host `Program` 消费同一模块列表。复用任务数据库、路由、权限、传输、调度和字段渲染器；无需改专用 UI、通用表结构或为能力新增 pipe 类型。
 4. 明确真实事件来源、权限与故障语义；验证配置保存/读回、真实触发/动作、活动记录、暂停/退出 UI。命令结果未知时不重试。
 
-当前通用插件运行时接受上述会话 Command contract；Desired State 的接管/恢复沿用 HDR 独立生命周期适配器。新 Desired State 场景需自己的真实恢复语义，不能伪装成命令。外部 DLL 安装、卸载、热加载、版本隔离尚未实现，不宣称是已开放的第三方插件平台。
+当前通用插件运行时接受上述会话 Command contract，并以专用租约支持power.keepAwake；HDR Desired State的接管/恢复继续使用独立适配器。新 Desired State 场景需自己的真实恢复语义，不能伪装成命令。外部 DLL 安装、卸载、热加载、版本隔离尚未实现，不宣称是已开放的第三方插件平台。
 
 资源计划包含动作与检测资源；仅 SessionAgent 的 Observe 资源进入会话观察流，Agent 同时核对所需会话能力 ID。只有 Host 检测时允许空观察资源，以空 snapshot 确认动作能力就绪，并持有管道等待断开，无健康轮询。Host 观察由本地 source 提供，确认订阅后再向 Engine 确认完整资源计划。连接中断、事件缺失/溢出置 Unknown 并取消未执行动作；仅有有效任务且连接失败时按五秒间隔重连，空闲不探测健康。初始/重连快照不补执行历史边沿，任务暂停/删除或条件不成立取消延迟。
 
 插件订阅结束使用 `Engine.ReleaseSource` 显式释放资源所有权与容量，再为新资源计划握手。仍持有的 source 重握手必须保持资源集合；释放使旧 epoch 永久失效，新注册必须重新给完整快照。这解决增删规则/检测目标时沿用同一 source ID 却改变资源导致的订阅失败。
 
 `IntervalPlugin` 的 `interval.elapsed` 是用户配置的周期检测，不是环境轮询或动作延迟：1–1440整数分钟转稳定资源，首快照计数0。同周期共享观察资源，`IntervalEventSource` 只安排所有周期最近一个到期点；以单调经过时间判断到期，每个过期周期仅发一次并从当前时间续算。取消释放定时器，重启/重连重新建立完整周期，不持久化错过次数，不唤醒电脑。提供程序、窗口、托盘、目录/网页命令组合，不默认组合键盘输入；重复动作不承诺恢复。实际注册目录进入摘要，导入再次校验整数约束。
+
+## 一次性动作的时间段限制
+
+`ITaskActionCompiler.SupportsTimeWindow` 显式声明支持后，真实目录的动作显示时段编辑器。`AutomationTask.TimeWindow` 保存本地周时段（分钟起止、星期bitmask），使用task schema 2；无时段的既有任务保持schema 1，旧后端因版本不兼容拒绝含时段配置，避免忽略限制直接执行。能力自身schema不变。编译器同时校验声明及范围；Domain拒绝Desired动作挂载此门禁，HDR兼容转换也明确拒绝，不能丢字段。
+
+Engine在新条件边沿/事件进入延迟前、延迟deadline以及队列取出前检查当前时区的本地时间；开始包含、结束排除，跨午夜归开始星期。时段外消费边沿、取消其等待，不开窗补发，不增加计时器。已经开始的动作仍按原取消/超时规则运行，不因时间结束反向撤回。夏令时重复小时都属于同一本地时段，仍须真实新边沿；没有节假日或唤醒电脑语义。运行时钟提供LocalTimeZone，测试可以注入固定时区。
+
+`power.keepAwake` 是拥有可释放OS请求的具体Desired动作，使用独立lease管道与ownership观察。Engine的`ILeasedDesiredExecutor`授权回调只更新内存并异步发出取消，不在Engine锁内进行IPC。最后条件撤销、观察未就绪/未知或停止释放租约；Agent管道结束在finally关闭本请求，未改全局状态，不套用旧值恢复。其他Desired动作不能仅声明后绕过具体生命周期接入。
+
+`TaskField.EditAsList`仅配合TextList使用，通用名单编辑弹窗支持最多16项、每项255字符；保留空格及大小写，去重只按整行Ordinal。普通TextList仍用于多行通知正文。名单默认值和选项在可导出目录中清空；本机profile名称仅由用户手工补齐，不作为AI自由文本执行参数。

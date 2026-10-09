@@ -88,6 +88,12 @@ public sealed partial class WorkbenchWindow
                     var heading = Row(12); heading.Children.Add(Text(task.Title, 20, Ink, true)); heading.Children.Add(Badge(task.Paused ? "已暂停" : "已启用", task.Paused)); body.Children.Add(heading);
                     body.Children.Add(Text("检测  " + Summary(task.Detection, TaskCapabilityKind.Detection), 14, Muted));
                     body.Children.Add(Text("执行  " + Summary(task.Action, TaskCapabilityKind.Action), 15, Ink, true));
+                    if (task.TimeWindow is { } window)
+                    {
+                        body.Children.Add(Text(TimeWindowLabel(window), 13, Muted));
+                        var admission = status?.Observations.FirstOrDefault(o => o.TaskId == task.Id)?.Value;
+                        if (admission is not null) body.Children.Add(Text(admission, 12, Muted));
+                    }
                     var actions = Row(8);
                     var edit = Action("编辑"); edit.Click += (_, _) => SelectRule(task);
                     var toggle = Action(task.Paused ? "启用" : "暂停"); toggle.Click += async (_, _) => await ToggleRuleAsync(task);
@@ -110,6 +116,8 @@ public sealed partial class WorkbenchWindow
         var save = Action("保存任务", true); save.IsEnabled = editor.Complete; save.Click += async (_, _) => await SaveAsync();
         var behavior = Column(12); behavior.Children.Add(Text("03   运行方式", 18, Ink, true));
         var actionDescriptor = FindCapability(editor.Action, TaskCapabilityKind.Action);
+        var timeWindowHost = new ContentControl { HorizontalContentAlignment = HorizontalAlignment.Stretch };
+        void UpdateTimeWindow() => timeWindowHost.Content = BuildTimeWindowEditor(FindCapability(editor.Action, TaskCapabilityKind.Action)?.SupportsTimeWindow == true);
         var behaviorText = Text(actionDescriptor?.Behavior ?? "选择动作后，这里会说明执行和结束方式。", 13, Muted);
         var warningText = Text(editor.Version > 0 ? actionDescriptor?.EditWarning ?? "" : "", 12, Amber);
         void SelectionChanged(TaskCapabilityKind kind)
@@ -119,12 +127,14 @@ public sealed partial class WorkbenchWindow
             behaviorText.Text = selected?.Behavior ?? "选择动作后，这里会说明执行和结束方式。";
             warningText.Text = editor.Version > 0 ? selected?.EditWarning ?? "" : "";
             save.IsEnabled = editor.Complete;
+            UpdateTimeWindow();
         }
         void BuildActions() => actionHost.Content = BuildCapabilitySection(TaskCapabilityKind.Action,
             "02   执行什么", "选择条件满足后要执行的动作。", editor.Action, SelectionChanged);
         content.Children.Add(BuildCapabilitySection(TaskCapabilityKind.Detection, "01   检测什么", "选择需要检测的状态或事件。", editor.Detection, SelectionChanged));
         BuildActions(); content.Children.Add(actionHost);
         behavior.Children.Add(behaviorText);
+        UpdateTimeWindow(); behavior.Children.Add(timeWindowHost);
         var enabled = new ToggleSwitch { Header = "启用任务", OnContent = "保存后开始检测", OffContent = "只保存，暂不检测", IsOn = !editor.Paused };
         enabled.Toggled += (_, _) => editor.Paused = !enabled.IsOn; behavior.Children.Add(enabled);
         behavior.Children.Add(warningText);
@@ -210,6 +220,8 @@ public sealed partial class WorkbenchWindow
                 if (field.BrowseLocalPath) AddLocalPathBrowse(body, text, true, true);
                 break;
             case TaskFieldKind.TextList:
+                if (field.EditAsList)
+                { body.Children.Add(BuildNamedListEditor(field, value, selection => editor.SetParameter(descriptor.Kind, field.Id, selection))); break; }
                 var lines = new TextBox { Header = field.Label, MaxLength = field.MaximumLength,
                     AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 112, Text = value ?? "" };
                 lines.TextChanged += (_, _) => editor.SetParameter(descriptor.Kind, field.Id, lines.Text); body.Children.Add(lines); break;

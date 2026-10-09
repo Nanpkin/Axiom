@@ -19,6 +19,7 @@ public sealed class TrayPlugin : IAutomationPlugin
 
 public sealed class HideTrayTaskAction : ITaskActionCompiler
 {
+    public bool SupportsTimeWindow => true;
     public TaskCapability Descriptor => TrayCapabilities.Descriptor;
     public RuleAction Compile(TaskInvocation configuration, ResourceScope scope) =>
         TaskInvocationCommands.Compile(configuration, Descriptor, scope, ExecutablePaths.ResourceId(TrayCapabilities.ValidateTargets(configuration)));

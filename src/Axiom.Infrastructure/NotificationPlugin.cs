@@ -20,6 +20,7 @@ public sealed class NotificationPlugin : IAutomationPlugin
 }
 public sealed class NotificationTaskAction : ITaskActionCompiler
 {
+    public bool SupportsTimeWindow => true;
     public TaskCapability Descriptor => NotificationCapabilities.Descriptor;
     public RuleAction Compile(TaskInvocation configuration, ResourceScope scope)
     {

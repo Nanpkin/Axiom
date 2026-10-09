@@ -9,17 +9,19 @@ internal sealed class TaskEditorState
     public long Version { get; private set; }
     public string Title { get; set; } = "";
     public bool Paused { get; set; }
+    public WeeklyTimeWindow? TimeWindow { get; set; }
     public TaskInvocation? Detection { get; private set; }
     public TaskInvocation? Action { get; private set; }
     private AutomationTask? original;
     public bool Complete => Detection is not null && Action is not null;
-    public bool Dirty => original is null ? Title.Length > 0 || Detection is not null || Action is not null || Paused :
-        Title != original.Title || Paused != original.Paused || !Same(Detection, original.Detection) || !Same(Action, original.Action);
+    public bool Dirty => original is null ? Title.Length > 0 || Detection is not null || Action is not null || Paused || TimeWindow is not null :
+        Title != original.Title || Paused != original.Paused || TimeWindow != original.TimeWindow || !Same(Detection, original.Detection) || !Same(Action, original.Action);
     private static bool Same(TaskInvocation? a, TaskInvocation b) => a is not null && a.CapabilityId == b.CapabilityId && a.SchemaVersion == b.SchemaVersion &&
         a.Parameters.Count == b.Parameters.Count && a.Parameters.All(x => b.Parameters.TryGetValue(x.Key, out var value) && value == x.Value);
     public void Load(AutomationTask? task)
     {
         original = task; Id = task?.Id ?? Guid.NewGuid().ToString("D"); Version = task?.Version ?? 0;
+        TimeWindow = task?.TimeWindow;
         Title = task?.Title ?? ""; Paused = task?.Paused ?? false; Detection = task?.Detection; Action = task?.Action;
     }
     public void LoadDraft(AutomationTask task)
@@ -50,5 +52,5 @@ internal sealed class TaskEditorState
         if (kind == TaskCapabilityKind.Detection && Detection is not null) Detection = Detection with { Parameters = Detection.Parameters.SetItem(key, value) };
         if (kind == TaskCapabilityKind.Action && Action is not null) Action = Action with { Parameters = Action.Parameters.SetItem(key, value) };
     }
-    public AutomationTask Build() => Complete ? new(Id, Version, Title.Trim(), Paused, Detection!, Action!) : throw new InvalidOperationException("请选择检测和动作类型。");
+    public AutomationTask Build() => Complete ? new(Id, Version, Title.Trim(), Paused, Detection!, Action!, SchemaVersion: TimeWindow is null ? 1 : 2, TimeWindow: TimeWindow) : throw new InvalidOperationException("请选择检测和动作类型。");
 }

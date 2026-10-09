@@ -35,3 +35,8 @@ AudioPlaybackTests
 FileArrivalTests
 NotificationTests
 WindowedIntervalTests
+TimeWindowTests
+ApplicationAudioTests
+KeepAwakeTests
+
+WifiProfileTests
