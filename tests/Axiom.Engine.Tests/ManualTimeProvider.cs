@@ -7,6 +7,7 @@ internal sealed class ManualTimeProvider : TimeProvider
     private DateTimeOffset utc = DateTimeOffset.UnixEpoch;
     internal readonly List<ManualTimer> Timers = [];
     internal bool FailChange;
+    internal Action<TimeSpan>? TimerCreated;
     internal int FailNextChanges;
     public override long TimestampFrequency => TimeSpan.TicksPerSecond;
     public override long GetTimestamp() { lock (gate) return ticks; }
@@ -17,6 +18,7 @@ internal sealed class ManualTimeProvider : TimeProvider
         var timer = new ManualTimer(this, callback, state);
         lock (gate) Timers.Add(timer);
         timer.Change(dueTime, period);
+        TimerCreated?.Invoke(dueTime);
         return timer;
     }
     internal void Advance(TimeSpan by)

@@ -10,7 +10,7 @@ namespace Axiom.ServiceHost;
 
 internal sealed class AutomationPipeServer(ImmutableArray<IAutomationTaskBackend> backends,
     IAutomationRuntimeLifetime lifetime, string sid, CancellationTokenSource exit, LoginStartupRegistration startup, ShortcutCoordinator shortcuts,
-    EngineHost engine, WorkbenchUtilities utilities)
+    EngineHost engine, WorkbenchUtilities utilities, UsageObservationController usage)
 {
     private readonly AutomationTaskRouter router = new(backends);
     private readonly HashSet<Task> clients = [];
@@ -58,6 +58,32 @@ internal sealed class AutomationPipeServer(ImmutableArray<IAutomationTaskBackend
                 GameHdrPipePeer.RequireSameSession(pipe, request.Type == "restore-shortcuts" ? "Axiom.SessionAgent.exe" : null);
                 AutomationProtocol.ValidateRequest(request, DateTimeOffset.UtcNow);
                 authorized = true;
+                if (request.Type == "usage")
+                {
+                    var result = await usage.HandleAsync(request, await ReadAsync(deadline.Token), deadline.Token);
+                    if (request.Usage!.Operation == "start" && result.UsageSnapshot?.ActiveId is { } active)
+                    {
+                        // This explicit UI lease prevents invisible observation after the window exits.
+                        try
+                        {
+                            await AutomationProtocol.WriteAsync(pipe, result, deadline.Token);
+                            deadline.CancelAfter(Timeout.InfiniteTimeSpan);
+                            var disconnected = pipe.ReadExactlyAsync(new byte[1], deadline.Token).AsTask();
+                            var ended = usage.WaitForEndAsync(active, deadline.Token);
+                            if (await Task.WhenAny(disconnected, ended) == ended && !exit.IsCancellationRequested)
+                            {
+                                await ended;
+                                using var stoppedWrite = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+                                await AutomationProtocol.WriteAsync(pipe, new(1, "usage-ended", request.RequestId), stoppedWrite.Token);
+                            }
+                            deadline.Cancel();
+                            try { await disconnected; } catch (Exception error) when (error is IOException or OperationCanceledException) { }
+                        }
+                        finally { await usage.EndLeaseAsync(active); }
+                    }
+                    else await AutomationProtocol.WriteAsync(pipe, result, deadline.Token);
+                    return;
+                }
                 if (request.Type == "read-tray")
                 {
                     var catalog = await TrayCatalogClient.ReadAsync(sid, deadline.Token);

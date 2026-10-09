@@ -5,6 +5,8 @@ param(
     [switch]$SkipInstaller
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'release-validation.ps1')
+$Version = Get-AxiomReleaseVersion $Version
 . (Join-Path $PSScriptRoot 'artifact-paths.ps1')
 New-Item -ItemType Directory -Path (Join-Path $AxiomRepoRoot 'artifacts') -Force | Out-Null
 $buildLock = [IO.File]::Open((Join-Path $AxiomRepoRoot 'artifacts/build.lock'), [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
@@ -28,6 +30,20 @@ function Merge-Publish([string]$Source, [string]$Destination) {
     }
 }
 try {
+    $sourceCommit = 'unknown'
+    $sourceDirty = $null
+    if (Get-Command git -ErrorAction SilentlyContinue) {
+        $revision = & git -C $AxiomRepoRoot rev-parse HEAD 2>$null
+        if ($LASTEXITCODE -eq 0 -and $revision -match '^[a-f0-9]{40}$') {
+            $sourceCommit = $revision
+            $changes = & git -C $AxiomRepoRoot status --porcelain --untracked-files=normal
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot determine source worktree status.' }
+            $sourceDirty = [bool]$changes
+        }
+    }
+    if ($env:AXIOM_SOURCE_COMMIT -and ($sourceCommit -ne $env:AXIOM_SOURCE_COMMIT -or $sourceDirty)) {
+        throw 'Package source differs from the expected clean CI commit.'
+    }
     foreach ($project in @('Axiom.Launcher','Axiom.ServiceHost','Axiom.SessionAgent','Axiom.WinUI')) {
         Remove-AxiomArtifactDirectory $scratch
         $arguments = @('publish', (Join-Path $AxiomRepoRoot "src/$project/$project.csproj"), '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true', '-o', $scratch,
@@ -46,6 +62,8 @@ try {
     if (Get-ChildItem -LiteralPath $stage -File -Recurse | Where-Object {$_.Extension -in @('.db','.pdb')}) { throw 'Distribution contains data or debug symbols.' }
     Copy-Item -LiteralPath (Join-Path $AxiomRepoRoot 'packaging/使用说明.txt') -Destination $stage
     & (Join-Path $PSScriptRoot 'add-package-notices.ps1') -PackageDir $stage
+    $buildInfo = [ordered]@{ schemaVersion = 1; version = $Version; sourceCommit = $sourceCommit; sourceDirty = $sourceDirty; target = 'win-x64'; builtAtUtc = [DateTimeOffset]::UtcNow.ToString('O') }
+    $buildInfo | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $stage 'BUILD-INFO.json') -Encoding utf8
     if ($Preview) {
         if (Get-Process Axiom,Axiom.ServiceHost,Axiom.SessionAgent,Axiom.WinUI -ErrorAction SilentlyContinue) { throw 'Build ready in artifacts/package-stage. Stop Axiom safely before replacing the preview.' }
         $output = Join-Path $AxiomRepoRoot 'artifacts/Axiom-preview'
@@ -55,6 +73,7 @@ try {
     } else {
         Remove-AxiomArtifactDirectory $release
         New-Item -ItemType Directory -Path $release | Out-Null
+        Copy-Item -LiteralPath (Join-Path $stage 'BUILD-INFO.json') -Destination $release
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         $zip = Join-Path $release "Axiom-$Version-win-x64-portable.zip"
         [IO.Compression.ZipFile]::CreateFromDirectory($stage, $zip, [IO.Compression.CompressionLevel]::Optimal, $false)
@@ -63,7 +82,7 @@ try {
             & $compiler "/DAppVersion=$Version" "/DPackageDir=$stage" "/DReleaseDir=$release" (Join-Path $AxiomRepoRoot 'packaging/Axiom.iss')
             if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed.' }
         }
-        $hashes = Get-ChildItem -LiteralPath $release -File | Where-Object {$_.Extension -in @('.zip','.exe')} | ForEach-Object { (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + $_.Name }
+        $hashes = Get-ChildItem -LiteralPath $release -File | Where-Object {$_.Extension -in @('.zip','.exe','.json')} | ForEach-Object { (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + $_.Name }
         [IO.File]::WriteAllLines((Join-Path $release 'SHA256SUMS.txt'), [string[]]$hashes)
         Write-Output "Release files ready: $release"
         Remove-AxiomArtifactDirectory $stage

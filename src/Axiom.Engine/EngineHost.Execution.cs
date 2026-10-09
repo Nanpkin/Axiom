@@ -118,6 +118,11 @@ public sealed partial class EngineHost
     partial void ReconcileDecision(ResourceKey key)
     {
         var decision = decisions[key];
+        if (Executor is ILeasedDesiredExecutor leases)
+            leases.SetDesiredAuthorization(key, decision.Generation,
+                executionSession is { Active: true } && decision.Action?.Kind == RuleActionKind.Desired &&
+                store.Get(key)?.Observation.Quality == StateQuality.Known &&
+                ObservationInputsReady(decision.Winners.SelectMany(id => rules[id].Definition.Condition.Dependencies).Append(key)));
         var edge = decision.Winners.Any(id => rules.TryGetValue(id, out var rule) && rule.CommandEdge);
         if (targetRules.TryGetValue(key, out var owners))
             foreach (var id in owners) rules[id].CommandEdge = false; // suppressed/busy edges are never replayed
@@ -239,7 +244,7 @@ public sealed partial class EngineHost
             if (observed?.Quality != StateQuality.Known || observed.Value == work.Action.Value) return false;
             if (executionStates.GetValueOrDefault(work.Key)?.ObservationFence is { } fence && observationVersions.GetValueOrDefault(work.Key) <= fence) return false;
         }
-        return work.Winners.All(id => rules.TryGetValue(id, out var rule) && rule.Value == TruthValue.True && Eligibility(rule) is null &&
+        return work.Winners.All(id => rules.TryGetValue(id, out var rule) && rule.Value == TruthValue.True && Eligibility(rule) is null && WithinTimeWindow(rule) &&
             (rule.Definition.Timing.MaximumInputAge is not { } age || rule.Definition.Condition.Dependencies.All(key =>
                 receivedAt.TryGetValue(key, out var at) && clock.MonotonicNow - at < age)));
     }
@@ -250,7 +255,9 @@ public sealed partial class EngineHost
             var next = node.Next;
             var work = node.Value;
             if (!ValidWork(work))
-            { RemovePending(work.Key); SetExecutionStatus(work.Key, DecisionStatus.Blocked, "PreExecutionValidationFailed"); node = next; continue; }
+            { RemovePending(work.Key); SetExecutionStatus(work.Key, DecisionStatus.Blocked,
+                work.Winners.Any(id => rules.TryGetValue(id, out var rule) && !WithinTimeWindow(rule))
+                    ? "OutsideTimeWindow; queued command discarded" : "PreExecutionValidationFailed"); node = next; continue; }
             if (flights.ContainsKey(work.Key) || work.Capability.Concurrency == ConcurrencyScope.Capability && flights.Values.Any(f => f.Work.Key.CapabilityId == work.Key.CapabilityId))
             { node = next; continue; }
             RemovePending(work.Key);
@@ -356,7 +363,12 @@ public sealed partial class EngineHost
                 { rule.EventLatched = false; rule.Value = TruthValue.False; rule.TrueSince = null; consumedEvent = true; }
         if (work.Manual || decision.Generation != work.Generation || flight.TimedOut || outcome.Status == OutcomeStatus.Unknown)
         {
-            state.ObservationFence = observationVersions.GetValueOrDefault(work.Key);
+            // A removable request executor closes the old owned lease before returning.
+            // Its latest ownership sample is usable even if it arrived before this old receipt;
+            // otherwise a remaining winner can wait forever for a second unchanged false sample.
+            state.ObservationFence = Executor is ILeasedDesiredExecutor && work.Action.Kind == RuleActionKind.Desired &&
+                decision.Generation != work.Generation && store.Get(work.Key)?.Observation is { Quality: StateQuality.Known, Value.Boolean: false }
+                ? null : observationVersions.GetValueOrDefault(work.Key);
             state.AwaitingReceiptObservation = false;
             Recompute(work.Key); return;
         }
@@ -388,6 +400,7 @@ public sealed partial class EngineHost
     }
     partial void StopExecution()
     {
+        if (Executor is ILeasedDesiredExecutor leases) leases.ReleaseAllDesired();
         if (executionSession is { } session) session.Active = false;
         pendingWork.Clear(); pendingByKey.Clear();
         foreach (var flight in flights.Values) RequestCancellation(flight);

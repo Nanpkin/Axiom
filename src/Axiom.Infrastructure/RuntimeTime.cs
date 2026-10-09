@@ -6,6 +6,7 @@ public sealed class RuntimeClock(TimeProvider timeProvider) : IEngineClock
 {
     public TimeProvider TimeProvider { get; } = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
     private readonly long origin = timeProvider.GetTimestamp();
+    public TimeZoneInfo LocalTimeZone => TimeProvider.LocalTimeZone;
     public DateTimeOffset UtcNow => TimeProvider.GetUtcNow();
     public TimeSpan MonotonicNow => TimeProvider.GetElapsedTime(origin);
 }

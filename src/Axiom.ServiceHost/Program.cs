@@ -62,7 +62,7 @@ internal static class Program
         var pluginDatabase = Path.Combine(Path.GetDirectoryName(ruleDatabase)!, "tasks.db");
         using var pluginStore = new SqliteAutomationTaskStore(pluginDatabase);
         RuleDraftDataPath.ProtectFile(pluginDatabase, sid);
-        await using var plugins = new PluginTaskRuntime([new ProgramPlugin(), new AxiomStartupPlugin(), new WindowPlugin(), new TrayPlugin(), new KeyboardPlugin()], pluginStore, sid, engine, WindowsBootIdentity.Read);
+        await using var plugins = new PluginTaskRuntime(BuiltInAutomationPlugins.Create(), pluginStore, sid, engine, WindowsBootIdentity.Read);
         await plugins.InitializeAsync();
         var key = new ResourceKey("windows.service.status", ServiceStatusProtocol.ServiceName, ResourceScope.Machine);
         engine.ConfigureDisplayObservation(key);
@@ -82,10 +82,15 @@ internal static class Program
         try { loginStartup.MigrateLegacy(); }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Runtime.InteropServices.COMException)
         { engine.RecordActivity(new(DateTimeOffset.UtcNow, "设置", "登录启动迁移未完成", error.Message)); }
+        var usageDatabase = Path.Combine(Path.GetDirectoryName(ruleDatabase)!, "usage.db");
+        if (File.Exists(usageDatabase)) RuleDraftDataPath.ProtectFile(usageDatabase, sid);
+        using var usageJournal = new UsageJournal(usageDatabase);
+        RuleDraftDataPath.ProtectFile(usageDatabase, sid);
+        await using var usage = new UsageObservationController(usageJournal, new AgentUsageObservationSource(sid));
         var taskServer = new AutomationPipeServer([new GameHdrTaskBackend(game, sid,
             ResourceScope.Session(sid, System.Diagnostics.Process.GetCurrentProcess().SessionId)), plugins], new AutomationRuntimeLifetime(game, plugins), sid, exit,
             loginStartup,
-            new ShortcutCoordinator(shortcutStore, new ShortcutAgentClient(sid)), engine, utilities);
+            new ShortcutCoordinator(shortcutStore, new ShortcutAgentClient(sid)), engine, utilities, usage);
         var serveTasks = taskServer.RunAsync();
         utilities.StartStartupScan();
         try { await game.RefreshAgentAsync(exit.Token); }

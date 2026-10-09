@@ -4,6 +4,7 @@ namespace Axiom.Engine.Tests;
 
 internal sealed class FakeClock : IEngineClock
 {
+    public TimeZoneInfo LocalTimeZone { get; set; } = TimeZoneInfo.Utc;
     public DateTimeOffset UtcNow { get; private set; } = DateTimeOffset.UnixEpoch;
     public TimeSpan MonotonicNow { get; private set; }
     public void Advance(TimeSpan by)

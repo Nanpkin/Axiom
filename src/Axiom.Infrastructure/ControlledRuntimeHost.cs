@@ -71,6 +71,7 @@ public sealed class ControlledRuntimeHost
     internal Func<Task>? BeforeDisposeCommit { get; set; }
     internal Func<Task>? BeforePlanIteration { get; set; }
     internal Action? AfterCallbackAdmission { get; set; }
+    internal Func<Task>? BeforeSnapshotAcknowledgment { get; set; }
     internal Func<Task>? AfterIngressBatch { get; set; }
     internal Func<int, Task>? AfterDeferredBatch { get; set; }
 
@@ -284,8 +285,10 @@ public sealed class ControlledRuntimeHost
     private async Task WatchFaultAsync(Task<Exception>? schedulerFault)
     {
         if (schedulerFault is null) return;
-        if (await Task.WhenAny(schedulerFault, cleaned.Task).ConfigureAwait(false) != schedulerFault) return;
+        var completed = await Task.WhenAny(schedulerFault, cleaned.Task).ConfigureAwait(false);
         if (BeforeFaultHandling is { } beforeFault) await beforeFault().ConfigureAwait(false);
+        // Cleanup can win the queued continuation even when this lifecycle's fault is ready.
+        if (completed != schedulerFault && !schedulerFault.IsCompleted) return;
         lock (gate)
         {
             error = "Scheduler fault: " + schedulerFault.Result.Message;
@@ -395,6 +398,9 @@ public sealed class ControlledRuntimeHost
                                     sourceSequences[key]++;
                                     baselineWatermarks[key] = snapshot.Sequence;
                                     pendingBaselines.Remove(key);
+                                    // A snapshot is not yet a physical-plan acknowledgment. Keep
+                                    // subsequent edges deferred until resumed rules are admitted.
+                                    deferredKeys.Add(key);
                                 }
                                 if (!bootstrapped || recovery) lastSequence = snapshot.Sequence;
                                 baselineReady = true;
@@ -403,6 +409,7 @@ public sealed class ControlledRuntimeHost
                         }
                     }
                 }
+                if (snapshotKeys.Count != 0 && BeforeSnapshotAcknowledgment is { } beforeAcknowledgment) await beforeAcknowledgment().ConfigureAwait(false);
                 lock (gate)
                 {
                     SynchronizeEngineStop();

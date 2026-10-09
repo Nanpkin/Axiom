@@ -1,6 +1,6 @@
 # 构建、清理与 Windows 分发
 
-2026-10-07。同一份 payload 同时提供便携 ZIP 和 Windows 安装 EXE。当前准备的是预览包，不代表已发布正式第一版；不自动上传 GitHub。
+2026-10-09。同一份 payload 同时提供便携 ZIP 和 Windows 安装 EXE。所有者已授权按功能批次自动发布私有 GitHub 预览版；仓库保持私有，不代表正式第一版，也不自动替换所有者本机版本。
 
 ## 本机打包
 
@@ -10,7 +10,7 @@
 pwsh -NoProfile -File tools/publish-package.ps1 -Version 0.1.0-preview.1
 ```
 
-输出仅在 `artifacts/release`：`Axiom-<版本>-win-x64-portable.zip`、`Axiom-<版本>-win-x64-setup.exe` 和 `SHA256SUMS.txt`。每次替换本地工作输出，不累积所有历史包；要保留正式历史版本，上传相应 GitHub Release。`-SkipInstaller` 仅用于单独检查 ZIP，不是完整分发。
+输出仅在 `artifacts/release`：`Axiom-<版本>-win-x64-portable.zip`、`Axiom-<版本>-win-x64-setup.exe` 、`BUILD-INFO.json` 和 `SHA256SUMS.txt`。每次替换本地工作输出，不累积所有历史包；要保留正式历史版本，上传相应 GitHub Release。`-SkipInstaller` 仅用于单独检查 ZIP，不是完整分发。
 
 启动器 Native AOT 独立 EXE；Host、Agent、WinUI 在 `app` 共享一份 .NET/WinUI 依赖。合并时相同路径必须 hash 相等，不覆盖不同版本依赖；不启用 Host/Agent/UI 的危险裁剪。WinUI 只引用实际需要的组件包，移除 umbrella 引入的 AI/ML/Widgets 等未使用组件。系统注册、快捷键重开、后台路径通过 AxiomInstallLayout 解析，保留旧预览布局兼容。
 
@@ -37,14 +37,24 @@ pwsh -NoProfile -File tools/clean-artifacts.ps1 -Deep
 
 tools/dotnet.ps1 优先系统 SDK，NuGet 使用标准 `%USERPROFILE%\.nuget\packages` 共用缓存，项目不再携带另一套。首次迁移旧缓存是复用依赖而非备份用户配置。
 
-## 第一次 GitHub Release
+## 按功能批次发布 GitHub 预览版
 
-1. 满意后把源码提交到自己的 GitHub 仓库。`artifacts`、bin/obj、数据库和所有者私人手册已忽略，不提交个人配置或运行包。项目源码许可证尚未选定，由所有者在公开源码前选择，不替用户擅自指定。
-2. 在本机运行上述打包命令；或仓库 **Actions → Build Windows packages → Run workflow** 填版本号，完成后下载 Axiom-windows-packages 产物并解压拿到三个文件。此工作流只构建，不自动发布 Release；本轮未在 GitHub 运行。
-3. 仓库右侧 **Releases → Draft a new release**，新建标签（如 `v0.1.0-preview.1`，正式满意版可 `v1.0.0`），选择对应代码分支/提交，填写版本说明。
-4. 附加便携 ZIP、安装 EXE 和 SHA256SUMS.txt。GitHub 自动附带的 Source code ZIP 是源码，不能当作软件运行包。说明下载 setup 安装，或 portable 解压。
-5. 预览勾选 **Set as a pre-release**，先保存草稿核对下载和说明，再点击发布。参考 [GitHub 官方操作](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository)。
+1. 每批功能在 `codex/` 分支完成并 push；核对 PR 精确 head SHA 的全部检查和对应包，再由负责人合并 main。`artifacts`、bin/obj、数据库和所有者私人手册仍不提交；许可证尚未选择，公开源码另由所有者决定。
+2. 等 main 对应提交的 Check source 成功，再为这个提交创建明确标签并推送，例如 `v0.2.0-preview.20261009.1`。版本来自标签去掉 `v`，不按每个小提交自动递增或发布；同日下一批使用新的末尾序号。
+3. **Publish preview release** 自动确认标签 commit 属于 main，并复用 Check source 对该精确 SHA 再跑 Linux/Windows 核心、Windows 原生和完整应用构建；即使标签之前没有检查也不能绕过。随后复用 publish-package.ps1 新构建 ZIP、安装 EXE、BUILD-INFO.json 和 SHA256SUMS.txt，不下载旧 PR 或旧版本包来发布。
+4. 发布前核对四文件集合、全部 SHA256、版本、源码 SHA、干净源码标志，以及 ZIP 内外来源一致。只在最终发布 job 授予 contents:write；先创建 draft，上传全部四项并核对集合和大小，再标为 GitHub pre-release。说明链接到该固定提交的功能与限制；GitHub 自动附带的 Source code ZIP 是源码，不能当作运行包。
+5. 已发布标签不能覆盖或移动；修复后换新版本。失败只留下本机制标记的 draft 时，可在 **Actions → Publish preview release → Run workflow** 输入已存在标签的版本号（不含 `v`）重跑；必须还是同一 SHA，重新检查并构建所有包后才能续传和发布。其他 draft 不自动修改；普通 Build Windows packages 手动入口仍只产出 14 天保留的私有 Actions artifact。
+
+```powershell
+# 在对应 main CI 成功后，使用已核对的提交创建标签；不移动现有标签。
+git tag v0.2.0-preview.20261009.1 <已验证的main提交SHA>
+git push origin v0.2.0-preview.20261009.1
+```
+
+GitHub 的预览发布由明确标签触发，与普通 push/PR 检查分开。合成回归由 `tools/test-release.ps1` 在两套 CI 核心作业中运行，覆盖版本输入、标签来源、hash、脏源码和旧 ZIP 来源拒绝。参考 [GitHub Releases](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository)。
 
 此预览未购买/配置代码签名证书，安装包和启动器为未签名应用；正式对外发布时再决定签名。自带运行依赖已核对发布内容，10-09 新布局后台/UI 实际启动，进程模块核对为包内 coreclr 和 WinUI。全新 Windows/未安装任何运行时、所有 DPI、电脑重启、完整性能预算仍属于第一版发布前验收，不能用本机已装开发环境替代。部署依据：[.NET Native AOT](https://learn.microsoft.com/en-us/dotnet/core/deploying/native-aot/)、[Windows App SDK 组件](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/release-notes/windows-app-sdk-1-8)。
 
 两个包实际构建成功、SHA256 和内容核对通过，25 项布局/登录/协议/持久化/插件相关测试通过。10-09 用户退出游戏后，实际当前用户安装、同版本覆盖升级、开始菜单/系统卸载登记、后台/UI 启动、登录位置、快捷键重开/关闭、原生编辑与零 UI 动作通过；卸载删除本安装登录任务、文件、菜单与系统登记。精简预览已替换启动，原规则指纹与登录偏好保留。首次菜单检查使用了错误的 /GROUP 假设，实际安装组名为 Axiom；已按登记组名及快捷方式真实目标核对，产品正常。不同版本升级、可选桌面入口、下次实际 Windows 登录和干净系统另待专项验收。
+
+包内与产物旁的 `BUILD-INFO.json` 记录版本、源码提交、工作区是否有未提交源码改动、目标平台和 UTC 构建时间；不含用户名、路径或配置。PR 打包检出准确的 head SHA，CI 校验源码提交且拒绝脏工作区。`SHA256SUMS.txt` 覆盖 ZIP、安装 EXE 和来源说明。源代码归档没有 Git 信息时提交号标 unknown，不伪造来源。

@@ -1,0 +1,71 @@
+name: Publish preview release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '已存在标签的版本号；例如 0.2.0-preview.20261009.1'
+        required: true
+        type: string
+        default: '0.2.0-preview.20261009.1'
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
+  cancel-in-progress: false
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.source.outputs.version }}
+      tag: ${{ steps.source.outputs.tag }}
+      sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Resolve existing version tag on main
+        id: source
+        shell: pwsh
+        env:
+          AXIOM_RELEASE_EVENT: ${{ github.event_name }}
+          AXIOM_RELEASE_TAG: ${{ github.ref_name }}
+          AXIOM_RELEASE_VERSION: ${{ inputs.version }}
+        run: ./tools/resolve-release.ps1
+  checks:
+    needs: source
+    uses: ./.github/workflows/check.yml
+    with:
+      source_ref: ${{ needs.source.outputs.sha }}
+  packages:
+    needs: [source, checks]
+    uses: ./.github/workflows/build-release.yml
+    with:
+      version: ${{ needs.source.outputs.version }}
+      source_ref: ${{ needs.source.outputs.sha }}
+  release:
+    needs: [source, packages]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: Axiom-windows-packages
+          path: artifacts/release
+      - name: Verify and publish the four fresh package assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AXIOM_RELEASE_VERSION: ${{ needs.source.outputs.version }}
+          AXIOM_SOURCE_COMMIT: ${{ needs.source.outputs.sha }}
+        run: ./tools/publish-github-release.ps1 -Version $env:AXIOM_RELEASE_VERSION -SourceCommit $env:AXIOM_SOURCE_COMMIT

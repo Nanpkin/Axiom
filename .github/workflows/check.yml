@@ -1,14 +1,21 @@
 name: Check source
 on:
   push:
-    branches: [main, 'codex/**']
+    branches: [main]
   pull_request:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      source_ref:
+        type: string
+        required: false
+        default: ''
 permissions:
   contents: read
 concurrency:
-  group: check-${{ github.ref }}
-  cancel-in-progress: true
+  group: check-${{ github.workflow }}-${{ github.ref }}
+  # Let a verified milestone finish packaging while newer pushes replace the pending run.
+  cancel-in-progress: false
 jobs:
   core:
     strategy:
@@ -19,15 +26,26 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.source_ref || github.sha }}
       - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
       - name: Check source privacy
         shell: pwsh
         run: ./tools/check-source-privacy.ps1
+      - name: Release version and provenance guard regressions
+        shell: pwsh
+        run: ./tools/test-release.ps1
       - name: Core behavior and architecture
         shell: pwsh
         run: ./tools/test-core.ps1
+      - name: Native window and shared system subscription regressions
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          dotnet test tests/Axiom.Engine.Tests/Axiom.Engine.Tests.csproj -c Release --no-build --no-restore --filter "FullyQualifiedName~Axiom.Engine.Tests.WindowActionTests.|FullyQualifiedName~Axiom.Engine.Tests.WindowsSessionEventTests.|FullyQualifiedName~Axiom.Engine.Tests.WindowsEndpointMuteTests.|FullyQualifiedName~Axiom.Engine.Tests.WindowsAudioEventTests.|FullyQualifiedName~Axiom.Engine.Tests.WindowsNotificationTests.|FullyQualifiedName~Axiom.Engine.Tests.WindowsKeepAwakeRuntimeTests.|FullyQualifiedName~Axiom.Engine.Tests.WindowsWindowMonitorTests."
+          exit $LASTEXITCODE
       - name: Build Windows application
         if: runner.os == 'Windows'
         shell: pwsh
@@ -36,3 +54,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           dotnet build Axiom.slnx -c Release --no-restore /m:1 /nr:false
           exit $LASTEXITCODE
+  private-packages:
+    if: github.event_name == 'pull_request'
+    needs: core
+    uses: ./.github/workflows/build-release.yml
+    with:
+      version: '0.1.0-preview.observation'

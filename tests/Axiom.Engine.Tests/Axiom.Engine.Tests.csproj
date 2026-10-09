@@ -1,5 +1,54 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <Compile Include="../../src/Axiom.SessionAgent/PowerStateCapabilityProvider.cs" Link="PowerStateCapabilityProvider.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/PowerStateState.cs" Link="PowerStateState.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/PowerStateObservation.cs" Link="PowerStateObservation.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsPowerState.cs" Link="WindowsPowerState.cs" />
+    <Compile Include="../../src/Axiom.SessionAgent/EndpointMuteCapabilityProvider.cs" Link="EndpointMuteCapabilityProvider.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/EndpointMuteState.cs" Link="EndpointMuteState.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsEndpointMuteEvents.cs" Link="WindowsEndpointMuteEvents.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowMonitorGeometry.cs" Link="WindowMonitorGeometry.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsWindowMonitor.cs" Link="WindowsWindowMonitor.cs" />
+    <Compile Include="../../src/Axiom.SessionAgent/UsbDeviceCapabilityProvider.cs" Link="UsbDeviceCapabilityProvider.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/UsbDeviceState.cs" Link="UsbDeviceState.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/UsbDeviceObservation.cs" Link="UsbDeviceObservation.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsUsbDevices.cs" Link="WindowsUsbDevices.cs" />
+    <Compile Include="../../src/Axiom.SessionAgent/WifiProfileCapabilityProvider.cs" Link="WifiProfileCapabilityProvider.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WifiProfileState.cs" Link="WifiProfileState.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsWifiProfiles.cs" Link="WindowsWifiProfiles.cs" />
+    <Compile Include="../../src/Axiom.ServiceHost/PluginTaskRuntime.KeepAwake.cs" Link="PluginTaskRuntime.KeepAwake.cs" />
+    <Compile Include="../../src/Axiom.SessionAgent/KeepAwakeCapabilityProvider.cs" Link="KeepAwakeCapabilityProvider.cs" />
+    <Compile Include="../../src/Axiom.SessionAgent/SessionDesiredLeaseStream.cs" Link="SessionDesiredLeaseStream.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsPowerRequest.cs" Link="WindowsPowerRequest.cs" />
+    <Compile Include="../../src/Axiom.SessionAgent/WindowedIntervalEventSource.cs" Link="WindowedIntervalEventSource.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsDesktopNotification.cs" Link="WindowsDesktopNotification.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/BoundedNativeCommand.cs" Link="BoundedNativeCommand.cs" />
+    <Compile Include="../../src/Axiom.SessionAgent/FileArrivalCapabilityProvider.cs" Link="FileArrivalCapabilityProvider.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/FileArrivalSource.cs" Link="FileArrivalSource.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/AudioPlaybackOperation.cs" Link="AudioPlaybackOperation.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/ApplicationAudioOperation.cs" Link="ApplicationAudioOperation.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/PowerSchemeOperation.cs" Link="PowerSchemeOperation.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/SessionLockOperation.cs" Link="SessionLockOperation.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/BuiltInBrightnessOperation.cs" Link="BuiltInBrightnessOperation.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/SessionLockStateReader.cs" Link="SessionLockStateReader.cs" />
+    <Compile Include="../../src/Axiom.SessionAgent/OnceEventSource.cs" Link="OnceEventSource.cs" />
+    <Compile Include="../../src/Axiom.SessionAgent/DailyEventSource.cs" Link="DailyEventSource.cs" />
+    <Compile Include="../../src/Axiom.SessionAgent/SessionCapabilityProvider.cs" Link="SessionCapabilityProvider.cs" />
+    <Compile Include="../../src/Axiom.SessionAgent/AudioCapabilityProvider.cs" Link="AudioCapabilityProvider.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsAudioEvents.cs" Link="WindowsAudioEvents.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/IntervalEventSource.cs" Link="IntervalEventSource.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/BatteryThresholdEvents.cs" Link="BatteryThresholdEvents.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/UsageWindowHistory.cs" Link="UsageWindowHistory.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsUsageWindows.cs" Link="WindowsUsageWindows.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/ObservedProcessExitTracker.cs" Link="ObservedProcessExitTracker.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowPresenceState.cs" Link="WindowPresenceState.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsWindowPresence.cs" Link="WindowsWindowPresence.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsForegroundIdentity.cs" Link="WindowsForegroundIdentity.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsProcessIdentity.cs" Link="WindowsProcessIdentity.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsForegroundEvents.cs" Link="WindowsForegroundEvents.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsWindowLayout.cs" Link="WindowsWindowLayout.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsSessionEvents.cs" Link="WindowsSessionEvents.cs" />
+    <Compile Include="../../src/Axiom.ServiceHost/UsageObservationController.cs" Link="UsageObservationController.cs" />
     <Compile Include="../../src/Axiom.Launcher/LoginTaskCleanup.cs" Link="LoginTaskCleanup.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/HotkeyRegistrationHub.cs" Link="HotkeyRegistrationHub.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsTrayEvents.cs" Link="WindowsTrayEvents.cs" />

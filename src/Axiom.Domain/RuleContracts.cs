@@ -75,10 +75,12 @@ public sealed record RuleTiming
     public TimeSpan MinimumDuration { get; }
     public TimeSpan Cooldown { get; }
     public TimeSpan? MaximumInputAge { get; }
-    public RuleTiming(TimeSpan debounce = default, TimeSpan minimumDuration = default, TimeSpan cooldown = default, TimeSpan? maximumInputAge = null)
+    public WeeklyTimeWindow? TimeWindow { get; }
+    public RuleTiming(TimeSpan debounce = default, TimeSpan minimumDuration = default, TimeSpan cooldown = default, TimeSpan? maximumInputAge = null, WeeklyTimeWindow? timeWindow = null)
     {
         if (debounce < TimeSpan.Zero || minimumDuration < TimeSpan.Zero || cooldown < TimeSpan.Zero || maximumInputAge <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(debounce));
+        timeWindow?.Validate(); TimeWindow = timeWindow;
         (Debounce, MinimumDuration, Cooldown, MaximumInputAge) = (debounce, minimumDuration, cooldown, maximumInputAge);
     }
 }
@@ -109,6 +111,8 @@ public sealed record RuleDefinition
             throw new ArgumentException("Rule action and non-machine inputs must belong to the rule scope.");
         (Priority, Enabled) = (priority, enabled);
         Timing = timing ?? new();
+        if (Timing.TimeWindow is not null && action.Kind != RuleActionKind.Command)
+            throw new ArgumentException("时间段限制目前只支持一次性动作。");
         Retention = retention ?? new();
     }
 }

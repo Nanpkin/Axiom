@@ -50,6 +50,27 @@ public sealed class RuntimeRecoveryTests
     }
 
     [Fact]
+    public async Task ResumeRetainsEdgesBetweenSnapshotAndPhysicalPlanAcknowledgment()
+    {
+        var f = new RuntimeFixture(); await Within(f.Start(command: true, keep: false));
+        f.Engine.RequestMode(EngineMode.Lightweight);
+        await Within(f.Observer.Released.Reader.ReadAsync().AsTask());
+        await Within(f.Observer.Released.Reader.ReadAsync().AsTask());
+        var reached = Barrier(); var acknowledge = Barrier(); var drained = Barrier();
+        f.Host.BeforeSnapshotAcknowledgment = () => { reached.TrySetResult(); return acknowledge.Task; };
+        f.Observer.Values[Input] = true; f.Engine.RequestMode(EngineMode.Normal);
+        await Within(reached.Task);
+        f.Host.AfterIngressBatch = () => { drained.TrySetResult(); return Task.CompletedTask; };
+        f.Observer.Emit(Input, false); f.Observer.Emit(Input, true);
+        await Within(drained.Task);
+        Assert.Equal(0, f.Executor.Count);
+        acknowledge.TrySetResult();
+        var call = await Within(f.Executor.NextAsync()); call.Complete();
+        await Within(f.Engine.WaitForIdleAsync()); Assert.Equal(1, f.Executor.Count);
+        await f.Stop();
+    }
+
+    [Fact]
     public async Task StopDuringSnapshotAndReleaseHasOneBudgetAndPreservesResidual()
     {
         var f = new RuntimeFixture(); var snapshot = Barrier(); var release = Barrier(); var releasing = Barrier();
