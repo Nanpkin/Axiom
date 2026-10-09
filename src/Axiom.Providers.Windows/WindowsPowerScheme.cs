@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.ComponentModel;
 using System.Runtime.Versioning;
 
 namespace Axiom.Providers.Windows;
@@ -10,6 +11,16 @@ public static class WindowsPowerScheme
     public static Task DrainAsync() => Commands.DrainAsync().WaitAsync(TimeSpan.FromSeconds(5));
     public static Task<(bool Success, string Reason)> SetAsync(Guid scheme, string name, CancellationToken token) =>
         Commands.RunAsync(cancellation => PowerSchemeOperation.Apply(new Api(), scheme, name, cancellation), token);
+
+    public static Guid ReadActive(CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        var error = new Api().GetActive(out var scheme);
+        if (error != 0) throw new Win32Exception((int)error, "无法读取当前电源方案。");
+        if (scheme == Guid.Empty) throw new IOException("Windows返回无效电源方案。");
+        token.ThrowIfCancellationRequested();
+        return scheme;
+    }
 
     private sealed class Api : IPowerSchemeApi
     {

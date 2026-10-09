@@ -114,3 +114,10 @@
 尚未实现：按USB容器/型号或特定音频设备身份筛选、持久显示器身份/特定显示器组合匹配、任意窗口坐标复原、持续状态的时间段释放、通用多动作、自定义电源方案选择及外屏DDC/CI。窗口最小化/最大化/普通、逻辑显示数量和Windows报告Internet条件已过当前main Windows检查，真实场景仍待实机。持续提出并交付实用能力，实机局部障碍不阻止其他独立源码。完整优先级及API障碍见[功能清单](functional-roadmap.md)。
 
 实现定位：[使用观察](../development/usage-observation.md)、[扩展任务指南](../development/extension-task-guide.md)、[代码定位表](../development/code-map.md)、[云端工作流](../development/cloud-workflow.md)。
+
+
+## 本批电源方案上下文
+
+用户可在通用编辑器选择“当前Windows电源方案”并组合亮度、音量、提醒、打开工具或保持唤醒，保存后独立暂停/启用；“使用标准节能方案后调暗内置屏幕”模板默认暂停。首次已成立可建立Desired请求，一次性动作只响应新边沿；结束、Unknown、暂停或停止收回Desired。UI退出仍由Session Agent检测。
+
+公开GUID_ACTIVE_POWERSCHEME通知为提示，64有界合并后一次PowerGetActiveScheme并LocalFree，无轮询或电源写入。有效自定义GUID是已知false；空GUID、读取失败、畸形通知/挂起为Unknown，恢复仅建基线。新注册失败仅拒新消费者，新消息不形成旧供电/电量动作边沿；队列溢出只使对应租约未知。4项合成状态/Provider/Engine/保存与严格导入检查，以及Agent/Provider交叉构建通过。新增Windows原生只读查询/自有窗口过滤与旧共享过滤复跑交由Windows CI；实际方案/策略/挂起恢复待设备验证，不称实机通过。
