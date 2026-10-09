@@ -18,6 +18,12 @@ public static partial class WindowsAudioPlayback
         return Commands.RunAsync(cancellation => Apply(operation, 0, true, cancellation), token);
     }
     private static (bool Success, string Reason) Apply(string operation, int percent, bool microphone, CancellationToken token)
+        => ApplyEndpoint(microphone, token, endpoint => AudioPlaybackOperation.Apply(endpoint, operation, percent, token,
+            microphone ? "默认通信麦克风" : "默认播放设备"));
+
+    // One endpoint binding and COM lifetime for all built-in playback/input actions.
+    private static (bool Success, string Reason) ApplyEndpoint(bool microphone, CancellationToken token,
+        Func<IAudioPlaybackEndpoint, (bool Success, string Reason)> action)
     {
         IDeviceEnumerator? enumerator = null; IDevice? device = null; object? activated = null; var initialized = false;
         try
@@ -31,7 +37,8 @@ public static partial class WindowsAudioPlayback
             Marshal.ThrowExceptionForHR(enumerator.GetDefaultAudioEndpoint(microphone ? 1 : 0, microphone ? 2 : 0, out device));
             token.ThrowIfCancellationRequested(); iid = typeof(IEndpointVolume).GUID;
             Marshal.ThrowExceptionForHR(device.Activate(ref iid, 23, 0, out activated));
-            return AudioPlaybackOperation.Apply(new Endpoint((IEndpointVolume)activated), operation, percent, token, microphone ? "默认通信麦克风" : "默认播放设备");
+            token.ThrowIfCancellationRequested();
+            return action(new Endpoint((IEndpointVolume)activated));
         }
         finally
         {
