@@ -120,6 +120,18 @@ public sealed class MediaPlaybackTests
         var recorder = new UsageRecorder(new(5, false, false, [], SystemEvents: true), DateTimeOffset.UtcNow);
         var proposal = new UsageImport(1, recorder.Session.Id, "existing", "synthetic media state", "synthetic import", template.Draft.Detection, template.Draft.Action);
         var imported = UsageAnalysis.Import(JsonSerializer.Serialize(proposal), recorder.Session, catalog).Draft!; Assert.True(imported.Paused);
+        foreach (var action in new[]
+        {
+            new TaskInvocation(AudioPlaybackAdjustCapabilities.Adjust, 1, ImmutableDictionary<string, string>.Empty.Add("operation", "decrease").Add("step", "5").Add("delaySeconds", "0")),
+            new TaskInvocation(MicrophoneToggleCapabilities.Toggle, 1, ImmutableDictionary<string, string>.Empty.Add("delaySeconds", "0"))
+        })
+        {
+            Assert.Contains(new TaskCombination(MediaPlaybackCapabilities.State, action.CapabilityId), catalog.Combinations);
+            var audioDraft = UsageAnalysis.Import(JsonSerializer.Serialize(proposal with { Action = action }), recorder.Session, catalog).Draft!;
+            Assert.True(audioDraft.Paused);
+            Assert.Equal(RuleActionKind.Command, compiler.Compile(audioDraft, "owner", ResourceScope.Session("owner", 1)).Action.Kind);
+        }
+        Assert.DoesNotContain(catalog.Combinations, c => c.DetectionId == MediaPlaybackCapabilities.State && c.ActionId is "program.start" or "program.close");
         foreach (var invalid in new[] { "none", "PLAYING", "", "changing" })
             Assert.Throws<ArgumentException>(() => UsageAnalysis.Import(JsonSerializer.Serialize(proposal with { Detection = Detection(invalid) }), recorder.Session, catalog));
         Assert.Throws<ArgumentException>(() => MediaPlaybackCapabilities.Validate(Detection() with { Parameters = Detection().Parameters.Add("application", "synthetic") }));
