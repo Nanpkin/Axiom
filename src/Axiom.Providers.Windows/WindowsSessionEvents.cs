@@ -20,6 +20,7 @@ public sealed class WindowsSessionEvents : IDisposable
     private readonly bool displayOnly;
     private readonly bool screenPowerOnly;
     private readonly bool schemeOnly;
+    private readonly bool saverOnly;
     private volatile bool failed;
     private bool disposed;
     private readonly Hub owner;
@@ -28,9 +29,9 @@ public sealed class WindowsSessionEvents : IDisposable
     public ChannelReader<byte> ClockChanges => clocks.Reader;
     public bool Failed => failed;
     internal nint NotificationWindow => owner.Window;
-    public WindowsSessionEvents(bool clockOnly = false, bool usbOnly = false, bool powerOnly = false, bool displayOnly = false, bool screenPowerOnly = false, bool schemeOnly = false)
+    public WindowsSessionEvents(bool clockOnly = false, bool usbOnly = false, bool powerOnly = false, bool displayOnly = false, bool screenPowerOnly = false, bool schemeOnly = false, bool saverOnly = false)
     {
-        this.clockOnly = clockOnly; this.usbOnly = usbOnly; this.powerOnly = powerOnly; this.displayOnly = displayOnly; this.screenPowerOnly = screenPowerOnly; this.schemeOnly = schemeOnly;
+        this.clockOnly = clockOnly; this.usbOnly = usbOnly; this.powerOnly = powerOnly; this.displayOnly = displayOnly; this.screenPowerOnly = screenPowerOnly; this.schemeOnly = schemeOnly; this.saverOnly = saverOnly;
         lock (Gate)
         {
             shared ??= new Hub(); owner = shared; owner.Clients.Add(this);
@@ -41,6 +42,7 @@ public sealed class WindowsSessionEvents : IDisposable
             owner.Ready.Task.GetAwaiter().GetResult();
             if (owner.Stopped.Task.IsCompleted) throw new IOException("系统通知源已停止。");
             if (powerOnly && !owner.PowerNotificationsAvailable) throw new IOException("无法订阅供电来源变化通知。");
+            if (saverOnly && !owner.SaverNotificationsAvailable) throw new IOException("无法订阅Windows节能状态报告。");
             if (schemeOnly && !owner.SchemeNotificationsAvailable) throw new IOException("无法订阅当前电源方案通知。");
             if (screenPowerOnly && !owner.ScreenNotificationsAvailable) throw new IOException("无法订阅当前会话屏幕电源通知。");
         }
@@ -71,12 +73,14 @@ public sealed class WindowsSessionEvents : IDisposable
         internal bool PowerNotificationsAvailable;
         internal bool ScreenNotificationsAvailable;
         internal bool SchemeNotificationsAvailable;
+        internal bool SaverNotificationsAvailable;
         private readonly Procedure procedure;
         private byte supply = 255;
         private readonly BatteryThresholdEvents battery = new();
         private static readonly Guid UsbDevice = new("A5DCBF10-6530-11D2-901F-00C04FB951ED");
         private static readonly Guid BatteryPercentage = new("A7AD8041-B45A-4CAE-87A3-EECBB468A9E1");
         private static readonly Guid AcDcPowerSource = new("5D3E9A59-E9D5-4B00-A6BD-FF34FF516548");
+        private static readonly Guid PowerSavingStatus = new("E00958C0-C213-4ACE-AC77-FECCED2EEEA5");
         private static readonly Guid ActivePowerScheme = new("31F9F286-5084-42FE-B720-2B0264993763");
         private static readonly Guid SessionDisplayStatus = new("2B84C20E-AD23-4DDF-93DB-05FFBD7EFCA5");
         private bool network;
@@ -86,7 +90,7 @@ public sealed class WindowsSessionEvents : IDisposable
             var name = "AxiomSystemEvents-" + Guid.NewGuid().ToString("N");
             var instance = GetModuleHandle(null);
             var cls = new WindowClass { Size = (uint)Marshal.SizeOf<WindowClass>(), Procedure = procedure, Name = name, Instance = instance };
-            var registered = false; var notified = false; var networkSubscribed = false; nint powerNotification = 0, deviceNotification = 0, supplyNotification = 0, screenNotification = 0, schemeNotification = 0;
+            var registered = false; var notified = false; var networkSubscribed = false; nint powerNotification = 0, deviceNotification = 0, supplyNotification = 0, screenNotification = 0, schemeNotification = 0, saverNotification = 0;
             try
             {
                 if (RegisterClassEx(ref cls) == 0) throw new Win32Exception(Marshal.GetLastWin32Error()); registered = true;
@@ -108,6 +112,9 @@ public sealed class WindowsSessionEvents : IDisposable
                 setting = ActivePowerScheme;
                 schemeNotification = RegisterPowerSettingNotification(Window, ref setting, 0);
                 SchemeNotificationsAvailable = schemeNotification != 0; // additional registration failure affects only opt-in consumers
+                setting = PowerSavingStatus;
+                saverNotification = RegisterPowerSettingNotification(Window, ref setting, 0);
+                SaverNotificationsAvailable = saverNotification != 0; // legacy battery-saver report; not the Energy Saver intensity API
                 if (GetSystemPowerStatus(out var initial)) supply = initial.AcLine;
                 network = NetworkInterface.GetIsNetworkAvailable();
                 NetworkChange.NetworkAvailabilityChanged += NetworkChanged; networkSubscribed = true;
@@ -127,6 +134,7 @@ public sealed class WindowsSessionEvents : IDisposable
                 if (deviceNotification != 0) UnregisterDeviceNotification(deviceNotification);
                 if (powerNotification != 0) UnregisterPowerSettingNotification(powerNotification);
                 if (supplyNotification != 0) UnregisterPowerSettingNotification(supplyNotification);
+                if (saverNotification != 0) UnregisterPowerSettingNotification(saverNotification);
                 if (schemeNotification != 0) UnregisterPowerSettingNotification(schemeNotification);
                 if (screenNotification != 0) UnregisterPowerSettingNotification(screenNotification);
                 if (notified) WTSUnRegisterSessionNotification(Window);
@@ -163,6 +171,11 @@ public sealed class WindowsSessionEvents : IDisposable
             }
             if (message == 0x0218)
             {
+                if (w == 0x8013 && l != 0 && Marshal.PtrToStructure<Guid>(l) == PowerSavingStatus)
+                {
+                    SaverStateChanged(Marshal.ReadInt32(l, 16) != sizeof(uint) || unchecked((uint)Marshal.ReadInt32(l, 20)) > 1);
+                    return 1; // a report hint, never a legacy supply event or inferred low battery edge
+                }
                 if (w == 0x8013 && l != 0 && Marshal.PtrToStructure<Guid>(l) == ActivePowerScheme)
                 {
                     // GUID payload is only a hint; the consumer queries the current active scheme.
@@ -185,7 +198,7 @@ public sealed class WindowsSessionEvents : IDisposable
                     }
                     else if (setting == AcDcPowerSource) PowerStateChanged();
                 }
-                if (w == 0x04) { ScreenStateChanged(null); SchemeStateChanged(true); } // suspend invalidates cached state before possible resume notifications
+                if (w == 0x04) { ScreenStateChanged(null); SchemeStateChanged(true); SaverStateChanged(true); } // suspend invalidates cached state before possible resume notifications
                 if (w == 0x12) { ScreenStateChanged(null); ClockChanged(); Publish("resumed"); } // automatic resume; do not also emit the interactive-resume broadcast
                 if (w == 0x0A)
                 {
@@ -212,19 +225,26 @@ public sealed class WindowsSessionEvents : IDisposable
         private void Publish(string kind)
         {
             lock (Gate) foreach (var client in Clients)
-                if (!client.clockOnly && !client.screenPowerOnly && (!client.displayOnly || kind is "display-changed" or "resumed") && (!client.powerOnly || kind == "resumed") && (!client.schemeOnly || kind == "resumed") && (!client.usbOnly || kind is "usb-arrived" or "usb-removed" or "resumed") && !client.queue.Writer.TryWrite(kind))
+                if (!client.clockOnly && !client.screenPowerOnly && (!client.displayOnly || kind is "display-changed" or "resumed") && (!client.powerOnly || kind == "resumed") && (!client.schemeOnly || kind == "resumed") && (!client.saverOnly || kind == "resumed") && (!client.usbOnly || kind is "usb-arrived" or "usb-removed" or "resumed") && !client.queue.Writer.TryWrite(kind))
                 { client.failed = true; client.queue.Writer.TryComplete(new IOException("系统事件队列已满，检测状态未知。")); }
         }
         private void PowerStateChanged()
         {
             lock (Gate) foreach (var client in Clients)
-                if (client.powerOnly && !client.schemeOnly && !client.clockOnly && !client.usbOnly && !client.screenPowerOnly && !client.queue.Writer.TryWrite("power-state-changed"))
+                if (client.powerOnly && !client.schemeOnly && !client.saverOnly && !client.clockOnly && !client.usbOnly && !client.screenPowerOnly && !client.queue.Writer.TryWrite("power-state-changed"))
                 { client.failed = true; client.queue.Writer.TryComplete(new IOException("供电状态通知队列已满，检测状态未知。")); }
+        }
+        private void SaverStateChanged(bool reset)
+        {
+            lock (Gate) foreach (var client in Clients)
+                if (client.saverOnly && !client.schemeOnly && !client.clockOnly && !client.usbOnly && !client.powerOnly && !client.displayOnly && !client.screenPowerOnly &&
+                    !client.queue.Writer.TryWrite(reset ? "power-saver-reset" : "power-saver-changed"))
+                { client.failed = true; client.queue.Writer.TryComplete(new IOException("Windows节能通知队列已满，状态未知。")); }
         }
         private void SchemeStateChanged(bool reset)
         {
             lock (Gate) foreach (var client in Clients)
-                if (client.schemeOnly && !client.clockOnly && !client.usbOnly && !client.powerOnly && !client.displayOnly && !client.screenPowerOnly &&
+                if (client.schemeOnly && !client.saverOnly && !client.clockOnly && !client.usbOnly && !client.powerOnly && !client.displayOnly && !client.screenPowerOnly &&
                     !client.queue.Writer.TryWrite(reset ? "power-scheme-reset" : "power-scheme-changed"))
                 { client.failed = true; client.queue.Writer.TryComplete(new IOException("电源方案通知队列已满，状态未知。")); }
         }
@@ -232,7 +252,7 @@ public sealed class WindowsSessionEvents : IDisposable
         {
             var kind = state switch { 0 => "screen-off", 1 => "screen-on", 2 => "screen-dim", _ => "screen-reset" };
             lock (Gate) foreach (var client in Clients)
-                if (client.screenPowerOnly && !client.schemeOnly && !client.clockOnly && !client.usbOnly && !client.powerOnly && !client.displayOnly && !client.queue.Writer.TryWrite(kind))
+                if (client.screenPowerOnly && !client.schemeOnly && !client.saverOnly && !client.clockOnly && !client.usbOnly && !client.powerOnly && !client.displayOnly && !client.queue.Writer.TryWrite(kind))
                 { client.failed = true; client.queue.Writer.TryComplete(new IOException("屏幕电源通知队列已满，状态未知。")); }
         }
     }

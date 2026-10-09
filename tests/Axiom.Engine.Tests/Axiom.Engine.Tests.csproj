@@ -5,6 +5,12 @@
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsNetworkCategoryEvents.cs" Link="WindowsNetworkCategoryEvents.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/NetworkCategoryCapabilityProvider.cs" Link="NetworkCategoryCapabilityProvider.cs" />
 
+
+    <Compile Include="../../src/Axiom.SessionAgent/PowerSaverStateCapabilityProvider.cs" Link="PowerSaverStateCapabilityProvider.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/PowerSaverStateState.cs" Link="PowerSaverStateState.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/PowerSaverStateObservation.cs" Link="PowerSaverStateObservation.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsPowerSaverState.cs" Link="WindowsPowerSaverState.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/PowerContextObservation.cs" Link="PowerContextObservation.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/PowerSchemeStateCapabilityProvider.cs" Link="PowerSchemeStateCapabilityProvider.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/PowerSchemeStateState.cs" Link="PowerSchemeStateState.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/PowerSchemeStateObservation.cs" Link="PowerSchemeStateObservation.cs" />
