@@ -42,6 +42,7 @@
     <Compile Include="../../src/Axiom.SessionAgent/FileArrivalCapabilityProvider.cs" Link="FileArrivalCapabilityProvider.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/FileArrivalSource.cs" Link="FileArrivalSource.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/AudioPlaybackOperation.cs" Link="AudioPlaybackOperation.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/ProgramPriorityOperation.cs" Link="ProgramPriorityOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/ApplicationAudioOperation.cs" Link="ApplicationAudioOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/PowerSchemeOperation.cs" Link="PowerSchemeOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/DisplayOffOperation.cs" Link="DisplayOffOperation.cs" />

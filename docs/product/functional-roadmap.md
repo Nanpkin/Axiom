@@ -35,6 +35,7 @@
 | 13 / 已接通，下一批Windows待验 | 任一选定程序主窗口最大化期间保持系统及屏幕唤醒，或最小化/普通状态后打开工具/提醒 | `window.state-is`多选1–32完整exe路径，minimized/maximized/normal；visible top-level unowned HWND任一满足即成立，三值OR。文件名仅用于排除，最终核验完整路径/SID/会话、固定进程句柄/创建时间/存活及HWND PID。共享WinEvent先订阅后一次枚举，256提示去重后读取当前HWND，无标题或周期扫描 | hidden/absent不算normal，最大化不是全屏或手动证据；首次/Unknown恢复不补Command，已知初始Desired可持有，Unknown/结束/暂停释放。新增hook失败只拒新检测，排除窗口整理/移屏自身反馈；18项合成测试已过，2项自有原生窗口待CI，31暂停模板不属冻结首发 |
 | 14 / 已接通，下一批Windows待验 | 多屏期间保持系统唤醒，退回单屏后把工作窗口移主屏 | `display.count`至少/恰好1–16逻辑屏条件，共享显示变化/恢复通知；64提示合并后一次EnumDisplayMonitors计数服务最多32条件，不存ID/坐标、不轮询 | 空/失败/超64/通知故障Unknown，不能假单屏；首次/睡眠恢复/Unknown恢复不补Command，已知初始Desired可持有、结束或未知释放。镜像/RDP/虚拟屏不是物理数量；17项合成及2个新增暂停模板已过、2项只读原生待CI |
 | 15 / 已接通，下一批Windows待验 | Windows报告Internet新可用后启动同步/工作工具，或在已知状态期间保持唤醒 | `network.internet-state`选择available/unavailable，同一Windows报告bool资源；共享MTA Network List Manager connection point通知后读IPv4/IPv6 Internet flags，无ping/HTTP/周期查询，不采网络标识 | 仅明确本地网络/断开为不可用；服务/查询/订阅失败及未知标志Unknown，失效后先Unknown并丢弃旧Known缓存。首次/重新启用/恢复不补Command，Unknown释放Desired；VPN/NCSI可能影响，不保证任意网站/服务可达。30项合成回归和暂停工具启动模板已接，2项只读订阅原生待CI |
+| 16 / 已接通，合成已验、Windows待验 | 背景工具启动后降低CPU调度优先级，或按快捷键/定时一次恢复正常 | `program.priority`选择1–32完整exe路径、below-normal/normal/above-normal；执行时捕获同用户同会话实例，固定句柄/创建时间/路径/SID核验，GetPriorityClass/SetPriorityClass后读回，5秒单准入有界执行，无后台扫描 | 未运行/权限不足/身份未知/读回差异和部分完成明确；不启动或控制未来实例，暂停/结束不恢复，取消/超时可能已写。程序运行模板按文件名组从无到有，组仍运行时新增实例不补发；4项合成与模板验收已过，最大匿名目录实际超64 KiB待批量整合，不修改上限 |
 
 本轮接续已整合原未合媒体/屏电/四角分支，追加屏幕关闭→暂停当前媒体，42能力、37暂停模板；源码功能与限制如下，Windows原生和实机尚待验收。
 
