@@ -65,3 +65,5 @@ SystemSoundTests
 
 NetworkCategoryTests
 ForegroundWindowMonitorTests
+PowerSchemeStateTests
+PowerSaverStateTests

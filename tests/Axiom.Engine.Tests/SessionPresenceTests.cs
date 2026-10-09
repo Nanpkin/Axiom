@@ -34,6 +34,12 @@ public sealed class SessionPresenceTests
         var recorder = new UsageRecorder(new(5, false, false, [], SystemEvents: true), DateTimeOffset.UtcNow);
         var proposal = new UsageImport(1, recorder.Session.Id, "existing", "在场检测", "synthetic", Detection(), draft.Action);
         Assert.True(UsageAnalysis.Import(JsonSerializer.Serialize(proposal), recorder.Session, catalog).Draft!.Paused);
+        Assert.Equal(new[] { AudioPlaybackCapabilities.Set, NotificationCapabilities.Show, SystemSoundCapabilities.Sound }.Order(),
+            catalog.Combinations.Where(c => c.DetectionId == SessionPresenceCapabilities.State).Select(c => c.ActionId).Order());
+        var sound = new TaskInvocation(SystemSoundCapabilities.Sound, 1,
+            ImmutableDictionary<string, string>.Empty.Add("sound", "info").Add("delaySeconds", "0"));
+        var soundDraft = UsageAnalysis.Import(JsonSerializer.Serialize(proposal with { Action = sound }), recorder.Session, catalog).Draft!;
+        Assert.True(soundDraft.Paused); Assert.NotNull(compiler.Compile(soundDraft, "owner", ResourceScope.Session("owner", 1)));
         foreach (var invalid in new[] { "idle", "Absent", "", "1" })
             Assert.Throws<ArgumentException>(() => UsageAnalysis.Import(JsonSerializer.Serialize(proposal with { Detection = Detection(invalid) }), recorder.Session, catalog));
         Assert.Throws<ArgumentException>(() => SessionPresenceCapabilities.Validate(Detection() with { Parameters = Detection().Parameters.Add("minutes", "5") }));
