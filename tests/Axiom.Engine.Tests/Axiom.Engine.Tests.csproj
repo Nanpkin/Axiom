@@ -44,6 +44,7 @@
     <Compile Include="../../src/Axiom.Providers.Windows/AudioPlaybackOperation.cs" Link="AudioPlaybackOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/ApplicationAudioOperation.cs" Link="ApplicationAudioOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/PowerSchemeOperation.cs" Link="PowerSchemeOperation.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/DisplayOffOperation.cs" Link="DisplayOffOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/SessionLockOperation.cs" Link="SessionLockOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/BuiltInBrightnessOperation.cs" Link="BuiltInBrightnessOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/SessionLockStateReader.cs" Link="SessionLockStateReader.cs" />
