@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 using Axiom.Contracts;
 using Axiom.Domain;
 using Axiom.Engine;
@@ -15,6 +16,18 @@ public static class UsageAnalysis
 {
     private static readonly JsonSerializerOptions Json = new() { UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow, WriteIndented = true, MaxDepth = 16, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.Create(System.Text.Unicode.UnicodeRanges.All) };
     private static readonly JsonSerializerOptions CompactJson = new(Json) { WriteIndented = false };
+    private static readonly JsonSerializerOptions CompactCatalogJson = CreateCompactCatalogJson();
+    private static JsonSerializerOptions CreateCompactCatalogJson()
+    {
+        var resolver = new DefaultJsonTypeInfoResolver();
+        resolver.Modifiers.Add(type =>
+        {
+            if (type.Type != typeof(TaskField)) return;
+            foreach (var property in type.Properties.Where(p => p.Name is nameof(TaskField.DefaultValue) or nameof(TaskField.Minimum) or nameof(TaskField.Maximum) or nameof(TaskField.Group)))
+                property.ShouldSerialize = (_, value) => value is not null;
+        });
+        return new(CompactJson) { TypeInfoResolver = resolver };
+    }
     public static UsageSuggestion[] Analyze(UsageSession session) => [.. AnalyzeCandidates(session).Take(12)];
     // Bounded transient candidates allow feedback to reveal the next useful patterns without expanding the UI or export.
     public static UsageSuggestion[] AnalyzeCandidates(UsageSession session)
@@ -271,6 +284,14 @@ public static class UsageAnalysis
             };
             result = JsonSerializer.Serialize(body, CompactJson);
         }
+        if (Encoding.UTF8.GetByteCount(result) > budget)
+        {
+            body = body with
+            {
+                omissions = body.omissions + "仍超过上限时省略参数中值为null的可选字段（默认值、上下限、分组），缺失仍表示未声明值，不改变授权或校验；展示名、全部非空参数约束和组合仍保留。"
+            };
+            result = JsonSerializer.Serialize(body, CompactCatalogJson);
+        }
         if (Encoding.UTF8.GetByteCount(result) > budget) throw new InvalidOperationException("必要能力参数超出 64 KiB，无法安全生成本版摘要；未复制或上传。");
         return result;
     }
@@ -324,8 +345,11 @@ public static class UsageAnalysis
                 NotificationCapabilities.Validate(resolved with { Parameters = resolved.Parameters.SetItem("title", "review").SetItem("body", "review") });
             if (missing.Count > 0) return resolved;
             // Provider-specific constraints are also checked before offering the draft.
+            if (resolved.CapabilityId == InternetConnectivityCapabilities.State) InternetConnectivityCapabilities.Validate(resolved);
             if (resolved.CapabilityId == FileArrivalCapabilities.Arrived) FileArrivalCapabilities.Validate(resolved);
+            if (resolved.CapabilityId == DisplayCountCapabilities.Count) DisplayCountCapabilities.Validate(resolved);
             if (resolved.CapabilityId == PowerStateCapabilities.State) PowerStateCapabilities.Validate(resolved);
+            if (resolved.CapabilityId == WindowStateDetectionCapabilities.StateIs) WindowStateDetectionCapabilities.Validate(resolved);
             if (resolved.CapabilityId == BuiltInBrightnessCapabilities.Set) BuiltInBrightnessCapabilities.Validate(resolved);
             if (resolved.CapabilityId == EndpointMuteCapabilities.State) EndpointMuteCapabilities.Validate(resolved);
             if (resolved.CapabilityId == SessionLockCapabilities.Lock) SessionLockCapabilities.Validate(resolved);

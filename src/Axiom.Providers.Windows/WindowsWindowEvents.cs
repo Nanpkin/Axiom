@@ -15,16 +15,20 @@ public sealed class WindowsWindowEvents : IDisposable
     public ChannelReader<nint> Reader => Events.Reader;
     private readonly bool lifecycleOnly;
     private bool disposed;
-    public WindowsWindowEvents(bool lifecycleOnly = false)
+    public WindowsWindowEvents(bool lifecycleOnly = false, bool requireMinimizeEvents = false)
     {
         this.lifecycleOnly = lifecycleOnly;
+        int? minimizeError = null;
         lock (Gate)
         {
             shared ??= new Hub();
             try { shared.Ready.Task.GetAwaiter().GetResult(); }
             catch { shared = null; throw; }
             shared.Clients.Add(this);
+            if (requireMinimizeEvents && !shared.MinimizeAvailable) minimizeError = shared.MinimizeError;
         }
+        // Reject only the opt-in consumer; old presence/command subscriptions retain their working hook.
+        if (minimizeError.HasValue) { Dispose(); throw new Win32Exception(minimizeError.Value, "最小化窗口通知不可用，窗口状态检测未启动。"); }
     }
     public void Dispose()
     {
@@ -47,6 +51,8 @@ public sealed class WindowsWindowEvents : IDisposable
         internal readonly TaskCompletionSource Ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal readonly TaskCompletionSource Stopped = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal uint ThreadId;
+        internal bool MinimizeAvailable;
+        internal int MinimizeError;
         private readonly Callback callback;
         internal Hub() { callback = OnEvent; new Thread(Run) { IsBackground = true, Name = "Axiom window commands" }.Start(); }
         private void Run()
@@ -54,14 +60,20 @@ public sealed class WindowsWindowEvents : IDisposable
             ThreadId = GetCurrentThreadId(); PeekMessage(out _, 0, 0, 0, 0);
             var hook = SetWinEventHook(0x8000, 0x800B, 0, callback, 0, 0, 0);
             if (hook == 0) { Ready.TrySetException(new Win32Exception(Marshal.GetLastWin32Error())); Stopped.TrySetResult(); return; }
+            var minimizeHook = SetWinEventHook(0x0016, 0x0017, 0, callback, 0, 0, 0);
+            MinimizeAvailable = minimizeHook != 0;
+            if (!MinimizeAvailable) MinimizeError = Marshal.GetLastWin32Error();
             Ready.TrySetResult();
             try { while (GetMessage(out _, 0, 0, 0) > 0) { } }
-            finally { UnhookWinEvent(hook); lock (Gate) foreach (var client in Clients) client.Events.Writer.TryComplete(new IOException("窗口通知已停止。")); Stopped.TrySetResult(); }
+            finally { if (minimizeHook != 0) UnhookWinEvent(minimizeHook); UnhookWinEvent(hook); lock (Gate) foreach (var client in Clients) client.Events.Writer.TryComplete(new IOException("窗口通知已停止。")); Stopped.TrySetResult(); }
         }
         private void OnEvent(nint hook, uint kind, nint window, int objectId, int childId, uint thread, uint time)
         {
-            if (kind is not (0x8000 or 0x8001 or 0x8002 or 0x8003 or 0x8004 or 0x800A or 0x800B)) return;
-            if (window == 0 || objectId != 0 || childId != 0 || kind is 0x8000 or 0x8002 or 0x800A or 0x800B && GetAncestor(window, 2) != window) return;
+            if (kind is not (0x0016 or 0x0017 or 0x8000 or 0x8001 or 0x8002 or 0x8003 or 0x8004 or 0x800A or 0x800B)) return;
+            var minimize = kind is 0x0016 or 0x0017;
+            // System minimize events name an HWND, unlike object notifications their object IDs are unspecified.
+            if (window == 0 || !minimize && (objectId != 0 || childId != 0) ||
+                (minimize || kind is 0x8000 or 0x8002 or 0x800A or 0x800B) && GetAncestor(window, 2) != window) return;
             lock (Gate)
                 foreach (var client in Clients)
                     if ((!client.lifecycleOnly || kind is 0x8000 or 0x8001 or 0x8002 or 0x8003) && !client.Events.Writer.TryWrite(window)) client.Events.Writer.TryComplete(new IOException("窗口事件队列已满，无法确认窗口操作；不会自动重试。"));
