@@ -1,10 +1,9 @@
 namespace Axiom.Providers.Windows;
 
-public sealed record PowerSchemeStateValue(string ResourceId, bool? Satisfied);
 public static class PowerSchemeStateState
 {
-    public static PowerSchemeStateValue[] Samples(string[] resources, Guid? scheme) =>
-        [.. resources.Select(id => new PowerSchemeStateValue(id, Evaluate(id, scheme)))];
+    public static PowerContextValue[] Samples(string[] resources, Guid? scheme) =>
+        [.. resources.Select(id => new PowerContextValue(id, Evaluate(id, scheme)))];
     public static bool? Evaluate(string resource, Guid? scheme) => !scheme.HasValue || scheme.Value == Guid.Empty ? null : resource switch
     {
         "balanced" => scheme == new Guid("381b4222-f694-41f0-9685-ff5bb260df2e"),

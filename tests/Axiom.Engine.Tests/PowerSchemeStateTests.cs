@@ -51,7 +51,7 @@ public sealed class PowerSchemeStateTests
     [Fact(Timeout = 10000)]
     public async Task BoundedHintsReadOnceAndQueryUnknownResetOrResumeRecoverOnlyAsBaseline()
     {
-        var hints = Channel.CreateBounded<string>(64); var updates = Channel.CreateUnbounded<(PowerSchemeStateValue[] Values, bool Baseline)>();
+        var hints = Channel.CreateBounded<string>(64); var updates = Channel.CreateUnbounded<(PowerContextValue[] Values, bool Baseline)>();
         using var stop = new CancellationTokenSource(); var current = PowerSchemeCapabilities.Saver; var reads = 0; var queryFails = false;
         for (var i = 0; i < 64; i++) hints.Writer.TryWrite("power-scheme-changed");
         var run = PowerSchemeStateObservation.RunAsync(["saver", "balanced"], hints.Reader, () => { reads++; if (queryFails) throw new IOException(); return current; },

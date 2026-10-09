@@ -142,3 +142,12 @@ Engine在新条件边沿/事件进入延迟前、延迟deadline以及队列取�
 `power.scheme-state` schema 1仅接受`scheme=balanced|saver|performance`，每项编译独立bool资源，最多3个。匹配实际标准GUID，不按方案显示名或personality推断；有效自定义方案三项均false，空GUID/失败Unknown。组合排除`power.scheme`自反馈，允许现有工具、亮度、音频、提醒及保持唤醒。所有首次/重新启用/Unknown恢复/睡眠恢复均baseline，不补Command；已知Desired可立即成立，结束/未知/暂停释放。
 
 公开[SDK winnt.h](https://github.com/microsoft/win32metadata/blob/main/generation/WinSDK/RecompiledIdlHeaders/um/winnt.h)定义`GUID_ACTIVE_POWERSCHEME`与GUID payload；[PowerGetActiveScheme](https://learn.microsoft.com/windows/win32/api/powersetting/nf-powersetting-powergetactivescheme)要求LocalFree释放返回GUID。共享消息窗口追加opt-in过滤，原生注册失败仅拒该条件；合法通知最多64提示合并后一次当前查询，畸形/挂起先Unknown，恢复查询为baseline；不轮询或切方案。电源模式overlay/滑块与此GUID不同；实际设备/策略/Modern Standby通知行为待实机。
+
+
+## Windows电池节能兼容报告
+
+`power.saver-state` schema 1仅接受`state=on|off`，最多2个独立bool资源。使用[GUID_POWER_SAVING_STATUS](https://learn.microsoft.com/windows/win32/power/power-setting-guids)通知后一次[GetSystemPowerStatus](https://learn.microsoft.com/windows/win32/api/winbase/nf-winbase-getsystempowerstatus)读取[SYSTEM_POWER_STATUS.SystemStatusFlag](https://learn.microsoft.com/windows/win32/api/winbase/ns-winbase-system_power_status)。只认0已关闭/1已开启，任何其他值或失败为Unknown；不查有无电池，不假设真实电池或节能界面支持、不以低电量/方案/电源模式推断。
+
+较新[SDK winnt.h](https://github.com/microsoft/win32metadata/blob/main/generation/WinSDK/RecompiledIdlHeaders/um/winnt.h)把此GUID保留为电池节能兼容报告，另有GUID_ENERGY_SAVER_STATUS的Off/Standard/High Savings；当前能力不冒充新版强度检测。实际不同Windows版本/设备/策略的兼容报告待实机验收。
+
+`saverOnly`过滤不泄漏新通知到旧通用电源事件；新注册失败只拒新消费者。合法DWORD 0/1仅为hint，局部PowerContextObservation与电源方案条件共同处理64合并→当前查询；畸形/其他值/挂起先Unknown，恢复查询为baseline。首次/重新启用/Unknown及睡眠恢复不补Command，暂停或源结束后不保持旧Known。支持亮度/音量/提醒/工具等现有动作，排除`power.scheme`与`power.keepAwake`明显反馈；不启用、关闭或改变系统节能设置，无轮询。
