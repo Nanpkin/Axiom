@@ -186,14 +186,106 @@ public sealed class EndpointMuteTests
         Assert.Equal(disconnectAfterActivation ? 1 : 0, fake.Disposals);
     }
 
+    [Fact(Timeout = 10000)]
+    public async Task FailedBufferedKnownNeverTriggerCommandsAndAnIndependentSourceRemainsKnown()
+    {
+        var executor = new ControlledExecutor(); using var fixture = new AutomationFixture(executor);
+        var schema = new ValueSchema("axiom.bool", 1);
+        fixture.Engine.RegisterCapability(AutomationFixture.Binding(EndpointMuteCapabilities.State, schema: schema));
+        var condition = new EndpointMuteTaskDetection().Compile(Detection(), ResourceScope.Machine);
+        var engineSource = fixture.Engine.RegisterSource("synthetic-failed-mute", condition.Dependencies); long sequence = 0;
+        fixture.Engine.SetRule(new("synthetic-no-stale-command", 1, "owner", ResourceScope.Machine, condition,
+            RuleAction.Command(AutomationFixture.Output, StateValue.From(AutomationFixture.Schema, true))));
+        fixture.Engine.StartExecution();
+        var failed = new FakeSource();
+        for (var i = 0; i < 64; i++) failed.Emit(new("input", i % 2 == 0, i == 0));
+        failed.Fail(); using var stop = new CancellationTokenSource(); var known = 0;
+        var run = new EndpointMuteCapabilityProvider(_ => failed).ObserveAsync([new(EndpointMuteCapabilities.State, "input")], update =>
+        {
+            var sample = Assert.Single(update.Samples); if (sample.Quality == StateQuality.Known) known++;
+            var observation = new Observation(condition.Key!, sample.Quality,
+                sample.Boolean.HasValue ? StateValue.From(schema, sample.Boolean.Value) : null, fixture.Clock.UtcNow);
+            if (update.Snapshot) fixture.Engine.ApplySnapshot(engineSource, ++sequence, [observation]);
+            else fixture.Engine.Update(engineSource, ++sequence, observation);
+        }, stop.Token);
+        await fixture.Engine.WaitForIdleAsync(); Assert.Equal(0, known); Assert.Equal(0, executor.Count);
+        Assert.Equal(1, failed.Disposals); Assert.False(run.IsCompleted);
+        var other = new FakeSource(); using var otherStop = new CancellationTokenSource();
+        var updates = Channel.CreateBounded<ProviderUpdate>(8);
+        var independent = new EndpointMuteCapabilityProvider(_ => other).ObserveAsync([new(EndpointMuteCapabilities.State, "output")],
+            u => Assert.True(updates.Writer.TryWrite(u)), otherStop.Token);
+        await updates.Reader.ReadAsync(); other.Emit(new("output", true, true));
+        var baseline = await updates.Reader.ReadAsync(); Assert.True(baseline.Snapshot);
+        Assert.Equal(StateQuality.Known, Assert.Single(baseline.Samples).Quality); Assert.Equal(0, other.Disposals);
+        stop.Cancel(); await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run);
+        otherStop.Cancel(); await Assert.ThrowsAnyAsync<OperationCanceledException>(() => independent);
+    }
+
+    [Fact(Timeout = 10000)]
+    public async Task FaultPublishesUnknownBeforeNativeCleanupCanBlock()
+    {
+        using var stop = new CancellationTokenSource(); using var cleanupEntered = new ManualResetEventSlim();
+        using var releaseCleanup = new ManualResetEventSlim(); var fake = new FakeSource();
+        fake.Fail(); fake.Disposing = () => { cleanupEntered.Set(); releaseCleanup.Wait(); };
+        var updates = Channel.CreateBounded<ProviderUpdate>(8);
+        var run = Task.Run(() => new EndpointMuteCapabilityProvider(_ => fake).ObserveAsync([new(EndpointMuteCapabilities.State, "input")],
+            u => Assert.True(updates.Writer.TryWrite(u)), stop.Token));
+        try
+        {
+            Assert.True((await updates.Reader.ReadAsync()).Snapshot);
+            var lost = await updates.Reader.ReadAsync(); Assert.False(lost.Snapshot);
+            Assert.Equal(StateQuality.Unknown, Assert.Single(lost.Samples).Quality);
+            Assert.True(cleanupEntered.Wait(TimeSpan.FromSeconds(2))); Assert.False(run.IsCompleted);
+        }
+        finally { releaseCleanup.Set(); stop.Cancel(); }
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run); Assert.Equal(1, fake.Disposals);
+    }
+
+    [Fact(Timeout = 10000)]
+    public async Task SharedNotificationOverflowInvalidatesConsumersWhileTheMuteQueryIsBlocked()
+    {
+        using var stop = new CancellationTokenSource(); using var queryEntered = new ManualResetEventSlim();
+        using var releaseQuery = new ManualResetEventSlim(); var fake = new FakeSource();
+        var notifications = new EndpointMuteNotifications(fake.Fail);
+        var updates = Channel.CreateBounded<ProviderUpdate>(8);
+        var observing = new EndpointMuteCapabilityProvider(_ => fake).ObserveAsync([new(EndpointMuteCapabilities.State, "input")],
+            u => Assert.True(updates.Writer.TryWrite(u)), stop.Token);
+        await updates.Reader.ReadAsync(); fake.Emit(new("input", true, true)); await updates.Reader.ReadAsync();
+        var query = Task.Run(() => { queryEntered.Set(); releaseQuery.Wait(); return false; });
+        try
+        {
+            Assert.True(queryEntered.Wait(TimeSpan.FromSeconds(2)));
+            for (var i = 0; i < 65; i++) notifications.Enqueue(new("read", "input", i));
+            Assert.True(notifications.Failed); Assert.True(fake.Failed); Assert.False(query.IsCompleted);
+            var lost = await updates.Reader.ReadAsync(); Assert.Equal(StateQuality.Unknown, Assert.Single(lost.Samples).Quality);
+            Assert.False(updates.Reader.TryRead(out _)); Assert.Equal(1, fake.Disposals); Assert.False(observing.IsCompleted);
+        }
+        finally { releaseQuery.Set(); stop.Cancel(); }
+        await query; await Assert.ThrowsAnyAsync<OperationCanceledException>(() => observing);
+    }
+
+    [Fact]
+    public void NotificationCoalescingRetainsEveryDefaultSelectionEpochAndDoesNotFaultRepeatedReads()
+    {
+        var faults = 0; var notifications = new EndpointMuteNotifications(() => faults++);
+        for (var i = 0; i < 128; i++) notifications.Enqueue(new("default", "input"));
+        Assert.Equal(128, notifications.DefaultChanges.Version("input"));
+        Assert.True(notifications.TryRead(out var signal)); Assert.Equal("default", signal!.Kind);
+        Assert.False(notifications.TryRead(out _)); Assert.False(notifications.Failed); Assert.Equal(0, faults);
+        notifications.Enqueue(new("read", "input", 1)); Assert.True(notifications.TryRead(out _));
+        notifications.Enqueue(new("read", "input", 1)); Assert.True(notifications.TryRead(out _));
+    }
+
     private sealed class FakeSource : IEndpointMuteSource
     {
-        private readonly Channel<EndpointMuteSample> queue = Channel.CreateBounded<EndpointMuteSample>(8);
+        private readonly Channel<EndpointMuteSample> queue = Channel.CreateBounded<EndpointMuteSample>(64);
         public ChannelReader<EndpointMuteSample> Events => queue.Reader;
+        public bool Failed { get; private set; }
+        public Action? Disposing;
         public int Disposals;
         public void Emit(EndpointMuteSample sample) => Assert.True(queue.Writer.TryWrite(sample));
-        public void Fail() => queue.Writer.TryComplete(new IOException("synthetic private endpoint identity"));
-        public void Dispose() { Disposals++; queue.Writer.TryComplete(); }
+        public void Fail() { Failed = true; queue.Writer.TryComplete(new IOException("synthetic private endpoint identity")); }
+        public void Dispose() { Disposals++; Disposing?.Invoke(); queue.Writer.TryComplete(); }
     }
     private sealed class LeaseExecutor : ICapabilityExecutor, ILeasedDesiredExecutor
     {

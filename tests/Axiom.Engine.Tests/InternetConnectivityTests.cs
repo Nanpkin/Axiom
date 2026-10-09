@@ -151,6 +151,7 @@ public sealed class InternetConnectivityTests
             source.Queue.Writer.TryComplete(new IOException("synthetic lost subscription"));
         }
         var failure = await updates.Reader.ReadAsync(); Assert.False(failure.Snapshot); Assert.Equal(StateQuality.Unknown, failure.Samples[0].Quality);
+        if (afterKnown) await source.DisposalCompleted.Task;
         Assert.Null(failure.Samples[0].Boolean); Assert.Equal(afterKnown ? 1 : 0, source.Disposed); Assert.False(run.IsCompleted);
         stop.Cancel(); await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run);
         Assert.Equal(afterKnown ? 1 : 0, source.Disposed);
@@ -191,6 +192,7 @@ public sealed class InternetConnectivityTests
             u => Assert.True(updates.Writer.TryWrite(u)), firstStop.Token);
         Assert.True((await updates.Reader.ReadAsync()).Snapshot);
         var fault = await updates.Reader.ReadAsync(); Assert.False(fault.Snapshot); Assert.Equal(StateQuality.Unknown, fault.Samples[0].Quality);
+        await failed.DisposalCompleted.Task;
         Assert.False(updates.Reader.TryRead(out _)); Assert.Equal(1, failed.Disposed);
         firstStop.Cancel(); await Assert.ThrowsAnyAsync<OperationCanceledException>(() => first);
         using var secondStop = new CancellationTokenSource();
@@ -279,6 +281,7 @@ public sealed class InternetConnectivityTests
         public ChannelReader<InternetConnectivitySample> Events => Queue.Reader;
         public bool Failed { get; set; }
         public int Disposed;
-        public void Dispose() { Disposed++; Queue.Writer.TryComplete(); }
+        public readonly TaskCompletionSource DisposalCompleted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public void Dispose() { Disposed++; Queue.Writer.TryComplete(); DisposalCompleted.TrySetResult(); }
     }
 }
