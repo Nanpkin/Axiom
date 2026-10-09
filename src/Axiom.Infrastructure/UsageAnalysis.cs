@@ -358,6 +358,7 @@ public static class UsageAnalysis
                 OpenTargetBatchCapabilities.Validate(missing.Contains("targets") ? resolved with { Parameters = resolved.Parameters.SetItem("targets", "网页 | https://example.invalid/review") } : resolved);
             if (missing.Count > 0) return resolved;
             // Provider-specific constraints are also checked before offering the draft.
+            if (resolved.CapabilityId == NetworkCategoryCapabilities.State) NetworkCategoryCapabilities.Validate(resolved);
             if (resolved.CapabilityId == InternetConnectivityCapabilities.State) InternetConnectivityCapabilities.Validate(resolved);
             if (resolved.CapabilityId == FileArrivalCapabilities.Arrived) FileArrivalCapabilities.Validate(resolved);
             if (resolved.CapabilityId == MediaPlaybackCapabilities.State) MediaPlaybackCapabilities.Validate(resolved);
@@ -371,12 +372,15 @@ public static class UsageAnalysis
             if (resolved.CapabilityId == SessionLockCapabilities.Lock) SessionLockCapabilities.Validate(resolved);
             if (resolved.CapabilityId == CurrentMediaCapabilities.Control) CurrentMediaCapabilities.Validate(resolved);
             if (resolved.CapabilityId is UsbDeviceCapabilities.Present or UsbDeviceCapabilities.Absent) UsbDeviceCapabilities.Validate(resolved);
+            if (resolved.CapabilityId == ForegroundWindowMonitorCapabilities.Move) ForegroundWindowMonitorCapabilities.Validate(resolved);
             if (resolved.CapabilityId == ForegroundWindowLayoutCapabilities.Layout) ForegroundWindowLayoutCapabilities.Validate(resolved);
             if (resolved.CapabilityId == WindowMonitorCapabilities.Move) WindowMonitorCapabilities.ValidateTargets(resolved);
             if (resolved.CapabilityId == PowerSchemeCapabilities.Set) PowerSchemeCapabilities.Validate(resolved);
             if (resolved.CapabilityId == ProgramPriorityCapabilities.Set) ProgramPriorityCapabilities.Validate(resolved);
             if (resolved.CapabilityId == ApplicationAudioCapabilities.Set) ApplicationAudioCapabilities.Validate(resolved);
             if (resolved.CapabilityId == KeepAwakeCapabilities.Hold) KeepAwakeCapabilities.Validate(resolved);
+            if (resolved.CapabilityId == SystemSoundCapabilities.Sound) SystemSoundCapabilities.Validate(resolved);
+            if (resolved.CapabilityId == AudioPlaybackToggleCapabilities.Toggle) AudioPlaybackToggleCapabilities.Validate(resolved);
             if (resolved.CapabilityId == MicrophoneToggleCapabilities.Toggle) MicrophoneToggleCapabilities.Validate(resolved);
             if (resolved.CapabilityId == MicrophoneCapabilities.Set) MicrophoneCapabilities.Validate(resolved);
             if (resolved.CapabilityId == AudioPlaybackAdjustCapabilities.Adjust) AudioPlaybackAdjustCapabilities.Validate(resolved);

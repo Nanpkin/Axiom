@@ -12,6 +12,7 @@ public static class AutomationTemplates
         (string Field, string Value)[] DetectionValues, (string Field, string Value)[] ActionValues);
     private static readonly Recipe[] Recipes =
     [
+        new("public-network-reminder", "出现公用网络分类后提醒", "Windows从没有公用匹配新变为有公用匹配时，请求安静桌面提醒；首次、重新启用及未知恢复不补提醒，不读取网络名称。分类不代表Internet可用性或安全可信，请按实际需要审阅规则。", NetworkCategoryCapabilities.State, NotificationCapabilities.Show, [("category", "public")], [("title", "Windows网络分类"), ("body", "Windows报告当前有已连接网络归为公用；分类不代表Internet可用性或安全可信。")]),
         new("current-media-awake", "当前媒体播放期间保持系统唤醒", "Windows选中的当前媒体会话报告正在播放时，持有Axiom自己的系统唤醒请求，屏幕仍可关闭。暂停、停止、没有会话、未知或暂停规则后释放；不指定播放器，不证明实际出声，不阻止手动睡眠。", MediaPlaybackCapabilities.State, KeepAwakeCapabilities.Hold, [("state", "playing")], [("target", "system")]),
         new("lock-pause-current-media", "锁屏后暂停Windows当前媒体", "锁屏的新通知后，向Windows选中的当前媒体会话请求暂停一次；目标可能是播放器或浏览器，不指定程序。没有媒体会话或播放器不支持时会说明，解锁不自动播放。", SystemEventCapabilities.Event, CurrentMediaCapabilities.Control, [("event", "locked")], [("operation", "pause")]),
         new("screen-off-pause-current-media", "当前会话屏幕关闭后暂停媒体", "Windows当前会话新报告屏幕关闭后，向Windows选中的当前媒体会话请求暂停一次；没有媒体会话或播放器不支持时会说明。首次及睡眠恢复不补执行，屏幕亮起不自动播放，不证明每块物理屏状态。", SessionDisplayCapabilities.State, CurrentMediaCapabilities.Control, [("state", "off")], [("operation", "pause")]),
@@ -38,12 +39,15 @@ public static class AutomationTemplates
         new("window-prepare", "窗口出现后整理", "选择检测和目标程序，再选择布局；初始已有窗口不补执行，多窗口时只处理一个匹配窗口。", WindowPresenceCapabilities.Visible, WindowCapabilities.State, [], [("state", "maximize")]),
         new("focus-layout", "切到应用时摆到左半屏", "选择前台应用与目标程序；按触发时的显示器工作区整理一次，之后手动调整不会被持续干预。", ForegroundCapabilities.Active, WindowCapabilities.State, [], [("state", "left")]),
         new("display-layout", "显示变化后整理窗口", "选择目标程序和布局；显示模式通知后整理一次，按该窗口当前显示器处理，不识别特定屏幕组合、不恢复旧布局。", SystemEventCapabilities.Event, WindowCapabilities.State, [("event", "display-changed")], [("state", "left")]),
+        new("shortcut-foreground-next-monitor", "快捷键把当前窗口移到下一屏", "填写快捷键，无需选择程序；执行开始捕获当前前台应用窗口，按显示器桌面坐标循环到下一屏并居中80%。只有一屏时不还原、不移动；切走、身份未知或显示器布局变化后不再写，可能已还原/移动不撤回。选主屏即使已在主屏也会居中80%。请审阅后启用。", HotkeyCapabilities.Pressed, ForegroundWindowMonitorCapabilities.Move, [], [("monitor", "next")]),
         new("shortcut-foreground-layout", "按快捷键整理当前前台窗口", "填写快捷键并选择布局，无需选择程序；执行开始捕获当前前台应用窗口，最大化/最小化先还原，再按当前工作区整理并读回。切走、身份未知或窗口消失后不再写，已还原或移动不撤回；不处理Axiom自身、桌面、任务栏或确认对话框。", HotkeyCapabilities.Pressed, ForegroundWindowLayoutCapabilities.Layout, [], [("layout", "left")]),
         new("shortcut-next-monitor", "按快捷键把窗口移到下一个显示器", "选择快捷键和目标程序完整路径；按执行时显示器桌面位置循环移屏并居中80%，最大化/最小化窗口先还原。只有一屏时跳过，不抢回后续手动调整。", HotkeyCapabilities.Pressed, WindowMonitorCapabilities.Move, [], [("monitor", "next")]),
         new("display-primary-window", "显示变化后把窗口放回主显示器", "选择目标程序完整路径；显示模式通知后移到执行时主显示器并居中80%，最大化/最小化窗口先还原。不匹配特定设备、不恢复旧坐标，也不持续固定。", SystemEventCapabilities.Event, WindowMonitorCapabilities.Move, [("event", "display-changed")], [("monitor", "primary")]),
+        new("workday-system-sound", "仅工作时段定期播放提示音", "默认工作日9–18点，每30分钟请求一次默认系统提示音，不弹窗口、不改音量。静音或系统声音设置可能导致无声，不补发错过机会，不适合紧急提醒；请审阅后启用。", WindowedIntervalCapabilities.Due, SystemSoundCapabilities.Sound, [], []),
         new("workday-reminder", "仅工作时段定期提醒", "默认工作日9–18点，每30分钟请求安静提醒；填写内容后审阅启用。结束时刻不触发，无节假日判断，不补发错过机会。", WindowedIntervalCapabilities.Due, NotificationCapabilities.Show, [], []),
         new("desktop-reminder", "定期显示桌面提醒", "填写提醒内容；默认每30分钟请求一次安静提醒。Windows勿扰可能隐藏通知，不适合紧急提醒。", IntervalCapabilities.Elapsed, NotificationCapabilities.Show, [], []),
         new("pdf-arrival", "文件夹出现PDF后打开工具", "填写本机文件夹和配套程序；新建或重命名出现PDF后一秒合并触发，不读取内容、不证明下载完成、不传递文件名。可给动作增加延迟。", FileArrivalCapabilities.Arrived, "program.start", [("kind", "pdf")], []),
+        new("playback-toggle-shortcut", "按同一快捷键切换播放静音", "选择快捷键；读取默认播放设备的静音状态后反向设置一次并读回。读不到不修改，不改音量、不停止播放、不自动恢复；取消静音可能立即发声，请审阅后启用。", HotkeyCapabilities.Pressed, AudioPlaybackToggleCapabilities.Toggle, [], []),
         new("microphone-toggle-shortcut", "按同一快捷键切换麦克风静音", "填写快捷键；读取默认通信麦克风当前软件静音状态后反向设置一次并读回，无法读取时不修改。取消静音可能立即恢复收音；不是硬件隐私开关、不停止录音程序、不修改输入音量，暂停/结束不恢复。请审阅后启用。", HotkeyCapabilities.Pressed, MicrophoneToggleCapabilities.Toggle, [], []),
         new("volume-up-shortcut", "按快捷键提高播放音量5个百分点", "选择快捷键；按执行时默认播放设备音量提高5个百分点，最多100%，保持静音状态。一次调整并读回，不自动恢复，独立路由的应用可能不受影响。", HotkeyCapabilities.Pressed, AudioPlaybackAdjustCapabilities.Adjust, [], [("operation", "increase"), ("step", "5")]),
         new("volume-down-shortcut", "按快捷键降低播放音量5个百分点", "选择快捷键；按执行时默认播放设备音量降低5个百分点，最低0%，保持静音状态。一次调整并读回，不自动恢复，独立路由的应用可能不受影响。", HotkeyCapabilities.Pressed, AudioPlaybackAdjustCapabilities.Adjust, [], [("operation", "decrease"), ("step", "5")]),
