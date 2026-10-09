@@ -59,3 +59,8 @@ AudioPlaybackAdjustTests
 MediaPlaybackTests
 OpenTargetBatchTests
 ForegroundWindowLayoutTests
+AudioPlaybackToggleTests
+SystemSoundTests
+
+NetworkCategoryTests
+ForegroundWindowMonitorTests

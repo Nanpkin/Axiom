@@ -1,5 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <Compile Include="../../src/Axiom.Providers.Windows/NetworkCategoryState.cs" Link="NetworkCategoryState.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/NetworkCategoryObservation.cs" Link="NetworkCategoryObservation.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsNetworkCategoryEvents.cs" Link="WindowsNetworkCategoryEvents.cs" />
+    <Compile Include="../../src/Axiom.SessionAgent/NetworkCategoryCapabilityProvider.cs" Link="NetworkCategoryCapabilityProvider.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/MediaPlaybackEvents.cs" Link="MediaPlaybackEvents.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/MediaPlaybackCapabilityProvider.cs" Link="MediaPlaybackCapabilityProvider.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/CurrentMediaOperation.cs" Link="CurrentMediaOperation.cs" />
@@ -26,6 +30,7 @@
     <Compile Include="../../src/Axiom.Providers.Windows/EndpointMuteState.cs" Link="EndpointMuteState.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsEndpointMuteEvents.cs" Link="WindowsEndpointMuteEvents.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/CapturedWindowLifetime.cs" Link="CapturedWindowLifetime.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/ForegroundWindowMonitorOperation.cs" Link="ForegroundWindowMonitorOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/ForegroundWindowLayoutOperation.cs" Link="ForegroundWindowLayoutOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowMonitorGeometry.cs" Link="WindowMonitorGeometry.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsWindowMonitor.cs" Link="WindowsWindowMonitor.cs" />
@@ -45,6 +50,8 @@
     <Compile Include="../../src/Axiom.Providers.Windows/BoundedNativeCommand.cs" Link="BoundedNativeCommand.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/FileArrivalCapabilityProvider.cs" Link="FileArrivalCapabilityProvider.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/FileArrivalSource.cs" Link="FileArrivalSource.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/SystemSoundOperation.cs" Link="SystemSoundOperation.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/AudioPlaybackToggleOperation.cs" Link="AudioPlaybackToggleOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/MicrophoneToggleOperation.cs" Link="MicrophoneToggleOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/AudioPlaybackAdjustOperation.cs" Link="AudioPlaybackAdjustOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/OpenTargetBatchOperation.cs" Link="OpenTargetBatchOperation.cs" />
