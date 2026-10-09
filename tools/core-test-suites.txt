@@ -46,4 +46,7 @@ WindowMonitorTests
 SessionLockTests
 BuiltInBrightnessTests
 EndpointMuteTests
+WindowStateDetectionTests
 PowerStateTests
+InternetConnectivityTests
+DisplayCountTests

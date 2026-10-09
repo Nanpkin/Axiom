@@ -5,6 +5,7 @@ using Axiom.Providers.Windows;
 namespace Axiom.Engine.Tests;
 
 [SupportedOSPlatform("windows")]
+[Collection("Native session observers")]
 public sealed class WindowsSessionEventTests
 {
     [Fact(Timeout = 15000)]
