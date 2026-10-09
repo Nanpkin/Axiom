@@ -51,7 +51,7 @@ git tag v0.2.0-preview.20261009.1 <已验证的main提交SHA>
 git push origin v0.2.0-preview.20261009.1
 ```
 
-GitHub 的预览发布由明确标签触发，与普通 push/PR 检查分开。合成回归由 `tools/test-release.ps1` 在两套 CI 核心作业中运行，覆盖版本输入、标签来源、hash、脏源码和旧 ZIP 来源拒绝。参考 [GitHub Releases](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository)。
+GitHub 的预览发布由明确标签触发，与普通 push/PR 检查分开。合成回归由 `tools/test-release.ps1` 在两套 CI 核心作业中运行，覆盖版本输入、标签来源、hash、脏源码和旧 ZIP 来源拒绝；29项检查包含真实resolver入口的push和dispatch两种路径，以合成main/标签核对追加输出的version、tag及精确SHA并保留已有输出。PowerShell调用AppendAllLines明确使用string[]，避免普通Object[]在实际Release入口无法匹配.NET重载。首个`.1`标签的发布在此入口失败，未创建Release或资产；修复不移动旧标签，新发布使用检查成功的main和新版本。参考 [GitHub Releases](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository)。
 
 此预览未购买/配置代码签名证书，安装包和启动器为未签名应用；正式对外发布时再决定签名。自带运行依赖已核对发布内容，10-09 新布局后台/UI 实际启动，进程模块核对为包内 coreclr 和 WinUI。全新 Windows/未安装任何运行时、所有 DPI、电脑重启、完整性能预算仍属于第一版发布前验收，不能用本机已装开发环境替代。部署依据：[.NET Native AOT](https://learn.microsoft.com/en-us/dotnet/core/deploying/native-aot/)、[Windows App SDK 组件](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/release-notes/windows-app-sdk-1-8)。
 

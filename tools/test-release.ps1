@@ -39,6 +39,37 @@ try {
     & git -C $repository tag v0.2.1-preview.unmerged
     Assert-Rejected { Get-AxiomReleaseCommit $repository '0.2.1-preview.unmerged' }
 
+    # Execute the real resolver entrypoint in its synthetic repository, including GitHub output writing.
+    $fixtureTools = Join-Path $repository 'tools'; New-Item -ItemType Directory -Path $fixtureTools | Out-Null
+    foreach ($script in @('resolve-release.ps1', 'release-validation.ps1')) {
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot $script) -Destination $fixtureTools
+    }
+    $savedReleaseEnvironment = @{}
+    foreach ($name in @('AXIOM_RELEASE_EVENT', 'AXIOM_RELEASE_TAG', 'AXIOM_RELEASE_VERSION', 'GITHUB_OUTPUT')) {
+        $savedReleaseEnvironment[$name] = [Environment]::GetEnvironmentVariable($name)
+    }
+    try {
+        foreach ($event in @('push', 'workflow_dispatch')) {
+            $outputFile = Join-Path $root "$event-output.txt"
+            [IO.File]::WriteAllText($outputFile, "sentinel=preserved`n")
+            $env:AXIOM_RELEASE_EVENT = $event
+            $env:AXIOM_RELEASE_TAG = if ($event -eq 'push') { "v$version" } else { '' }
+            $env:AXIOM_RELEASE_VERSION = if ($event -eq 'workflow_dispatch') { $version } else { '' }
+            $env:GITHUB_OUTPUT = $outputFile
+            & (Join-Path $fixtureTools 'resolve-release.ps1')
+            $lines = [IO.File]::ReadAllLines($outputFile)
+            if ($lines.Count -ne 4 -or $lines[0] -cne 'sentinel=preserved' -or
+                $lines[1] -cne "version=$version" -or $lines[2] -cne "tag=v$version" -or $lines[3] -cne "sha=$commit") {
+                throw "The $event resolver entrypoint did not append its exact version, tag and main commit."
+            }
+            $checks++
+        }
+    } finally {
+        foreach ($name in $savedReleaseEnvironment.Keys) {
+            [Environment]::SetEnvironmentVariable($name, $savedReleaseEnvironment[$name])
+        }
+    }
+
     $stage = Join-Path $root 'stage'; $assets = Join-Path $root 'assets'
     New-Item -ItemType Directory -Path $stage, $assets | Out-Null
     $info = [ordered]@{ schemaVersion = 1; version = $version; sourceCommit = $commit; sourceDirty = $false; target = 'win-x64'; builtAtUtc = '2026-10-09T00:00:00+00:00' }

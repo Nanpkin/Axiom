@@ -9,4 +9,4 @@ if ($env:AXIOM_RELEASE_EVENT -eq 'push') {
 } else { throw 'Unsupported release event.' }
 $commit = Get-AxiomReleaseCommit $repository $version
 if (!$env:GITHUB_OUTPUT) { throw 'GitHub output file is required.' }
-[IO.File]::AppendAllLines($env:GITHUB_OUTPUT, @("version=$version", "tag=v$version", "sha=$commit"))
+[IO.File]::AppendAllLines($env:GITHUB_OUTPUT, [string[]]@("version=$version", "tag=v$version", "sha=$commit"))
