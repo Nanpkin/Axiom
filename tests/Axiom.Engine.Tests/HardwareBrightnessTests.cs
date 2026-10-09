@@ -35,6 +35,17 @@ public sealed class HardwareBrightnessTests
         Assert.Throws<ArgumentException>(() => HardwareBrightnessCapabilities.Validate(Invocation() with { SchemaVersion = 2 }));
         Assert.Throws<ArgumentException>(() => HardwareBrightnessCapabilities.Validate(Invocation() with { Parameters = Invocation().Parameters.Add("monitorId", "1") }));
         var compiler = new AutomationTaskCompiler(); foreach (var m in modules) { foreach (var d in m.Detections) compiler.Register(d); foreach (var a in m.Actions) compiler.Register(a); }
+        foreach (var condition in new[]
+        {
+            new TaskInvocation(PowerSchemeStateCapabilities.State, 1, ImmutableDictionary<string, string>.Empty.Add("scheme", "saver")),
+            new TaskInvocation(PowerSaverStateCapabilities.State, 1, ImmutableDictionary<string, string>.Empty.Add("state", "on"))
+        })
+        {
+            Assert.Contains(plugin.Combinations, c => c.DetectionId == condition.CapabilityId && c.ActionId == HardwareBrightnessCapabilities.Set);
+            var imported = UsageAnalysis.Import(JsonSerializer.Serialize(new UsageImport(1, recorder.Session.Id,
+                "existing", "节能时硬件亮度", "synthetic", condition, Invocation())), recorder.Session, catalog).Draft!;
+            Assert.True(imported.Paused); Assert.NotNull(compiler.Compile(imported, "owner", scope));
+        }
         var draft = template.Draft with { Detection = detection }; var path = Path.Combine(Path.GetTempPath(), "axiom-synthetic-hardware-" + Guid.NewGuid().ToString("N") + ".db");
         try
         {

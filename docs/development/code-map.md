@@ -154,7 +154,7 @@ Internet条件：`InternetConnectivityCapabilities → InternetConnectivityPlugi
 
 当前前台窗口布局：`ForegroundWindowLayoutCapabilities/Plugin/CapabilityProvider` → `WindowsForegroundWindowLayout` → `WindowsForegroundWindowCommand` → `ForegroundWindowLayoutOperation`。hotkey-only、布局字段，无exe或HWND输入；共享`WindowsWindowEvents(trackCaptureLifetime:true)`在捕获前订阅、一次Bind，`CapturedWindowLifetime`有界记录绑定前销毁和绑定后失效。固定HWND/PID/thread、进程句柄/创建时间/完整路径/SID/session，每次写前仍须前台；复用`RestoreNormalAsync`新增可选guard（旧默认不改）及`WindowLayoutGeometry`，3秒事件读回、`BoundedNativeCommand`5秒单准入/关停Drain。`ForegroundWindowLayoutTests`4项合成覆盖参数/严格导入、身份/前台/销毁、结果和取消，不操作真实窗口；暂停模板走已有编辑器与注册。
 
-共用注册/模板/严格导入仍在`BuiltInAutomationPlugins`、`GameHdrAgent`、`AutomationTemplates`、`UsageAnalysis`；当前56能力/52暂停模板。三个新条件的既有注册用例覆盖严格导入及SQLite保存，追加系统音允许对编译；`core-test-suites.txt`保留相关既有套件。原64KiB全机器字段/允许对往返及已有压缩不变。
+共用注册/模板/严格导入在`BuiltInAutomationPlugins`、`GameHdrAgent`、`AutomationTemplates`、`UsageAnalysis`；当前60能力/56暂停模板。四项既有注册用例覆盖严格导入/SQLite保存，硬件亮度追加方案/节能允许对编译，程序音频活动只准保持唤醒/安静通知；`core-test-suites.txt`登记既有套件。原64KiB全机器字段/允许对往返及已有压缩不变。
 
 播放静音切换：`AudioPlaybackToggleCapabilities/Plugin/CapabilityProvider` → `WindowsAudioPlayback.Toggle` → `AudioPlaybackToggleOperation`。共用现有Commands/ApplyEndpoint，执行开始绑定eRender/eConsole端点；GetMute已知→反向SetMute→GetMute，不动音量/默认设备，未知不写、取消后不恢复。独立schema，排除EndpointMute/默认设备变化组合；Agent共享音频Drain。`AudioPlaybackToggleTests`4项合成注册/严格导入/暂停SQLite保存及模板、双向、失读/写拒绝/不一致和取消检查，不实际静音。
 
@@ -164,7 +164,6 @@ Internet条件：`InternetConnectivityCapabilities → InternetConnectivityPlugi
 
 Windows网络分类：`NetworkCategoryCapabilities/NetworkCategoryPlugin` → `NetworkCategoryCapabilityProvider` → `WindowsNetworkCategoryEvents/NetworkCategoryObservation/NetworkCategoryState`。独立分类共享MTA、INetworkEvents连接点，added/deleted/connectivity及property的category/connection标志提示后读取最多64已连接网络分类，另1项仅检查超限；GetCategory仅保留0/1/2或Unknown，三值OR。每类独立基线避免其他类Unknown恢复压掉Known边沿；64提示失效丢缓存，最后租约注销。`NetworkCategoryTests`6项覆盖混合Unknown/无连接、基线、公开回调ABI/过滤、查询代际/溢出、Provider→Engine与Strict import/保存/暂停模板；原生API和实际类别变动待Windows。
 
-共用注册/模板/严格导入仍在`BuiltInAutomationPlugins`、`GameHdrAgent`、`AutomationTemplates`、`UsageAnalysis`；当前56能力/52暂停模板。三个新条件的既有注册用例覆盖严格导入及SQLite保存，追加系统音允许对编译；`core-test-suites.txt`保留相关既有套件。原64KiB全机器字段/允许对往返及已有压缩不变。
 
 电源方案条件：`PowerSchemeStateCapabilities/Plugin/CapabilityProvider` → `WindowsPowerSchemeState/PowerSchemeStateObservation/PowerSchemeStateState（与节能共享局部PowerContextObservation）`，复用`WindowsSessionEvents(schemeOnly:true)`与`WindowsPowerScheme.ReadActive`。GUID_ACTIVE_POWERSCHEME仅提示后查询，不改方案；PowerSchemeStateTests四项集中验证标准/自定义/Unknown、64合并、独立故障、初始/恢复边沿与Desired释放。WindowsSessionEventTests新增自有消息与只读查询，不替代真实方案切换验收。
 

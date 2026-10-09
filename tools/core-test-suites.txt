@@ -70,3 +70,4 @@ PowerSchemeStateTests
 PowerSaverStateTests
 ForegroundScreenCoverTests
 WorkPreparationTests
+HardwareBrightnessTests
