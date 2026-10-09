@@ -31,9 +31,9 @@
 
 精确USB原生测试已保留10秒期限与断言并改为异步Task；修正提交`f6de1bdd7f24b30277c6d6a24a654da62481dc19`的[Windows CI 37868304829](https://github.com/Starvan/Axiom/actions/runs/37868304829)423项核心、48项原生及完整WinUI构建已通过，零警告/错误，[26模板准确head私有包](https://github.com/Starvan/Axiom/actions/runs/37868304829/artifacts/11588977997)已生成。本批新增亮度、静音状态和供电状态检测不属于该提交。
 
-最新用户要求：持续推进功能头脑风暴与大量真实检测/动作，及时提交推送；四阶段最小闭环已接通，不继续以建议排序、界面零碎或框架铺垫为主线。长期目标和候选保存于[功能目标与持续开发清单](functional-roadmap.md)。总负责人仅协调与监督多个6.1 Sol / high子代理，代码由代理实施。首发冻结30模板；下一批窗口状态、显示器数量与Internet状态已接通，34模板、549本地核心和Agent/Host交叉构建通过，三组共6项新增原生测试待下一批Windows CI，不属于首发。
+最新用户要求：持续推进功能头脑风暴与大量真实检测/动作，及时提交推送；四阶段最小闭环已接通，不继续以建议排序、界面零碎或框架铺垫为主线。长期目标和候选保存于[功能目标与持续开发清单](functional-roadmap.md)。总负责人仅协调与监督多个6.1 Sol / high子代理，代码由代理实施。第一轮范围30模板；下一批窗口状态、显示器数量与Internet状态及main静音窄修已整合，34模板、554本地核心和Agent/Host交叉构建通过，三组共6项新增原生测试待下一批Windows CI，不属于首发。
 
-所有者授权四阶段连续实施，取代此前等待确认限制。[PR #1](https://github.com/Starvan/Axiom/pull/1)已合并main `f7814b6546f10aca7dc17a57379d89da09061340`，树与已验证`769e7c0`相同，main检查已成功；第一轮范围为30模板，首tag因已复现静音消费者队列溢出待窄修，最终Release尚未发布。下一批分支为`codex/environment-state-detections`，窗口状态/显示数量/Internet及34模板尚未发布；未替换所有者本机程序。验证后持续分批commit/push，产物与提交来源绑定。
+所有者授权四阶段连续实施，取代此前等待确认限制。[PR #1](https://github.com/Starvan/Axiom/pull/1)已合并main `f7814b6546f10aca7dc17a57379d89da09061340`，树与已验证`769e7c0`相同，main检查已成功；第一轮范围为30模板；所有者明确回复“允许合并并持续分批发布”，静音消费者溢出窄修已合入main e2602f9，首tag待该main检查，最终Release尚未发布。下一批分支为`codex/environment-state-detections`，窗口状态/显示数量/Internet及34模板尚未发布；未替换所有者本机程序。验证后持续分批commit/push，产物与提交来源绑定。
 
 | 阶段 | 已接通的用户路径 |
 |---|---|
@@ -48,7 +48,7 @@
 
 - 通用时段限制适用于声明支持的一次性命令：选星期、本地开始/结束，可跨午夜并归开始星期；时段外新边沿、延迟到期或排队取出直接跳过，开窗不补执行、不额外轮询，已开始动作不撤回。含限制任务使用schema 2，旧后端拒绝而非丢弃限制；HDR和保持唤醒尚不支持此门禁。
 - 内置亮度动作只处理执行时可核验内置连接、活动状态及WMI可写接口的面板，0–100整数，一块一次写入并读回；外屏DDC/CI不在范围。未知/重复身份或缺接口不尝试写入，无支持面板失败；多面板部分完成不能回滚。新亮度保留，暂停、条件结束或接电不恢复；取消/超时可能已写入，不重试。驱动、自适应亮度或厂商软件可能改变后续效果。
-- 默认设备静音检测可选通信输入或常规默认播放、已静音/已取消静音。共享MTA按需订阅端点音量回调，回调仅排入有界提示，之后GetMute核验；默认选择变化即建基线，即使短暂换回同一设备也不补Command，普通设备清单通知同身份不重绑。设备缺失/失效或通知/查询失败为Unknown，持续动作释放；消费者队列积压失效后丢弃缓冲Known，不补触发历史Command且不结束其他消费者。共享工作提示溢出立即使消费者Unknown，不等待阻塞的COM查询或注销返回；消费者释放最多等待5秒，实际COM注销仍由原MTA完成。18项针对性核心回归通过；本修复尚未发布，Windows CI原生回归与实机验收待完成。不录音、不代表应用路由或硬件隐私，设备标识仅进程内短暂比较。
+- 默认设备静音检测可选通信输入或常规默认播放、已静音/已取消静音。共享MTA按需订阅端点音量回调，回调仅排入有界提示，之后GetMute核验；默认选择变化即建基线，即使短暂换回同一设备也不补Command，普通设备清单通知同身份不重绑。设备缺失/失效或通知/查询失败为Unknown，持续动作释放；消费者队列积压失效后丢弃缓冲Known，不补触发历史Command且不结束其他消费者。共享工作提示溢出立即使消费者Unknown，不等待阻塞的COM查询或注销返回；消费者释放最多等待5秒，实际COM注销仍由原MTA完成。18项针对性核心回归及PR #2 Windows原生检查通过；已合入main e2602f9，尚未发布，实机验收待完成。不录音、不代表应用路由或硬件隐私，设备标识仅进程内短暂比较。
 - 供电条件可选接电、电池供电、电池供电且低于1–99自选阈值；严格低于，接电结束低电条件。共享供电/电量原生通知，最多64提示合并后只读当前状态，无周期查询。电量255、供电未知、查询失败或矛盾的无电池供电状态保持相关Unknown；无电池不当低电。首次、睡眠恢复及Unknown后恢复只建立Command基线，已知初始条件可持有保持唤醒请求。
 - 电源方案动作只选择标准平衡/节能/高性能；执行时先枚举确认方案实际存在，再一次切换并读回，不创建、导入或修改内部设置，也不操作Windows电源模式滑块。方案缺失/权限或策略拒绝明确失败；5秒有界执行，取消可能已切换，暂停/条件结束不自动恢复。Modern Standby可能仅提供平衡方案。
 - 保持唤醒持有Axiom自己的Windows Power Request；系统或系统及屏幕可选，同类规则共享，最后条件结束、Unknown、暂停、删除、观察释放及连接断开收回。不改电源计划，不撤销别的软件请求；初始已成立条件属于Desired状态，可直接申请。仅证明请求存在，不能保证系统策略或用户手动睡眠被阻止。租约异常不在同一条件代际自动重试。
@@ -88,7 +88,7 @@ USB/移屏/锁屏批次 **6 Domain + 417 Engine = 423项**核心与最终Agent/H
 
 首发冻结提交`769e7c0`包含亮度/静音状态/供电条件批次及发布配置，完整核心 **6 Domain + 478 Engine = 484项**通过，零失败/跳过（新增亮度27、静音14、供电20项）；Agent/Host交叉构建零警告/错误。[准确head Windows CI 37869900109](https://github.com/Starvan/Axiom/actions/runs/37869900109)已确认27项发布守卫、484核心、53原生与完整WinUI检查通过，[30模板准确head私有包11590285435](https://github.com/Starvan/Axiom/actions/runs/37869900109/artifacts/11590285435)已生成；main f7814b6同树检查也成功，首tag先等待已复现静音溢出窄修，尚未发布Release；不能沿用旧提交产物，不将下一批未发布功能记入首发。
 
-下一批三项检测/34模板最终完整核心 **6 Domain + 543 Engine = 549项**通过，零失败/跳过；Agent/Host交叉构建均零警告/错误。窗口独立增量曾通过502项，新增`WindowStateDetectionTests`18项；显示条件17项与Internet30项合成回归及强化目录往返均纳入最终全套。`WindowsWindowStateTests`、`WindowsDisplayCountTests`、`WindowsInternetConnectivityTests`各2项已编译并追加CI筛选，未在Linux执行；前者只操作自有合成窗口，后两者仅读系统状态/验证订阅，不改显示拓扑或网络。三项实际状态/应用仍待Windows验收，不计入冻结首发。40能力最大摘要真实超限后，第四级压缩改为仅省略`TaskField`为null的可选默认值/上下限/分组，保留分类/标签和全部非空参数/选项/组合；omissions明确缺省未声明、不改变授权校验。原64KiB及完整往返断言保持，128合成对象加提示词/CRLF无handled为62759字节，12handled为64829字节、余707；后续能力触及边界再按实际处理，不预先增预算。
+三项检测初始提交2a05a53/34模板完整核心 **6 Domain + 543 Engine = 549项**通过，零失败/跳过；Agent/Host交叉构建均零警告/错误。窗口独立增量曾通过502项，新增`WindowStateDetectionTests`18项；显示条件17项与Internet30项合成回归及强化目录往返均纳入最终全套。`WindowsWindowStateTests`、`WindowsDisplayCountTests`、`WindowsInternetConnectivityTests`各2项已编译并追加CI筛选，未在Linux执行；前者只操作自有合成窗口，后两者仅读系统状态/验证订阅，不改显示拓扑或网络。三项实际状态/应用仍待Windows验收，不计入冻结首发。40能力最大摘要真实超限后，第四级压缩改为仅省略`TaskField`为null的可选默认值/上下限/分组，保留分类/标签和全部非空参数/选项/组合；omissions明确缺省未声明、不改变授权校验。原64KiB及完整往返断言保持，128合成对象加提示词/CRLF无handled为62759字节，12handled为64829字节、余707；后续能力触及边界再按实际处理，不预先增预算。
 
 提交前按既有源码私路径/凭据/排除产物模式检查490个暂存可见文件并人工审阅本批41文件通过。原隐私脚本在云端用户名`agent`下把通用技术词Agent判为个人信息，故当地canonical检查未通过；未修改守卫，准确提交仍须GitHub通用runner运行原脚本验证。
 
@@ -113,4 +113,4 @@ PR #3提交`2a05a53`的[Windows CI 37871863025](https://github.com/Starvan/Axiom
 
 实现定位：[使用观察](../development/usage-observation.md)、[扩展任务指南](../development/extension-task-guide.md)、[代码定位表](../development/code-map.md)、[云端工作流](../development/cloud-workflow.md)。
 
-PR #3的fc41修复签名后，[run37872329703](https://github.com/Starvan/Axiom/actions/runs/37872329703) Linux测试543通过/1失败，Internet清理计数断言先于Dispose完成。合成门闩已准确复现“Unknown已发布、清理尚未完成”；测试改等SyntheticSource的清理完成TCS，再保留Disposed=1及只释放自身租约断言，另一个相同清理断言同步补等待，不改Provider先Unknown后Dispose顺序、不sleep。Internet30项针对回归通过；下一批分支待接入已合入main的静音窄修后核对最终核心、构建及Windows结果。
+PR #3的fc41修复签名后，[run37872329703](https://github.com/Starvan/Axiom/actions/runs/37872329703) Linux测试543通过/1失败，Internet清理计数断言先于Dispose完成。合成门闩已准确复现“Unknown已发布、清理尚未完成”；测试改等SyntheticSource的清理完成TCS，再保留Disposed=1及只释放自身租约断言，另一个相同清理断言同步补等待，不改Provider先Unknown后Dispose顺序、不sleep。Internet30项针对回归通过；下一批分支已接入main e2602f9静音窄修；最终完整核心实际6 Domain + 548 Engine = 554项通过，零失败/跳过，Agent/Host顺序交叉构建各零警告/错误。包含新增Timeout签名守卫1项及main静音回归4项，当前整合head的Windows/完整应用及私有包待验。
