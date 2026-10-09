@@ -325,6 +325,9 @@ public static class UsageAnalysis
             if (missing.Count > 0) return resolved;
             // Provider-specific constraints are also checked before offering the draft.
             if (resolved.CapabilityId == FileArrivalCapabilities.Arrived) FileArrivalCapabilities.Validate(resolved);
+            if (resolved.CapabilityId == PowerStateCapabilities.State) PowerStateCapabilities.Validate(resolved);
+            if (resolved.CapabilityId == BuiltInBrightnessCapabilities.Set) BuiltInBrightnessCapabilities.Validate(resolved);
+            if (resolved.CapabilityId == EndpointMuteCapabilities.State) EndpointMuteCapabilities.Validate(resolved);
             if (resolved.CapabilityId == SessionLockCapabilities.Lock) SessionLockCapabilities.Validate(resolved);
             if (resolved.CapabilityId is UsbDeviceCapabilities.Present or UsbDeviceCapabilities.Absent) UsbDeviceCapabilities.Validate(resolved);
             if (resolved.CapabilityId == WindowMonitorCapabilities.Move) WindowMonitorCapabilities.ValidateTargets(resolved);

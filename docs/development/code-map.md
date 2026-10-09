@@ -114,6 +114,12 @@ Wi-Fi配置：`WifiProfileCapabilities/Plugin/CapabilityProvider` → `WindowsWi
 
 精确USB实例：`UsbDeviceCapabilities/Plugin/CapabilityProvider` → `WindowsUsbDevices`的SetupAPI present接口/实例查询 → `UsbDeviceObservation/UsbDeviceState`；复用`WindowsSessionEvents(usbOnly: true)`的USB类别/恢复提示和原生注册。完整实例16项`EditAsList`，presence Any / absence All false，共用bool资源；Unknown/容量/恢复不假移除或补命令。`UsbDeviceTests`覆盖规范、队列合并、故障、Engine边沿、保存/导入；`WindowsSessionEventTests`新增消费者过滤/释放和真实SetupAPI有界查询，不能代替真实插拔。
 
-窗口移屏：`WindowMonitorCapabilities/Plugin/CapabilityProvider` → `WindowsWindowActions.MoveToMonitorAsync` → `WindowsWindowMonitor/WindowMonitorGeometry`；沿用窗口等待/恢复和完整路径/SID/会话/创建时间核验，实时主屏/上一屏/下一屏工作区中央80%，单屏切换跳过。`WindowMonitorTests`为拓扑/几何/参数纯逻辑，`WindowsWindowMonitorTests`为6项新增原生用例（当前待CI）；与`WindowActionTests`共享原生窗口集合，不并行干扰。持久显示器身份/完整布局恢复未接通。
+窗口移屏：`WindowMonitorCapabilities/Plugin/CapabilityProvider` → `WindowsWindowActions.MoveToMonitorAsync` → `WindowsWindowMonitor/WindowMonitorGeometry`；沿用窗口等待/恢复和完整路径/SID/会话/创建时间核验，实时主屏/上一屏/下一屏工作区中央80%，单屏切换跳过。`WindowMonitorTests`为拓扑/几何/参数纯逻辑，`WindowsWindowMonitorTests`为6项新增原生用例（f6de1bd已过CI）；与`WindowActionTests`共享原生窗口集合，不并行干扰。持久显示器身份/完整布局恢复未接通。
 
 单次锁屏：`SessionLockCapabilities/Plugin/CapabilityProvider` → `WindowsSessionLock` → `SessionLockOperation/SessionLockStateReader`；WTSInfoEx仅读连接与锁元数据，活动未锁定会话才请求`LockWorkStation`，5秒有界单准入与ReceiptOnly回执，不重试/解锁。`SessionLockTests`覆盖合成API、WTS头解析、保存/组合/时段及有界阻塞取消；不实际锁CI桌面。注册/导入依然走现有`BuiltInAutomationPlugins`、`GameHdrAgent`与`UsageAnalysis`。
+
+内置亮度：`BuiltInBrightnessCapabilities → BuiltInBrightnessPlugin → BuiltInBrightnessCapabilityProvider → WindowsBuiltInBrightness/BuiltInBrightnessOperation`。执行时查询活动内置连接与WMI可写接口，0–100一次设置并读回，未知身份拒绝、外接面板忽略；`BuiltInBrightnessTests`使用合成API，不写真实面板，支持性及驱动效果待实机。
+
+默认静音状态：`EndpointMuteCapabilities → EndpointMutePlugin → EndpointMuteCapabilityProvider → WindowsEndpointMuteEvents/EndpointMuteState`。通信输入/常规播放共用按需MTA端点通知，回调后GetMute、选择变化计数保留baseline、同ID清单通知不重绑；`WindowsAudioEvents(includeEndpointState:true)`共享默认角色/清单通知。`EndpointMuteTests`验证代次/Unknown/Engine，`WindowsEndpointMuteTests`新增3项待Windows CI，不切换或修改真实设备。
+
+供电条件：`PowerStateCapabilities → PowerStatePlugin → PowerStateCapabilityProvider → WindowsPowerState/PowerStateObservation/PowerStateState`。`WindowsSessionEvents(powerOnly:true)`共享隐藏窗口和AC/DC、电量通知；合并后一次只读快照，ac/battery/严格battery-below条件，无电池与未知不假低电。`PowerStateTests`验证阈值、基线与Desired释放；`WindowsSessionEventTests`新增2项共享过滤/独立溢出/只读原生快照待CI，不改系统电源。

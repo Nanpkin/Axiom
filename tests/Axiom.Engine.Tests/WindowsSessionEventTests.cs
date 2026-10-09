@@ -165,6 +165,61 @@ public sealed class WindowsSessionEventTests
     }
 
     [Fact(Timeout = 10000)]
+    public async Task PowerOnlySharesSupplyAndPercentageNotificationsAndReleasesWithoutAffectingOtherConsumers()
+    {
+        using var system = new WindowsSessionEvents(); using var clock = new WindowsSessionEvents(clockOnly: true);
+        using var usb = new WindowsSessionEvents(usbOnly: true); using var power = new WindowsSessionEvents(powerOnly: true);
+        Assert.Equal(system.NotificationWindow, power.NotificationWindow); Assert.Equal(4, WindowsSessionEvents.ActiveConsumers);
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+        while (power.Events.TryRead(out _)) { } // registration may produce an initial setting hint
+        SendMessage(power.NotificationWindow, 0x007E, 32, 0);
+        while (power.Events.TryRead(out var pending)) Assert.Equal("power-state-changed", pending);
+        Assert.Equal("display-changed", await Next(system, "display-changed"));
+        var buffer = Marshal.AllocHGlobal(24);
+        try
+        {
+            foreach (var setting in new[] { "A7AD8041-B45A-4CAE-87A3-EECBB468A9E1", "5D3E9A59-E9D5-4B00-A6BD-FF34FF516548" })
+            {
+                Marshal.StructureToPtr(new Guid(setting), buffer, false); Marshal.WriteInt32(buffer, 16, 4); Marshal.WriteInt32(buffer, 20, 50);
+                SendMessage(power.NotificationWindow, 0x0218, 0x8013, buffer);
+                Assert.Equal("power-state-changed", await Next(power, "power-state-changed"));
+                while (system.Events.TryRead(out var kind)) Assert.NotEqual("power-state-changed", kind);
+                Assert.False(usb.Events.TryRead(out _)); Assert.False(clock.Events.TryRead(out _));
+            }
+        }
+        finally { Marshal.FreeHGlobal(buffer); }
+        SendMessage(power.NotificationWindow, 0x0218, 0x12, 0);
+        Assert.Equal("resumed", await Next(power, "resumed")); Assert.Equal("resumed", await Next(usb, "resumed")); Assert.Equal("resumed", await Next(system, "resumed"));
+        Assert.Equal((byte)1, await clock.ClockChanges.ReadAsync(deadline.Token));
+        power.Dispose(); Assert.Equal(3, WindowsSessionEvents.ActiveConsumers); Assert.False(system.Events.Completion.IsCompleted);
+        SendMessage(system.NotificationWindow, 0x007E, 32, 0); Assert.Equal("display-changed", await Next(system, "display-changed"));
+        async Task<string> Next(WindowsSessionEvents source, string expected)
+        {
+            string value; do { value = await source.Events.ReadAsync(deadline.Token); } while (value != expected);
+            return value;
+        }
+    }
+
+    [Fact(Timeout = 10000)]
+    public async Task PowerHintOverflowMarksOnlyPowerConsumerUnknownAndNativeSnapshotRemainsReadOnly()
+    {
+        using var system = new WindowsSessionEvents(); using var power = new WindowsSessionEvents(powerOnly: true);
+        var buffer = Marshal.AllocHGlobal(24);
+        try
+        {
+            Marshal.StructureToPtr(new Guid("5D3E9A59-E9D5-4B00-A6BD-FF34FF516548"), buffer, false);
+            Marshal.WriteInt32(buffer, 16, 4); Marshal.WriteInt32(buffer, 20, 1);
+            for (var i = 0; i < 65; i++) SendMessage(power.NotificationWindow, 0x0218, 0x8013, buffer);
+            Assert.True(power.Failed); Assert.False(system.Failed); Assert.False(system.Events.Completion.IsCompleted);
+        }
+        finally { Marshal.FreeHGlobal(buffer); }
+        var snapshot = await Task.Run(() => WindowsPowerState.Read(default));
+        Assert.True(snapshot.AcLine is 0 or 1 or 255);
+        Assert.True(snapshot.BatteryPercent <= 100 || snapshot.BatteryPercent == 255);
+        // Read-only API coverage; no real supply switch or battery discharge is simulated.
+    }
+
+    [Fact(Timeout = 10000)]
     public async Task NativeSetupApiUsbSnapshotReadsBoundedInstancesWithoutRecordingTheirValues()
     {
         using var source = new WindowsSessionEvents(usbOnly: true);
