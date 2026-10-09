@@ -106,6 +106,8 @@ USB类别通知：`WindowsSessionEvents` 注册USB接口GUID、处理接入/移�
 
 应用音量：`ApplicationAudioCapabilities/Plugin/CapabilityProvider` → `WindowsAudioPlayback.Applications`，`ApplicationAudioOperation`核验/多会话/部分结果；`ApplicationAudioTests`为合成端点测试，真实播放会话单列。
 
+指定程序音频活动：`ApplicationAudioActivityCapabilities/Plugin/CapabilityProvider` → `WindowsApplicationAudioActivity` → `ApplicationAudioActivityHub`和`WindowsAudioPlayback.Activity`。公开默认播放角色/会话创建/状态/断开通知，MTA先订阅再枚举，保留新会话通知的控制引用；与现有应用音量写动作共享固定SID/会话/进程句柄/创建时间/路径身份，仅选定进程注册退出等待。三值OR、初始Desired与Unknown恢复命令基线、默认选择代际隔离；明确Expired在MTA释放，Inactive仍监听，旧进程已退出而会话仍报Active保留固定身份直到过期，避免PID复用重新认领。5秒查询期限，32消费者/128路径/128会话/64提示/256状态样本，失败先Unknown、阻塞清理不新开线程。`ApplicationAudioActivityTests`6项合成覆盖聚合/身份退出、共享释放/恢复/无会话、旧代际、积压失败、Engine初态/释放和严格alias导入/保存/暂停模板；Windows原生通知和实际Power Request尚待实机。
+
 保持唤醒：`KeepAwakeCapabilities/Plugin` → `PluginTaskRuntime.KeepAwake` → `SessionDesiredLeaseStream/KeepAwakeCapabilityProvider` → `WindowsPowerRequest`；Engine窄`ILeasedDesiredExecutor`通知授权收回，`KeepAwakeTests`及Windows管道`WindowsKeepAwakeRuntimeTests`验证独立请求生命周期。
 
 Wi-Fi配置：`WifiProfileCapabilities/Plugin/CapabilityProvider` → `WindowsWifiProfiles`共享Wlan通知及`WifiProfileState`多网卡合并；`WifiProfileTests`验证已知/未知、基线、保存及隐私。`TaskField.EditAsList`由`WorkbenchWindow.NamedLists`显示有界名单弹窗，保存仍由能力校验。
@@ -152,7 +154,7 @@ Internet条件：`InternetConnectivityCapabilities → InternetConnectivityPlugi
 
 当前前台窗口布局：`ForegroundWindowLayoutCapabilities/Plugin/CapabilityProvider` → `WindowsForegroundWindowLayout` → `WindowsForegroundWindowCommand` → `ForegroundWindowLayoutOperation`。hotkey-only、布局字段，无exe或HWND输入；共享`WindowsWindowEvents(trackCaptureLifetime:true)`在捕获前订阅、一次Bind，`CapturedWindowLifetime`有界记录绑定前销毁和绑定后失效。固定HWND/PID/thread、进程句柄/创建时间/完整路径/SID/session，每次写前仍须前台；复用`RestoreNormalAsync`新增可选guard（旧默认不改）及`WindowLayoutGeometry`，3秒事件读回、`BoundedNativeCommand`5秒单准入/关停Drain。`ForegroundWindowLayoutTests`4项合成覆盖参数/严格导入、身份/前台/销毁、结果和取消，不操作真实窗口；暂停模板走已有编辑器与注册。
 
-共用注册/模板/严格导入仍在`BuiltInAutomationPlugins`、`GameHdrAgent`、`AutomationTemplates`、`UsageAnalysis`；当前56能力/52暂停模板。三个新条件的既有注册用例覆盖严格导入及SQLite保存，追加系统音允许对编译；`core-test-suites.txt`保留相关既有套件。原64KiB全机器字段/允许对往返及已有压缩不变。
+共用注册/模板/严格导入在`BuiltInAutomationPlugins`、`GameHdrAgent`、`AutomationTemplates`、`UsageAnalysis`；当前60能力/56暂停模板。四项既有注册用例覆盖严格导入/SQLite保存，硬件亮度追加方案/节能允许对编译，程序音频活动只准保持唤醒/安静通知；`core-test-suites.txt`登记既有套件。原64KiB全机器字段/允许对往返及已有压缩不变。
 
 播放静音切换：`AudioPlaybackToggleCapabilities/Plugin/CapabilityProvider` → `WindowsAudioPlayback.Toggle` → `AudioPlaybackToggleOperation`。共用现有Commands/ApplyEndpoint，执行开始绑定eRender/eConsole端点；GetMute已知→反向SetMute→GetMute，不动音量/默认设备，未知不写、取消后不恢复。独立schema，排除EndpointMute/默认设备变化组合；Agent共享音频Drain。`AudioPlaybackToggleTests`4项合成注册/严格导入/暂停SQLite保存及模板、双向、失读/写拒绝/不一致和取消检查，不实际静音。
 
@@ -162,7 +164,6 @@ Internet条件：`InternetConnectivityCapabilities → InternetConnectivityPlugi
 
 Windows网络分类：`NetworkCategoryCapabilities/NetworkCategoryPlugin` → `NetworkCategoryCapabilityProvider` → `WindowsNetworkCategoryEvents/NetworkCategoryObservation/NetworkCategoryState`。独立分类共享MTA、INetworkEvents连接点，added/deleted/connectivity及property的category/connection标志提示后读取最多64已连接网络分类，另1项仅检查超限；GetCategory仅保留0/1/2或Unknown，三值OR。每类独立基线避免其他类Unknown恢复压掉Known边沿；64提示失效丢缓存，最后租约注销。`NetworkCategoryTests`6项覆盖混合Unknown/无连接、基线、公开回调ABI/过滤、查询代际/溢出、Provider→Engine与Strict import/保存/暂停模板；原生API和实际类别变动待Windows。
 
-共用注册/模板/严格导入仍在`BuiltInAutomationPlugins`、`GameHdrAgent`、`AutomationTemplates`、`UsageAnalysis`；当前56能力/52暂停模板。三个新条件的既有注册用例覆盖严格导入及SQLite保存，追加系统音允许对编译；`core-test-suites.txt`保留相关既有套件。原64KiB全机器字段/允许对往返及已有压缩不变。
 
 电源方案条件：`PowerSchemeStateCapabilities/Plugin/CapabilityProvider` → `WindowsPowerSchemeState/PowerSchemeStateObservation/PowerSchemeStateState（与节能共享局部PowerContextObservation）`，复用`WindowsSessionEvents(schemeOnly:true)`与`WindowsPowerScheme.ReadActive`。GUID_ACTIVE_POWERSCHEME仅提示后查询，不改方案；PowerSchemeStateTests四项集中验证标准/自定义/Unknown、64合并、独立故障、初始/恢复边沿与Desired释放。WindowsSessionEventTests新增自有消息与只读查询，不替代真实方案切换验收。
 
@@ -170,3 +171,7 @@ Windows节能报告条件：`PowerSaverStateCapabilities/Plugin/CapabilityProvid
 
 
 用户在场报告：`SessionPresenceCapabilities → SessionPresencePlugin → SessionPresenceCapabilityProvider → WindowsSessionPresence/SessionPresenceObservation/SessionPresenceState`，复用`WindowsSessionEvents(presenceOnly:true)`的GUID_SESSION_USER_PRESENCE DWORD。公开枚举为USER_ACTIVITY_PRESENCE的0/1/2，不是另一个POWER_USER_PRESENCE结构；不初读/轮询/输入hook。64提示合并保留Unknown边界，注册失败只拒新消费者，溢出立即Failed并丢缓存；SessionPresenceTests四项验证三态、基线、独立故障与保存/严格导入/Engine命令。WindowsSessionEventTests新增自有窗口解析/过滤/溢出案例，Windows CI执行，云端仅编译。
+
+硬件屏幕亮度：`HardwareBrightnessCapabilities/Plugin/CapabilityProvider` → `WindowsHardwareBrightness` → `HardwareBrightnessOperation`。`display.hardware-brightness`主屏/全支持屏、0–100/Engine延迟，独立于原内屏WMI；EnumDisplayMonitors/GetMonitorInfo实时逻辑选择，DXVA2物理句柄/MC_CAPS_BRIGHTNESS/min-current-max/一次写读回/DestroyPhysicalMonitors，SID及WTSActive核验。BoundedNativeCommand整批10秒单准入与Agent Drain，64/8/64容量前置、每个lease先拥有再检查取消/finally全部释放。HardwareBrightnessTests五项使用合成API验证范围/未知/部分、保存导入、超时取消句柄生命周期；实际硬件待验。
+前台覆盖整屏：`ForegroundScreenCoverCapabilities/Plugin/CapabilityProvider` → `ForegroundScreenCoverObservation` → `WindowsForegroundScreenCover`，默认全部合格应用、零参数。WindowsForegroundEvents/WindowsWindowEvents(requireMinimizeEvents:true,requireCloakEvents:true)/WindowsSessionEvents(displayOnly:true)共享提示汇入64队列，仅按事件读取当前HWND；短捕获租约沿CapturedWindowLifetime防读取中销毁复用，不占前台命令准入。固定PID/thread/进程句柄/创建时间/路径/SID/session复核，DWM_EXTENDED_FRAME_BOUNDS与所在monitor.Bounds物理像素包含关系及完整拓扑/边框读回；非应用false、查询/通知失败Unknown。WindowsWindowEvents新增可选destroy回调、cloaking hook与只读Failed，旧默认投递不接收cloaking；新hook失败只拒需要它的检测。ForegroundScreenCoverTests五项覆盖几何、基线/合并、故障、保存/严格导入、Desired/Command；WindowsSessionEventTests一项只读共享订阅释放交WindowsCI，不改变前台或窗口。
+有限工作准备：`WorkPreparationCapabilities/Plugin/CapabilityProvider` → `WindowsOpenTarget.Prepare` → `WorkPreparationOperation`。1–8步手填中文类型、原名单弹窗（相同行合并）；程序复用`ProgramCapabilities/ExecutablePaths`且用原本机路径语法排除网络/数据流，资料复用原批量校验。全体预检后同一Shell Commands准入/8秒期限顺序调用原`WindowsProgramControl.Start`（可选取消、Skipped回执）与原`WindowsOpenTarget.Open`；原生真正结束才释放准入。进度只序号/计数，动作失败保留原原因，不回滚/重试；仅快捷键/系统事件/每日或单次时间组合。`WorkPreparationTests`5项覆盖实际注册/严格空名单导入/时段保存、预检/有序跳过/失败原因、取消、期限与准入、异常未确认。
