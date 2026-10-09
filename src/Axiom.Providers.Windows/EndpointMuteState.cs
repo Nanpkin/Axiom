@@ -7,6 +7,43 @@ public sealed record EndpointMuteSample(string Endpoint, bool? Muted, bool Basel
 public interface IEndpointMuteSource : IDisposable
 {
     ChannelReader<EndpointMuteSample> Events { get; }
+    bool Failed => false;
+}
+
+internal sealed record EndpointMuteSignal(string Kind, string Endpoint = "", long Generation = 0);
+
+// The failure callback only invalidates consumer queues. Native reads and cleanup remain on the MTA worker.
+internal sealed class EndpointMuteNotifications(Action failedNotification)
+{
+    internal readonly object Gate = new();
+    internal readonly EndpointMuteDefaultChanges DefaultChanges = new();
+    private readonly HashSet<EndpointMuteSignal> pending = [];
+    private readonly Channel<EndpointMuteSignal> queue = Channel.CreateBounded<EndpointMuteSignal>(64);
+    private volatile bool failed;
+    internal bool Failed => failed;
+    internal ChannelReader<EndpointMuteSignal> Events => queue.Reader;
+    internal void Enqueue(EndpointMuteSignal signal)
+    {
+        lock (Gate)
+        {
+            if (failed) return;
+            if (signal.Kind == "default") DefaultChanges.Note(signal.Endpoint);
+            if (!pending.Add(signal)) return;
+            if (queue.Writer.TryWrite(signal)) return;
+            pending.Remove(signal); failed = true;
+            queue.Writer.TryComplete(new IOException("静音通知队列不可用。"));
+        }
+        failedNotification(); // Never wait for a blocked COM read before marking consumers Unknown.
+    }
+    internal bool TryRead(out EndpointMuteSignal? signal)
+    {
+        lock (Gate)
+        {
+            if (!queue.Reader.TryRead(out signal)) return false;
+            pending.Remove(signal); return true;
+        }
+    }
+    internal void Complete() => queue.Writer.TryComplete();
 }
 
 // All transitions run on the observer's single MTA thread. Generations fence old endpoint callbacks.
