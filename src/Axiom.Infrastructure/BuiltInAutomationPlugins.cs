@@ -10,6 +10,6 @@ public static class BuiltInAutomationPlugins
     [
         new SessionDisplayPlugin(), new DisplayCountPlugin(), new InternetConnectivityPlugin(), new ProgramPlugin(), new AxiomStartupPlugin(), new WindowPlugin(), new TrayPlugin(), new KeyboardPlugin(),
         new SystemEventPlugin(), new IntervalPlugin(), new DailyTimePlugin(), new WindowedIntervalPlugin(), new FileArrivalPlugin(), new AudioPlaybackPlugin(),
-        new PowerStatePlugin(), new BuiltInBrightnessPlugin(), new EndpointMutePlugin(), new SessionLockPlugin(), new WindowMonitorPlugin(), new UsbDevicePlugin(), new PowerSchemePlugin(), new WifiProfilePlugin(), new KeepAwakePlugin(), new ApplicationAudioPlugin(), new CurrentMediaPlugin(), new MicrophonePlugin(), new NotificationPlugin(), new OnceTimePlugin(), new AudioPlugin(), new OpenTargetPlugin(), new ForegroundPlugin(), new WindowPresencePlugin(), new WindowStateDetectionPlugin()
+        new PowerStatePlugin(), new BuiltInBrightnessPlugin(), new EndpointMutePlugin(), new SessionLockPlugin(), new DisplayOffPlugin(), new WindowMonitorPlugin(), new UsbDevicePlugin(), new PowerSchemePlugin(), new WifiProfilePlugin(), new KeepAwakePlugin(), new ApplicationAudioPlugin(), new CurrentMediaPlugin(), new MicrophonePlugin(), new NotificationPlugin(), new OnceTimePlugin(), new AudioPlugin(), new OpenTargetPlugin(), new ForegroundPlugin(), new WindowPresencePlugin(), new WindowStateDetectionPlugin()
     ];
 }

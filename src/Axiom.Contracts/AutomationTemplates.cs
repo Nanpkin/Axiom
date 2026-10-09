@@ -41,6 +41,7 @@ public static class AutomationTemplates
         new("desktop-reminder", "定期显示桌面提醒", "填写提醒内容；默认每30分钟请求一次安静提醒。Windows勿扰可能隐藏通知，不适合紧急提醒。", IntervalCapabilities.Elapsed, NotificationCapabilities.Show, [], []),
         new("pdf-arrival", "文件夹出现PDF后打开工具", "填写本机文件夹和配套程序；新建或重命名出现PDF后一秒合并触发，不读取内容、不证明下载完成、不传递文件名。可给动作增加延迟。", FileArrivalCapabilities.Arrived, "program.start", [("kind", "pdf")], []),
         new("microphone-shortcut", "按快捷键静音默认通信麦克风", "选择快捷键；只静音Windows默认通信麦克风一次，不自动取消静音。应用选择的其他输入设备可能仍收音，请核对应用。", HotkeyCapabilities.Pressed, MicrophoneCapabilities.Set, [], [("operation", "mute")]),
+        new("lock-display-off", "锁屏后请求关闭屏幕", "锁屏新通知后向Windows请求关闭屏幕一次，电脑与后台工作继续；不睡眠、不改电源方案。输入可能唤醒屏幕，驱动与保持屏幕唤醒请求可能影响效果，接受请求不代表物理屏幕已关闭。", SystemEventCapabilities.Event, DisplayOffCapabilities.Request, [("event", "locked")], []),
         new("lock-mute", "锁屏后静音默认播放设备", "锁屏时静音一次，不停止播放、不改麦克风，解锁不自动恢复。之后可手动取消静音；请审阅后启用。", SystemEventCapabilities.Event, AudioPlaybackCapabilities.Set, [("event", "locked")], [("operation", "mute")]),
         new("focus-quiet-apps", "切到工作应用时降低播放应用音量", "选择前台工作程序及实际发声程序完整路径；只把默认播放设备上的活动会话音量设为30%，不取消静音、不自动恢复。目标未播放或无会话会说明失败。", ForegroundCapabilities.Active, ApplicationAudioCapabilities.Set, [], [("operation", "volume"), ("percent", "30")]),
         new("keep-transfer-awake", "传输或会议程序运行期间保持系统唤醒", "选择需要持续运行的程序；任意一个运行时持有Axiom自己的电源请求，全部退出或状态未知后释放。默认允许屏幕关闭，不改变电源计划、不阻止手动睡眠。", "process.running", KeepAwakeCapabilities.Hold, [], [("target", "system")]),
