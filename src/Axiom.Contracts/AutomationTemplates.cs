@@ -41,6 +41,7 @@ public static class AutomationTemplates
         new("shortcut-foreground-layout", "按快捷键整理当前前台窗口", "填写快捷键并选择布局，无需选择程序；执行开始捕获当前前台应用窗口，最大化/最小化先还原，再按当前工作区整理并读回。切走、身份未知或窗口消失后不再写，已还原或移动不撤回；不处理Axiom自身、桌面、任务栏或确认对话框。", HotkeyCapabilities.Pressed, ForegroundWindowLayoutCapabilities.Layout, [], [("layout", "left")]),
         new("shortcut-next-monitor", "按快捷键把窗口移到下一个显示器", "选择快捷键和目标程序完整路径；按执行时显示器桌面位置循环移屏并居中80%，最大化/最小化窗口先还原。只有一屏时跳过，不抢回后续手动调整。", HotkeyCapabilities.Pressed, WindowMonitorCapabilities.Move, [], [("monitor", "next")]),
         new("display-primary-window", "显示变化后把窗口放回主显示器", "选择目标程序完整路径；显示模式通知后移到执行时主显示器并居中80%，最大化/最小化窗口先还原。不匹配特定设备、不恢复旧坐标，也不持续固定。", SystemEventCapabilities.Event, WindowMonitorCapabilities.Move, [("event", "display-changed")], [("monitor", "primary")]),
+        new("workday-system-sound", "仅工作时段定期播放提示音", "默认工作日9–18点，每30分钟请求一次默认系统提示音，不弹窗口、不改音量。静音或系统声音设置可能导致无声，不补发错过机会，不适合紧急提醒；请审阅后启用。", WindowedIntervalCapabilities.Due, SystemSoundCapabilities.Sound, [], []),
         new("workday-reminder", "仅工作时段定期提醒", "默认工作日9–18点，每30分钟请求安静提醒；填写内容后审阅启用。结束时刻不触发，无节假日判断，不补发错过机会。", WindowedIntervalCapabilities.Due, NotificationCapabilities.Show, [], []),
         new("desktop-reminder", "定期显示桌面提醒", "填写提醒内容；默认每30分钟请求一次安静提醒。Windows勿扰可能隐藏通知，不适合紧急提醒。", IntervalCapabilities.Elapsed, NotificationCapabilities.Show, [], []),
         new("pdf-arrival", "文件夹出现PDF后打开工具", "填写本机文件夹和配套程序；新建或重命名出现PDF后一秒合并触发，不读取内容、不证明下载完成、不传递文件名。可给动作增加延迟。", FileArrivalCapabilities.Arrived, "program.start", [("kind", "pdf")], []),
