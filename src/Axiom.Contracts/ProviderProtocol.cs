@@ -33,6 +33,8 @@ public static class ProviderProtocol
             resources.All(r => !string.IsNullOrWhiteSpace(r.CapabilityId) && r.CapabilityId.Length <= 128 && !string.IsNullOrWhiteSpace(r.ResourceId) && r.ResourceId.Length <= 1024) &&
             resources.Distinct().Count() == resources.Length) return;
         if (message.Type == "invoke" && message.Resources is null && message.RequiredCapabilities is null && message.Invocation is not null && message.CommandId is { } id && id != Guid.Empty) return;
+        if (message.Type == "lease" && message.Resources is null && message.RequiredCapabilities is null && message.CommandId is null && message.Invocation is not null)
+        { KeepAwakeCapabilities.Validate(message.Invocation); return; }
         throw new InvalidDataException("Provider 请求字段无效。");
     }
     public static async Task WriteAsync(Stream stream, ProviderMessage message, CancellationToken token)

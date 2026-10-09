@@ -101,3 +101,11 @@ USB类别通知：`WindowsSessionEvents` 注册USB接口GUID、处理接入/移�
 桌面提醒：`NotificationCapabilities` / `NotificationPlugin` / `NotificationCapabilityProvider` 使用通用动作链；`WindowsDesktopNotification` 以消息窗口、原生清理计时器和临时通知区图标完成一次请求，`BoundedNativeCommand` 拒绝并发且调用者超时不释放原生准入。`WindowsNotificationTests` 使用真实HWND和合成Shell验证生命周期，不声称真实通知显示。
 
 工作时段间隔：`WindowedIntervalCapabilities` / `WindowedIntervalSpec` 定义星期、跨午夜、固定钟点与DST；`WindowedIntervalPlugin` 编译事件计数，`WindowedIntervalCapabilityProvider` 复用共享clockOnly租约；`WindowedIntervalEventSource` 仅一个最近deadline及有界时钟消息等待，取消全部释放。`WindowedIntervalTests` 覆盖时段边界、错过/回拨/DST/导入；它不是通用规则时间守卫。
+
+命令时间门禁：`Domain/WeeklyTimeWindow`、`AutomationTask.TimeWindow`（schema 2）、`AutomationTaskCompiler`映射`RuleTiming`，`EngineHost.Rules/Execution`在新边沿/延迟/取队列检查；`WorkbenchWindow.TimeWindow`及`TaskEditorState`保存与编辑，`TimeWindowTests`覆盖。
+
+应用音量：`ApplicationAudioCapabilities/Plugin/CapabilityProvider` → `WindowsAudioPlayback.Applications`，`ApplicationAudioOperation`核验/多会话/部分结果；`ApplicationAudioTests`为合成端点测试，真实播放会话单列。
+
+保持唤醒：`KeepAwakeCapabilities/Plugin` → `PluginTaskRuntime.KeepAwake` → `SessionDesiredLeaseStream/KeepAwakeCapabilityProvider` → `WindowsPowerRequest`；Engine窄`ILeasedDesiredExecutor`通知授权收回，`KeepAwakeTests`及Windows管道`WindowsKeepAwakeRuntimeTests`验证独立请求生命周期。
+
+Wi-Fi配置：`WifiProfileCapabilities/Plugin/CapabilityProvider` → `WindowsWifiProfiles`共享Wlan通知及`WifiProfileState`多网卡合并；`WifiProfileTests`验证已知/未知、基线、保存及隐私。`TaskField.EditAsList`由`WorkbenchWindow.NamedLists`显示有界名单弹窗，保存仍由能力校验。

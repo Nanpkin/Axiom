@@ -4,7 +4,7 @@ using System.Runtime.Versioning;
 namespace Axiom.Providers.Windows;
 
 [SupportedOSPlatform("windows")]
-public static class WindowsAudioPlayback
+public static partial class WindowsAudioPlayback
 {
     private static readonly BoundedNativeCommand Commands = new("音频", TimeSpan.FromSeconds(5));
     public static Task<(bool Success, string Reason)> SetAsync(string operation, int percent, CancellationToken token)

@@ -20,6 +20,7 @@ public sealed class AudioPlaybackPlugin : IAutomationPlugin
 }
 public sealed class AudioPlaybackTaskAction : ITaskActionCompiler
 {
+    public bool SupportsTimeWindow => true;
     public TaskCapability Descriptor => AudioPlaybackCapabilities.Descriptor;
     public RuleAction Compile(TaskInvocation configuration, ResourceScope scope)
     {

@@ -20,6 +20,7 @@ public sealed class MicrophonePlugin : IAutomationPlugin
 }
 public sealed class MicrophoneTaskAction : ITaskActionCompiler
 {
+    public bool SupportsTimeWindow => true;
     public TaskCapability Descriptor => MicrophoneCapabilities.Descriptor;
     public RuleAction Compile(TaskInvocation configuration, ResourceScope scope)
     {

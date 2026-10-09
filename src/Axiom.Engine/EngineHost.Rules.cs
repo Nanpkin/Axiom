@@ -263,6 +263,17 @@ public sealed partial class EngineHost
             ScheduleFreshness(rule);
             return;
         }
+        if (!WithinTimeWindow(rule))
+        {
+            // Consume this edge now. Opening the window is not a new input edge.
+            rule.History = evaluated.Hysteresis;
+            rule.Value = TruthValue.True; rule.Armed = false; rule.CommandEdge = false;
+            rule.TrueSince = null; rule.DebounceUntil = null;
+            rule.Reason = "OutsideTimeWindow; edge discarded";
+            CancelDeadline(("rule", rule.Definition.Id));
+            ScheduleFreshness(rule);
+            return;
+        }
         var now = clock.MonotonicNow;
         if (!fromDeadline && rule.Definition.Timing.Debounce > TimeSpan.Zero)
             rule.DebounceUntil = now + rule.Definition.Timing.Debounce;
@@ -291,6 +302,8 @@ public sealed partial class EngineHost
         }
         ScheduleFreshness(rule);
     }
+    private bool WithinTimeWindow(RuntimeRule rule) => rule.Definition.Timing.TimeWindow?.Contains(clock.UtcNow, clock.LocalTimeZone) ?? true;
+
     private void OnMutation(Mutation mutation)
     {
         if (mutation.Touched.IsEmpty) return;

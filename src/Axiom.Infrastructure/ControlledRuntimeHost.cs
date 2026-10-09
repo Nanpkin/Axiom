@@ -285,8 +285,10 @@ public sealed class ControlledRuntimeHost
     private async Task WatchFaultAsync(Task<Exception>? schedulerFault)
     {
         if (schedulerFault is null) return;
-        if (await Task.WhenAny(schedulerFault, cleaned.Task).ConfigureAwait(false) != schedulerFault) return;
+        var completed = await Task.WhenAny(schedulerFault, cleaned.Task).ConfigureAwait(false);
         if (BeforeFaultHandling is { } beforeFault) await beforeFault().ConfigureAwait(false);
+        // Cleanup can win the queued continuation even when this lifecycle's fault is ready.
+        if (completed != schedulerFault && !schedulerFault.IsCompleted) return;
         lock (gate)
         {
             error = "Scheduler fault: " + schedulerFault.Result.Message;

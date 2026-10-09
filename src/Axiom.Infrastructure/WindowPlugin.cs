@@ -19,6 +19,7 @@ public sealed class WindowPlugin : IAutomationPlugin
 
 public sealed class CloseWindowTaskAction : ITaskActionCompiler
 {
+    public bool SupportsTimeWindow => true;
     public TaskCapability Descriptor => WindowCapabilities.Descriptor;
     public RuleAction Compile(TaskInvocation configuration, ResourceScope scope) =>
         TaskInvocationCommands.Compile(configuration, Descriptor, scope, ExecutablePaths.ResourceId(WindowCapabilities.ValidateTargets(configuration)));
@@ -27,6 +28,7 @@ public sealed class CloseWindowTaskAction : ITaskActionCompiler
 
 public sealed class WindowStateTaskAction : ITaskActionCompiler
 {
+    public bool SupportsTimeWindow => true;
     public TaskCapability Descriptor => WindowCapabilities.StateDescriptor;
     public RuleAction Compile(TaskInvocation configuration, ResourceScope scope) =>
         TaskInvocationCommands.Compile(configuration, Descriptor, scope, ExecutablePaths.ResourceId(WindowCapabilities.ValidateTargets(configuration)));

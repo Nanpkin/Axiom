@@ -20,6 +20,7 @@ public sealed class OpenTargetPlugin : IAutomationPlugin
 }
 public sealed class OpenTargetTaskAction : ITaskActionCompiler
 {
+    public bool SupportsTimeWindow => true;
     public TaskCapability Descriptor => OpenTargetCapabilities.Descriptor;
     public RuleAction Compile(TaskInvocation configuration, ResourceScope scope)
     {

@@ -66,6 +66,7 @@ public static class GameHdrTasks
         new("display.hdr", 1, ImmutableDictionary<string, string>.Empty.Add("display", rule.DisplayPath).Add("enabled", rule.HdrEnabled ? "true" : "false")));
     public static GameHdrRuleDto ToLegacy(AutomationTask task)
     {
+        if (task.TimeWindow is not null) throw new ArgumentException("HDR 不支持命令时间段限制。");
         if (task.Detection.CapabilityId != "process.running" || task.Action.CapabilityId != "display.hdr")
             throw new ArgumentException("当前适配器不支持此任务组合。");
         var names = ProcessNameSelection.Parse(task.Detection.Parameters["processNames"]);

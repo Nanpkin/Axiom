@@ -1,11 +1,19 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <Compile Include="../../src/Axiom.SessionAgent/WifiProfileCapabilityProvider.cs" Link="WifiProfileCapabilityProvider.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WifiProfileState.cs" Link="WifiProfileState.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsWifiProfiles.cs" Link="WindowsWifiProfiles.cs" />
+    <Compile Include="../../src/Axiom.ServiceHost/PluginTaskRuntime.KeepAwake.cs" Link="PluginTaskRuntime.KeepAwake.cs" />
+    <Compile Include="../../src/Axiom.SessionAgent/KeepAwakeCapabilityProvider.cs" Link="KeepAwakeCapabilityProvider.cs" />
+    <Compile Include="../../src/Axiom.SessionAgent/SessionDesiredLeaseStream.cs" Link="SessionDesiredLeaseStream.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsPowerRequest.cs" Link="WindowsPowerRequest.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/WindowedIntervalEventSource.cs" Link="WindowedIntervalEventSource.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsDesktopNotification.cs" Link="WindowsDesktopNotification.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/BoundedNativeCommand.cs" Link="BoundedNativeCommand.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/FileArrivalCapabilityProvider.cs" Link="FileArrivalCapabilityProvider.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/FileArrivalSource.cs" Link="FileArrivalSource.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/AudioPlaybackOperation.cs" Link="AudioPlaybackOperation.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/ApplicationAudioOperation.cs" Link="ApplicationAudioOperation.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/OnceEventSource.cs" Link="OnceEventSource.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/DailyEventSource.cs" Link="DailyEventSource.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/SessionCapabilityProvider.cs" Link="SessionCapabilityProvider.cs" />

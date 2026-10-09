@@ -199,7 +199,7 @@ public static class UsageAnalysis
     }
     private static TaskCapability[] SafeCatalog(AutomationSnapshot catalog) => [.. catalog.Capabilities.Select(c => c with
     {
-        Fields = [.. c.Fields.Select(f => f.Kind is TaskFieldKind.Resource or TaskFieldKind.FilePath or TaskFieldKind.DirectoryPath or TaskFieldKind.ProcessSelection or TaskFieldKind.ExecutableSelection or TaskFieldKind.TraySelection
+        Fields = [.. c.Fields.Select(f => f.EditAsList || f.Kind is TaskFieldKind.Resource or TaskFieldKind.FilePath or TaskFieldKind.DirectoryPath or TaskFieldKind.ProcessSelection or TaskFieldKind.ExecutableSelection or TaskFieldKind.TraySelection
             ? f with { DefaultValue = null, Choices = [] } : f)]
     })];
     public static string CapabilityCatalog(AutomationSnapshot catalog, bool readable)
@@ -325,6 +325,8 @@ public static class UsageAnalysis
             if (missing.Count > 0) return resolved;
             // Provider-specific constraints are also checked before offering the draft.
             if (resolved.CapabilityId == FileArrivalCapabilities.Arrived) FileArrivalCapabilities.Validate(resolved);
+            if (resolved.CapabilityId == ApplicationAudioCapabilities.Set) ApplicationAudioCapabilities.Validate(resolved);
+            if (resolved.CapabilityId == KeepAwakeCapabilities.Hold) KeepAwakeCapabilities.Validate(resolved);
             if (resolved.CapabilityId == MicrophoneCapabilities.Set) MicrophoneCapabilities.Validate(resolved);
             if (resolved.CapabilityId == AudioPlaybackCapabilities.Set) AudioPlaybackCapabilities.Validate(resolved);
             if (resolved.CapabilityId == AudioCapabilities.Changed) AudioCapabilities.Validate(resolved);

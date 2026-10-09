@@ -121,6 +121,30 @@ public sealed class RuntimeReviewRegressionTests
     }
 
     [Fact]
+    public async Task R5_CleanupSelectedBeforeReadyFaultStillReportsCurrentLifecycleFailure()
+    {
+        var f = new RuntimeFixture(); await Within(f.Start());
+        var selected = Barrier(); var inspectFault = Barrier();
+        // Let cleanup win first, then make the captured lifecycle's fault ready before inspection.
+        f.Host.BeforeFaultHandling = () => { selected.TrySetResult(); return inspectFault.Task; };
+        var stop = f.Host.StopAsync(TimeSpan.FromSeconds(5));
+        await Within(selected.Task);
+        try
+        {
+            await Within(f.Observer.Released.Reader.ReadAsync().AsTask());
+            await Within(f.Observer.Released.Reader.ReadAsync().AsTask());
+            Assert.Empty(f.Host.Held);
+            f.Time.FailNextChanges = 1;
+            Assert.Throws<InvalidOperationException>(() =>
+                f.Scheduler.Schedule(f.Clock.MonotonicNow + TimeSpan.FromSeconds(1), () => { }));
+        }
+        finally { inspectFault.TrySetResult(); }
+        Assert.True((await Within(stop)).Completed);
+        Assert.Contains("Scheduler fault: timer fault", f.Host.Error);
+        Assert.False(f.Engine.IsRunning); Assert.Equal(0, f.Scheduler.ActiveTimers);
+    }
+
+    [Fact]
     public async Task R6_CallbackReturnsWhileHostGateIsHeld()
     {
         var f = new RuntimeFixture(); await Within(f.Start());
