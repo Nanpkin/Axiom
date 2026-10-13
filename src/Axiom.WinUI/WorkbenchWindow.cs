@@ -277,8 +277,8 @@ public sealed partial class WorkbenchWindow : Window
     private async Task SaveAsync()
     {
         if (busy || closed) return;
-        if (string.IsNullOrWhiteSpace(editor.Title) || !editor.Complete)
-        { ShowNotice("请填写名称，并选择检测类型和动作类型。"); return; }
+        if (string.IsNullOrWhiteSpace(editor.Title) || !EditorCanSave)
+        { ShowNotice("请填写名称，并补齐有效检测条件和兼容动作。"); return; }
         await MutateAsync(new(1, "save", Guid.NewGuid().ToString("N"), Task: editor.Build()), "saved", "任务已保存。", true);
     }
     private async Task ToggleRuleAsync(AutomationTask rule)
