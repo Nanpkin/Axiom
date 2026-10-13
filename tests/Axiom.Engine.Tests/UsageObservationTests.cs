@@ -14,8 +14,14 @@ public sealed class UsageObservationTests
     private static AutomationSnapshot Catalog()
     {
         var modules = BuiltInAutomationPlugins.Create();
-        return new([], [.. modules.SelectMany(m => m.Detections.Select(d => d.Descriptor).Concat(m.Actions.Select(a => a.Descriptor)))],
-            [.. modules.SelectMany(m => m.Combinations)], true, "ready", "", Now, []);
+        var compiler = new Axiom.Engine.AutomationTaskCompiler(supportsCompositeDetection: true);
+        foreach (var module in modules)
+        {
+            foreach (var detection in module.Detections) compiler.Register(detection);
+            foreach (var action in module.Actions) compiler.Register(action);
+            foreach (var combination in module.Combinations) compiler.RegisterCombination(combination);
+        }
+        return new([], compiler.Catalog, [.. modules.SelectMany(m => m.Combinations)], true, "ready", "", Now, [], CompositeDetectionVersion: 1);
     }
     [Theory]
     [InlineData("maximized", "maximize")]
@@ -330,6 +336,12 @@ public sealed class UsageObservationTests
 
     private static TaskCombination[] SummaryCombinations(JsonElement summary)
     {
+        if (summary.TryGetProperty("combinationIndex", out var index))
+        {
+            var detections = index.GetProperty("DetectionIds").EnumerateArray().Select(d => d.GetString()!).ToArray();
+            var actions = index.GetProperty("ActionIds").EnumerateArray().Select(a => a.GetString()!).ToArray();
+            return [.. index.GetProperty("Pairs").EnumerateArray().Select(p => new TaskCombination(detections[p[0].GetInt32()], actions[p[1].GetInt32()]))];
+        }
         var combinations = summary.GetProperty("combinations");
         if (combinations.ValueKind == JsonValueKind.Array) return combinations.Deserialize<TaskCombination[]>()!;
         Assert.Equal(JsonValueKind.Object, combinations.ValueKind);
@@ -369,6 +381,9 @@ public sealed class UsageObservationTests
             Assert.Equal(capability.Fields.Length, capabilities[capability.Id].GetProperty("Fields").GetArrayLength());
             var exported = capabilities[capability.Id].Deserialize<TaskCapability>()!;
             Assert.Equal(capability.Name, exported.Name); Assert.Equal(capability.Category, exported.Category);
+            Assert.Equal(capability.SupportsTimeWindow, exported.SupportsTimeWindow);
+            Assert.Equal(capability.IsStateCondition, exported.IsStateCondition);
+            Assert.Equal(capability.SupportsCompositeDetection, exported.SupportsCompositeDetection);
             foreach (var field in capability.Fields)
             {
                 var actual = exported.Fields.Single(f => f.Id == field.Id);
@@ -388,7 +403,8 @@ public sealed class UsageObservationTests
         Assert.Equal(12, feedbackDocument.RootElement.GetProperty("handledPatterns").GetArrayLength());
         Assert.InRange(feedbackDocument.RootElement.GetProperty("patterns").GetArrayLength(), 1, 12);
         Assert.Equal(catalog.Capabilities.Length, feedbackDocument.RootElement.GetProperty("capabilities").GetArrayLength());
-        Assert.Equal(JsonValueKind.Object, feedbackDocument.RootElement.GetProperty("combinations").ValueKind);
+        Assert.True(feedbackDocument.RootElement.TryGetProperty("combinationIndex", out var index)
+            ? index.ValueKind == JsonValueKind.Object : feedbackDocument.RootElement.GetProperty("combinations").ValueKind == JsonValueKind.Object);
         Assert.Contains("键是DetectionId", UsageAnalysis.Prompt);
         Assert.Contains("全部组合保留", withFeedback);
         Assert.Equal(catalog.Combinations.OrderBy(c => c.DetectionId, StringComparer.Ordinal).ThenBy(c => c.ActionId, StringComparer.Ordinal).ToArray(),

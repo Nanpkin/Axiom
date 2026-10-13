@@ -130,7 +130,7 @@ public sealed class CompositeDetectionTests
     }
 
     [Fact]
-    public void StrictCompositeImportResolvesEveryAliasAndChecksCapabilityNegotiationAndAllLeafPairs()
+    public async Task StrictCompositeImportResolvesEveryAliasAndChecksCapabilityNegotiationAndAllLeafPairs()
     {
         var (compiler, catalog) = Registered(); var recorder = new UsageRecorder(new(5, true, true, []), DateTimeOffset.UtcNow);
         recorder.Add(new(DateTimeOffset.UtcNow, "foreground", Path.Combine(Path.GetTempPath(), "SyntheticA.exe")));
@@ -149,6 +149,25 @@ public sealed class CompositeDetectionTests
         var exported = UsageAnalysis.CapabilityCatalog(catalog, false); Assert.Contains("IsStateCondition", exported); Assert.Contains("SupportsCompositeDetection", exported); Assert.Contains("compositeDetectionVersion", exported);
         var single = proposal with { Version = 1, DetectionExpression = null };
         Assert.Equal(1, UsageAnalysis.Import(JsonSerializer.Serialize(single), recorder.Session, catalog).Draft!.SchemaVersion);
+        var restore = Invocation(ConditionRestoreCapabilities.Playback, ("operation", "volume"), ("percent", "30"), ("delaySeconds", "0"));
+        var restoredDraft = UsageAnalysis.Import(JsonSerializer.Serialize(proposal with { Action = restore }), recorder.Session, catalog).Draft!;
+        Assert.Equal(RuleActionKind.Desired, compiler.Compile(restoredDraft, "owner", Scope).Action.Kind);
+        var database = Path.Combine(Path.GetTempPath(), "axiom-synthetic-composite-restore-" + Guid.NewGuid().ToString("N") + ".db");
+        try
+        {
+            using (var store = new SqliteAutomationTaskStore(database)) await store.SaveAsync(restoredDraft, default);
+            using var reopened = new SqliteAutomationTaskStore(database);
+            var saved = Assert.Single(await reopened.ListAsync());
+            Assert.True(saved.Paused); Assert.Equal(3, saved.SchemaVersion); Assert.Equal(4, TaskDetectionExpressions.ValidateTask(saved).Length);
+            Assert.Equal(restoredDraft.Action.Parameters, saved.Action.Parameters);
+            Assert.Equal(RuleActionKind.Desired, compiler.Compile(saved, "owner", Scope).Action.Kind);
+        }
+        finally { foreach (var file in Directory.GetFiles(Path.GetDirectoryName(database)!, Path.GetFileName(database) + "*")) File.Delete(file); }
+        var restoreIds = new[] { ConditionRestoreCapabilities.Playback, ConditionRestoreCapabilities.Microphone, ConditionRestoreCapabilities.PowerScheme,
+            ConditionRestoreCapabilities.ProgramPriority, ConditionRestoreCapabilities.WindowState, BuiltInBrightnessRestoreCapabilities.Set,
+            HardwareBrightnessRestoreCapabilities.Set, TaskbarAutoHideRestoreCapabilities.Restore };
+        Assert.All(restoreIds, id => Assert.Contains(new TaskCombination(SessionLockStateCapabilities.State, id), catalog.Combinations));
+        Assert.DoesNotContain(new TaskCombination(ForegroundScreenCoverCapabilities.Covers, TaskbarAutoHideRestoreCapabilities.Restore), catalog.Combinations);
     }
 
     [Fact(Timeout = 10000)]

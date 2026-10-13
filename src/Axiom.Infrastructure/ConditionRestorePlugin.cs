@@ -20,6 +20,6 @@ public sealed class ConditionRestorePlugin : IAutomationPlugin
         .Where(d => a.Id != ConditionRestoreCapabilities.PowerScheme || d != PowerSchemeStateCapabilities.State)
         .Where(d => a.Id != ConditionRestoreCapabilities.WindowState || d is not (WindowStateDetectionCapabilities.StateIs or ForegroundCapabilities.Active))
         .Where(d => a.Id is not (ConditionRestoreCapabilities.Playback or ConditionRestoreCapabilities.Microphone) || d != EndpointMuteCapabilities.State)
-        .Select(d => new TaskCombination(d, a.Id))), new("session.lock-state", ConditionRestoreCapabilities.Playback)];
+        .Select(d => new TaskCombination(d, a.Id)))];
     public IEnumerable<CapabilityBinding> Bindings => Descriptors.Select(d => RestorableSettingTaskAction.Binding(d.Id));
 }

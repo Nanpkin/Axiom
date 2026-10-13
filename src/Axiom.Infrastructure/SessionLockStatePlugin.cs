@@ -11,7 +11,10 @@ public sealed class SessionLockStatePlugin : IAutomationPlugin
     public IEnumerable<ITaskDetectionCompiler> Detections => [new SessionLockStateTaskDetection()];
     public IEnumerable<ITaskActionCompiler> Actions => [];
     public ImmutableArray<TaskCombination> Combinations => [.. new[] { KeepAwakeCapabilities.Hold, NotificationCapabilities.Show, SystemSoundCapabilities.Sound,
-        AudioPlaybackCapabilities.Set, ApplicationAudioCapabilities.Set }.Select(a => new TaskCombination(SessionLockStateCapabilities.State, a))];
+        AudioPlaybackCapabilities.Set, ApplicationAudioCapabilities.Set,
+        ConditionRestoreCapabilities.Playback, ConditionRestoreCapabilities.Microphone, ConditionRestoreCapabilities.PowerScheme,
+        ConditionRestoreCapabilities.ProgramPriority, ConditionRestoreCapabilities.WindowState, BuiltInBrightnessRestoreCapabilities.Set,
+        HardwareBrightnessRestoreCapabilities.Set, TaskbarAutoHideRestoreCapabilities.Restore }.Select(a => new TaskCombination(SessionLockStateCapabilities.State, a))];
     public IEnumerable<CapabilityBinding> Bindings => [new(new(SessionLockStateCapabilities.State, new("axiom.bool", 1), new("axiom.bool", 1),
         ScopeKind.Session, true, false, false, ExecutionLocation.SessionAgent, "same-user-session", true, "available", false,
         TimeSpan.FromSeconds(40), true, ConcurrencyScope.Resource, RetryCategory.Never, ConfirmationSource.Observation, EventFidelity.EdgeSensitive,
