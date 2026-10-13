@@ -8,7 +8,7 @@ using Microsoft.Win32.SafeHandles;
 namespace Axiom.Providers.Windows;
 
 [SupportedOSPlatform("windows")]
-public static class WindowsProgramPriority
+public static partial class WindowsProgramPriority
 {
     private static readonly BoundedNativeCommand Commands = new("程序优先级", TimeSpan.FromSeconds(5));
     public static Task DrainAsync() => Commands.DrainAsync().WaitAsync(TimeSpan.FromSeconds(5));
@@ -22,6 +22,12 @@ public static class WindowsProgramPriority
     }
 
     private static (bool Success, string Reason) Apply(string[] paths, string priority, CancellationToken token)
+    {
+        var candidates = Capture(paths, token);
+        try { return ProgramPriorityOperation.Apply(candidates, paths, priority, token); }
+        finally { foreach (var candidate in candidates) candidate.Dispose(); }
+    }
+    private static List<Candidate> Capture(string[] paths, CancellationToken token)
     {
         using var identity = WindowsIdentity.GetCurrent();
         var sid = identity.User?.Value ?? throw new UnauthorizedAccessException();
@@ -37,16 +43,16 @@ public static class WindowsProgramPriority
                 var processes = Process.GetProcessesByName(name!);
                 try { foreach (var process in processes) ids.Add(process.Id); }
                 finally { foreach (var process in processes) process.Dispose(); }
-                if (ids.Count > 4096) return (false, "同名进程数量超出安全处理范围，本次未修改。");
+                if (ids.Count > 4096) throw new IOException("同名进程数量超出安全处理范围，本次未修改。");
             }
             foreach (var id in ids)
             {
                 token.ThrowIfCancellationRequested();
                 candidates.Add(new Candidate((uint)id, sid, current.SessionId, token));
             }
-            return ProgramPriorityOperation.Apply(candidates, paths, priority, token);
+            return candidates;
         }
-        finally { foreach (var candidate in candidates) candidate.Dispose(); }
+        catch { foreach (var candidate in candidates) candidate.Dispose(); throw; }
     }
 
     private sealed class Candidate : IPriorityProcess, IDisposable
@@ -101,10 +107,11 @@ public static class WindowsProgramPriority
             if (value == 0) throw new Win32Exception(Marshal.GetLastWin32Error());
             return value;
         }
-        public void SetPriority(uint value)
+        public void SetPriority(uint value) => SetPriority(value, token);
+        internal void SetPriority(uint value, CancellationToken cancellation)
         {
             if (Identify(out _) != PriorityProcessIdentity.Owned) throw new InvalidOperationException("进程身份已变化。");
-            token.ThrowIfCancellationRequested();
+            cancellation.ThrowIfCancellationRequested();
             if (!SetPriorityClass(handle, value)) throw new Win32Exception(Marshal.GetLastWin32Error());
         }
         public void Dispose() => handle.Dispose();

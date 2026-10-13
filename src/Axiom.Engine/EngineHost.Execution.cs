@@ -366,8 +366,9 @@ public sealed partial class EngineHost
             // A removable request executor closes the old owned lease before returning.
             // Its latest ownership sample is usable even if it arrived before this old receipt;
             // otherwise a remaining winner can wait forever for a second unchanged false sample.
-            state.ObservationFence = Executor is ILeasedDesiredExecutor && work.Action.Kind == RuleActionKind.Desired &&
-                decision.Generation != work.Generation && store.Get(work.Key)?.Observation is { Quality: StateQuality.Known, Value.Boolean: false }
+            state.ObservationFence = Executor is ILeasedDesiredExecutor leaseExecutor && work.Action.Kind == RuleActionKind.Desired &&
+                decision.Generation != work.Generation && store.Get(work.Key)?.Observation is { Quality: StateQuality.Known } released &&
+                released.Value is { } value && leaseExecutor.IsReleasedObservation(work.Key, value)
                 ? null : observationVersions.GetValueOrDefault(work.Key);
             state.AwaitingReceiptObservation = false;
             Recompute(work.Key); return;
