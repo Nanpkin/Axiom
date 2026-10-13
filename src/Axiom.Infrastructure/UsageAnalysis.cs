@@ -381,6 +381,8 @@ public static class UsageAnalysis
             if (resolved.CapabilityId == PowerSchemeStateCapabilities.State) PowerSchemeStateCapabilities.Validate(resolved);
             if (resolved.CapabilityId == PowerStateCapabilities.State) PowerStateCapabilities.Validate(resolved);
             if (resolved.CapabilityId == WindowStateDetectionCapabilities.StateIs) WindowStateDetectionCapabilities.Validate(resolved);
+            if (resolved.CapabilityId == HardwareBrightnessRestoreCapabilities.Set) HardwareBrightnessRestoreCapabilities.Validate(resolved);
+            if (resolved.CapabilityId == BuiltInBrightnessRestoreCapabilities.Set) BuiltInBrightnessRestoreCapabilities.Validate(resolved);
             if (resolved.CapabilityId == HardwareBrightnessAdjustCapabilities.Adjust) HardwareBrightnessAdjustCapabilities.Validate(resolved);
             if (resolved.CapabilityId == BuiltInBrightnessAdjustCapabilities.Adjust) BuiltInBrightnessAdjustCapabilities.Validate(resolved);
             if (resolved.CapabilityId == HardwareBrightnessCapabilities.Set) HardwareBrightnessCapabilities.Validate(resolved);
