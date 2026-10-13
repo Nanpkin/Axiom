@@ -159,3 +159,12 @@ Engine在新条件边沿/事件进入延迟前、延迟deadline以及队列取�
 公开[GetPhysicalMonitorsFromHMONITOR](https://learn.microsoft.com/windows/win32/api/physicalmonitorenumerationapi/nf-physicalmonitorenumerationapi-getphysicalmonitorsfromhmonitor)配[PHYSICAL_MONITOR](https://learn.microsoft.com/windows/win32/api/physicalmonitorenumerationapi/ns-physicalmonitorenumerationapi-physical_monitor)为HANDLE与128 WCHAR，[SDK physicalmonitorenumerationapi.h](https://github.com/microsoft/win32metadata/blob/main/generation/WinSDK/RecompiledIdlHeaders/um/physicalmonitorenumerationapi.h)为Pack=1；[GetMonitorCapabilities](https://learn.microsoft.com/windows/win32/api/highlevelmonitorconfigurationapi/nf-highlevelmonitorconfigurationapi-getmonitorcapabilities)的MC_CAPS_BRIGHTNESS=0x2才继续[GetMonitorBrightness](https://learn.microsoft.com/windows/win32/api/highlevelmonitorconfigurationapi/nf-highlevelmonitorconfigurationapi-getmonitorbrightness)/[SetMonitorBrightness](https://learn.microsoft.com/windows/win32/api/highlevelmonitorconfigurationapi/nf-highlevelmonitorconfigurationapi-setmonitorbrightness)。明确缺能力标志跳过；失败不能确认是不支持或暂时异常，故Unknown不写。必须min<max且current在范围内，按`min + floor((max-min)*percent/100)`用UInt64计算；设置后范围及值精确读回才确认，不接受猜测范围或重试。
 
 最多64逻辑、每逻辑8物理、总64句柄，枚举数量先检查再打开，完整有界发现后才写。未知目标不写但其他支持目标可继续；结果仅计数，不记录显示器描述/身份。SID和当前WTS活动会话授权不成立拒绝；锁定仍可执行已授权系统事件动作。所有成功/部分发现/异常/取消/超时均由worker finally尝试[DestroyPhysicalMonitors](https://learn.microsoft.com/windows/win32/api/physicalmonitorenumerationapi/nf-physicalmonitorenumerationapi-destroyphysicalmonitors)，清理失败不阻断其他lease释放并使回执未确认。整批10秒BoundedNativeCommand，调用者取消/超时不提前释放gate/句柄、真正原生返回后才清理；Agent关停Drain。不操作其他VCP、不轮询、不依赖厂商接口，新亮度保留，取消可能已写入，不回滚。真实DDC/CI启用/坞站/MST/虚拟显示/驱动差异待设备验证。
+
+
+## 条件期间亮度与结束恢复
+
+`display.brightness.restore`/`display.hardware-brightness.restore`新schema 1沿原绝对percent/delay及硬件primary/all字段，不更改旧Command行为。只有持续检测组合，亮度模块各自固定`brightness`Desired资源，配置经严格校验后沿`RestorableSettingInvocations`规范化绝对目标；不同硬件selection同资源竞争，不在本lease内改目标。首次capture只Known，硬件原始DWORD范围/值保留而非重算百分比基线；更新百分比不重抓基线，相对增减保持一次Command。
+
+本地两个native入口共享亮度ownership，恢复期间其他Axiom亮度写拒绝，外部变化仅在下一次更新/释放查询时核验，无周期读取或持续压制。原生worker固定所有WMI对象/物理句柄并同线程执行；displayOnly拓扑/恢复信号永久失效本轮，失败不枚举替代屏。per-target共享ConditionalSettingTransaction当前/最后确认相等检查，Unknown、不一致/其他来源改变后让出，不恢复猜测值；部分支持/未知/写读回/恢复与资源失败只输出计数，不输出设备描述或WMI身份。
+
+Release用独立清理token，末尾全部finally尝试清理，内屏对象及每组物理句柄清理异常不阻断其他资源。Apply/捕获/Release均10秒有界等待，调用者超时取消并不表示真实原生停止，资源与准入仍保留到worker真正返回；只按事件/条件生命周期工作，不重试或相对累加。比较与写入非原子、异常进程退出/驱动阻塞不能保证恢复，实机支持性待验。UI退出不结束后台租约；暂停、删除、Unknown及条件结束走共享租约释放回执。
