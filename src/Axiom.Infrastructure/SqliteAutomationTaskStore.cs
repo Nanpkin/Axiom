@@ -16,8 +16,9 @@ public sealed class SqliteAutomationTaskStore : IDisposable
         connection.Open();
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "PRAGMA user_version;";
-        if (Convert.ToInt32(cmd.ExecuteScalar()) > 2) throw new InvalidDataException("任务数据库版本较新，请更新 Axiom。");
-        cmd.CommandText = "PRAGMA busy_timeout=2000; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS automation_tasks(id TEXT PRIMARY KEY, version INTEGER NOT NULL, configuration TEXT NOT NULL); CREATE TABLE IF NOT EXISTS host_startup(id INTEGER PRIMARY KEY CHECK(id=1), boot_id INTEGER NOT NULL); PRAGMA user_version=2;";
+        var storedVersion = Convert.ToInt32(cmd.ExecuteScalar());
+        if (storedVersion > 3) throw new InvalidDataException("任务数据库版本较新，请更新 Axiom。");
+        cmd.CommandText = "PRAGMA busy_timeout=2000; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS automation_tasks(id TEXT PRIMARY KEY, version INTEGER NOT NULL, configuration TEXT NOT NULL); CREATE TABLE IF NOT EXISTS host_startup(id INTEGER PRIMARY KEY CHECK(id=1), boot_id INTEGER NOT NULL); PRAGMA user_version=" + Math.Max(2, storedVersion) + ";";
         cmd.ExecuteNonQuery();
     }
     public async Task<AutomationTask[]> ListAsync(CancellationToken token = default)
@@ -27,7 +28,11 @@ public sealed class SqliteAutomationTaskStore : IDisposable
         {
             using var cmd = connection.CreateCommand(); cmd.CommandText = "SELECT configuration FROM automation_tasks ORDER BY id;";
             using var reader = cmd.ExecuteReader(); var list = new List<AutomationTask>();
-            while (reader.Read()) list.Add(JsonSerializer.Deserialize<AutomationTask>(reader.GetString(0)) ?? throw new InvalidDataException("任务配置无效。"));
+            while (reader.Read())
+            {
+                var task = JsonSerializer.Deserialize<AutomationTask>(reader.GetString(0)) ?? throw new InvalidDataException("任务配置无效。");
+                TaskDetectionExpressions.ValidateTask(task); list.Add(task);
+            }
             return [.. list];
         }
         finally { gate.Release(); }
@@ -47,6 +52,7 @@ public sealed class SqliteAutomationTaskStore : IDisposable
     }
     public async Task<AutomationTask> SaveAsync(AutomationTask task, CancellationToken token)
     {
+        TaskDetectionExpressions.ValidateTask(task);
         await gate.WaitAsync(token);
         try
         {
@@ -62,6 +68,7 @@ public sealed class SqliteAutomationTaskStore : IDisposable
             var saved = task with { Version = checked(current + 1) };
             cmd.CommandText = "INSERT INTO automation_tasks VALUES($id,$version,$config) ON CONFLICT(id) DO UPDATE SET version=$version,configuration=$config;";
             cmd.Parameters.AddWithValue("$version", saved.Version); cmd.Parameters.AddWithValue("$config", JsonSerializer.Serialize(saved)); cmd.ExecuteNonQuery();
+            if (task.SchemaVersion == 3) { cmd.CommandText = "PRAGMA user_version=3;"; cmd.ExecuteNonQuery(); }
             token.ThrowIfCancellationRequested(); tx.Commit(); return saved;
         }
         finally { gate.Release(); }

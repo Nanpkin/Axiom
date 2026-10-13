@@ -12,7 +12,7 @@ public static class DisplayCountCapabilities
             [new("at-least", "至少"), new("exact", "恰好")]),
          new("count", "显示器数量", TaskFieldKind.Number, true, "1–16；统计当前Windows逻辑桌面，不读取设备身份或布局坐标。", "2", 2, [], Minimum: 1, Maximum: 16)],
         "共享显示布局与恢复通知，无定时轮询。持续动作可用首次已知状态；一次性动作只响应后续条件变化，不补发首次连接、恢复或未知后的既有状态。暂停和删除释放订阅。",
-        "镜像显示、远程桌面和虚拟显示器可能与物理屏幕数量不同；不识别具体显示器。查询失败、空布局、超过64个逻辑显示器或通知丢失时状态未知，不当作单屏。布局在动作前仍可能变化，动作自行核验。");
+        "镜像显示、远程桌面和虚拟显示器可能与物理屏幕数量不同；不识别具体显示器。查询失败、空布局、超过64个逻辑显示器或通知丢失时状态未知，不当作单屏。布局在动作前仍可能变化，动作自行核验。", IsStateCondition: true);
     public static string Validate(TaskInvocation invocation)
     {
         if (invocation.CapabilityId != Count || invocation.SchemaVersion != 1 || invocation.Parameters is null || invocation.Parameters.Count != 2 ||

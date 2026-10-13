@@ -1,4 +1,9 @@
+using System.Collections.Immutable;
 using System.Runtime.Versioning;
+using Axiom.Contracts;
+using Axiom.Domain;
+using Axiom.Infrastructure;
+using Axiom.ServiceHost;
 using System.Runtime.InteropServices;
 using Axiom.Providers.Windows;
 
@@ -362,6 +367,64 @@ public sealed class WindowsSessionEventTests
         Assert.Equal(count, WindowsForegroundEvents.ActiveConsumers); Assert.Equal(sessions, WindowsSessionEvents.ActiveConsumers);
         Assert.False(sibling.Failed); Assert.False(session.Failed);
         // Reads only; never activates, moves, minimizes or maximizes the current user's window.
+    }
+
+    [Fact(Timeout = 15000)]
+    public async Task CompositeHostSubscribesMergedLeavesAndLockStateHintsStayOptInWithoutChangingTheSession()
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var system = new WindowsSessionEvents(); using var fast = new WindowsSessionEvents(lockStateOnly: true);
+        using var slow = new WindowsSessionEvents(lockStateOnly: true);
+        foreach (var source in new[] { system, fast, slow }) while (source.Events.TryRead(out _)) { }
+        foreach (var (value, expected) in new[] { (1, "session-lock-resumed"), (2, "session-lock-reset"), (3, "session-lock-resumed"), (4, "session-lock-reset"),
+            (5, "session-lock-resumed"), (6, "session-lock-reset"), (9, "session-lock-resumed"), (7, "session-lock-changed"), (8, "session-lock-changed") })
+        {
+            SendMessage(fast.NotificationWindow, 0x02B1, value, 0);
+            Assert.Equal(expected, await NextContextHint(fast, expected, deadline.Token));
+        }
+        SendMessage(fast.NotificationWindow, 0x0218, 0x04, 0); Assert.Equal("session-lock-reset", await NextContextHint(fast, "session-lock-reset", deadline.Token));
+        SendMessage(fast.NotificationWindow, 0x0218, 0x12, 0); Assert.Equal("session-lock-resumed", await NextContextHint(fast, "session-lock-resumed", deadline.Token));
+        foreach (var source in new[] { system, slow }) while (source.Events.TryRead(out var kind))
+            if (ReferenceEquals(source, system)) Assert.DoesNotContain("session-lock-", kind);
+        for (var i = 0; i < 65; i++)
+        {
+            SendMessage(fast.NotificationWindow, 0x02B1, 7, 0);
+            Assert.Equal("session-lock-changed", await NextContextHint(fast, "session-lock-changed", deadline.Token));
+            while (system.Events.TryRead(out var kind)) Assert.DoesNotContain("session-lock-", kind); // legacy locked is legitimate; keep this independent consumer current
+        }
+        Assert.True(slow.Failed); Assert.False(slow.Events.TryRead(out _)); Assert.False(fast.Failed); Assert.False(system.Failed);
+        _ = WindowsSessionLock.ReadLocked(deadline.Token); // actual read may be Unknown on a non-active CI session; never requests a lock
+
+        var sid = "synthetic-composite-" + Guid.NewGuid().ToString("N");
+        var owner = System.Security.Principal.WindowsIdentity.GetCurrent().User!.Value;
+        var path = Path.Combine(Path.GetTempPath(), "axiom-composite-host-" + Guid.NewGuid().ToString("N") + ".db");
+        try
+        {
+            using var peer = LocalPipeFactory.Create(ProviderProtocol.PipeName(sid), owner); var accepted = peer.WaitForConnectionAsync(deadline.Token);
+            var a = new TaskInvocation("process.running", 2, ImmutableDictionary<string, string>.Empty.Add("processNames", "a.exe"));
+            var b = a with { Parameters = a.Parameters.SetItem("processNames", "b.exe") };
+            var power = new TaskInvocation(PowerStateCapabilities.State, 1, ImmutableDictionary<string, string>.Empty.Add("mode", "ac").Add("threshold", "25"));
+            var locked = new TaskInvocation(SessionLockStateCapabilities.State, 1, ImmutableDictionary<string, string>.Empty.Add("state", "locked"));
+            var tree = new TaskDetectionExpression("all", Children: [new("any", Children: [new("leaf", a), new("leaf", b)]), new("leaf", power), new("not", Children: [new("leaf", locked)]), new("leaf", a)]);
+            var action = new TaskInvocation(AudioPlaybackCapabilities.Set, 1, ImmutableDictionary<string, string>.Empty.Add("operation", "mute").Add("percent", "30").Add("delaySeconds", "0"));
+            var draft = new AutomationTask(Guid.NewGuid().ToString("D"), 0, "synthetic composite host", false, a, action, SchemaVersion: 3, DetectionExpression: tree);
+            using var fixture = new AutomationFixture(); using var store = new SqliteAutomationTaskStore(path);
+            var saved = await store.SaveAsync(draft, deadline.Token);
+            await using var runtime = new PluginTaskRuntime([new ProgramPlugin(), new AudioPlaybackPlugin(), new PowerStatePlugin(), new SessionLockStatePlugin()], store, sid, fixture.Engine);
+            await runtime.InitializeAsync(); await accepted.WaitAsync(deadline.Token);
+            var request = await ProviderProtocol.ReadAsync(peer, deadline.Token); Assert.Equal("observe", request.Type);
+            Assert.Equal(4, request.Resources!.Length); Assert.Equal(4, request.Resources.Distinct().Count());
+            Assert.Contains(new ProviderResource(SessionLockStateCapabilities.State, "current-session"), request.Resources);
+            Assert.Contains(new ProviderResource(PowerStateCapabilities.State, "ac"), request.Resources);
+            Assert.Contains(new ProviderResource("process.running", "a.exe"), request.Resources); Assert.Contains(new ProviderResource("process.running", "b.exe"), request.Resources);
+            await ProviderProtocol.WriteAsync(peer, new(1, "snapshot", request.RequestId, Samples: [.. request.Resources.Select(r => new ProviderSample(r, StateQuality.Known, "axiom.bool", 1,
+                Boolean: r.CapabilityId == PowerStateCapabilities.State))]), deadline.Token); // no running process, so no audio command is authorized
+            var snapshot = await runtime.ReadAsync(deadline.Token); Assert.Equal(1, snapshot.CompositeDetectionVersion);
+            Assert.True(snapshot.Capabilities.Single(c => c.Id == AudioPlaybackCapabilities.Set).SupportsCompositeDetection);
+            var paused = await runtime.SaveAsync(saved with { Paused = true }, deadline.Token); Assert.True(paused.Paused); Assert.Equal(5, TaskDetectionExpressions.ValidateTask(paused).Length);
+        }
+        finally { foreach (var file in Directory.GetFiles(Path.GetDirectoryName(path)!, Path.GetFileName(path) + "*")) File.Delete(file); }
+        // Injected messages target only our HWND; the Provider peer is synthetic. No locking, audio writes or polling.
     }
 
 }

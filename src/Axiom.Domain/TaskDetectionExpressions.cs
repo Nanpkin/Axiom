@@ -1,9 +1,11 @@
 using System.Collections.Immutable;
+using System.Text.Json.Serialization;
 
 namespace Axiom.Domain;
 
-public sealed record TaskDetectionExpression(string Kind, TaskInvocation? Invocation = null,
-    ImmutableArray<TaskDetectionExpression> Children = default);
+public sealed record TaskDetectionExpression(string Kind,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TaskInvocation? Invocation = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] ImmutableArray<TaskDetectionExpression> Children = default);
 
 public static class TaskDetectionExpressionLimits
 {
