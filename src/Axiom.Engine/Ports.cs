@@ -26,10 +26,11 @@ public interface ICapabilityExecutor
 
 // Optional, narrow lifecycle for executors that own removable requests (for example power requests).
 // Called under Engine's gate: implementations must only update memory and signal asynchronously.
-// A cancelled Apply must close its owned request lease before returning; its latest ownership
-// observation remains usable when a replacement generation reconciles.
+// Cancelled applies revoke their owned lease. Real native work and handle cleanup may outlive
+// the caller; a confirmed released-ownership sample can unblock a replacement generation.
 public interface ILeasedDesiredExecutor
 {
+    bool IsReleasedObservation(ResourceKey key, StateValue value) => value.Boolean == false;
     void SetDesiredAuthorization(ResourceKey key, long generation, bool authorized);
     void ReleaseAllDesired();
 }

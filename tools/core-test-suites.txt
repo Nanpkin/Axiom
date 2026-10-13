@@ -78,3 +78,4 @@ BrightnessAdjustmentTests
 BrightnessRestoreTests
 CompositeEditorTests
 CompositeDetectionTests
+ConditionRestoreTests

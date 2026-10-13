@@ -11,7 +11,7 @@ public sealed class WindowsWindowEvents : IDisposable
 {
     private static readonly object Gate = new();
     private static Hub? shared;
-    internal readonly Channel<nint> Events = Channel.CreateBounded<nint>(256);
+    internal readonly Channel<nint> Events;
     public ChannelReader<nint> Reader => Events.Reader;
     private readonly bool lifecycleOnly;
     private readonly CapturedWindowLifetime? captureLifetime;
@@ -25,8 +25,11 @@ public sealed class WindowsWindowEvents : IDisposable
     public bool Failed => failed;
     private readonly Action<nint>? onDestroyed;
     private readonly bool requireCloakEvents;
-    public WindowsWindowEvents(bool lifecycleOnly = false, bool requireMinimizeEvents = false, bool trackCaptureLifetime = false, Action<nint>? onDestroyed = null, bool requireCloakEvents = false)
+    public WindowsWindowEvents(bool lifecycleOnly = false, bool requireMinimizeEvents = false, bool trackCaptureLifetime = false, Action<nint>? onDestroyed = null, bool requireCloakEvents = false, bool mergeHints = false)
     {
+        // Long-lived setting leases need only a current-state hint; destruction still has its own latch.
+        // Existing consumers retain their bounded edge queues and overflow failure behavior.
+        Events = mergeHints ? Channel.CreateBounded<nint>(new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropOldest }) : Channel.CreateBounded<nint>(256);
         this.onDestroyed = onDestroyed; this.requireCloakEvents = requireCloakEvents;
         this.lifecycleOnly = lifecycleOnly; captureLifetime = trackCaptureLifetime ? new() : null;
         int? minimizeError = null, cloakError = null;

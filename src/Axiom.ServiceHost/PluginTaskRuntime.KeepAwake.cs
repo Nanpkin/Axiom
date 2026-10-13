@@ -28,6 +28,7 @@ internal sealed partial class PluginTaskRuntime
     }
     public void SetDesiredAuthorization(ResourceKey key, long generation, bool authorized)
     {
+        if (RestorableSettingInvocations.IsRestorable(key.CapabilityId)) { SetRestorableAuthorization(key, generation, authorized); return; }
         if (key.CapabilityId != KeepAwakeCapabilities.Hold) return;
         lock (powerGate)
         {
@@ -39,6 +40,7 @@ internal sealed partial class PluginTaskRuntime
     }
     public void ReleaseAllDesired()
     {
+        ReleaseRestorableSettings();
         lock (powerGate)
             foreach (var item in powerAuthorizations.Values)
             {

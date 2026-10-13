@@ -23,7 +23,8 @@ public static class ProviderProtocol
     {
         if (message.Version != 1 || string.IsNullOrWhiteSpace(message.RequestId) || message.RequestId.Length > 64 ||
             message.DeadlineUtc is not { } deadline || deadline <= now || deadline > now.AddSeconds(45) ||
-            message.Samples is not null || message.Status is not null || message.Reason is not null || message.Sequence != 0 || message.Tray is not null || message.UsageSample is not null)
+            message.Samples is not null || message.Status is not null || message.Reason is not null || message.Sequence < 0 ||
+            message.Sequence != 0 && message.Type is not ("lease-setting-update" or "lease-setting-release") || message.Tray is not null || message.UsageSample is not null)
             throw new InvalidDataException("Provider 请求无效。");
         if (message.Type == "observe-usage" && message.UsageOptions is not null && message.Invocation is null && message.CommandId is null && message.Resources is null && message.RequiredCapabilities is null) { UsageValidation.Options(message.UsageOptions); return; }
         if (message.UsageOptions is not null) throw new InvalidDataException("Unexpected observation options.");
@@ -35,6 +36,9 @@ public static class ProviderProtocol
         if (message.Type == "invoke" && message.Resources is null && message.RequiredCapabilities is null && message.Invocation is not null && message.CommandId is { } id && id != Guid.Empty) return;
         if (message.Type == "lease" && message.Resources is null && message.RequiredCapabilities is null && message.CommandId is null && message.Invocation is not null)
         { KeepAwakeCapabilities.Validate(message.Invocation); return; }
+        if (message.Type is "lease-setting" or "lease-setting-update" && message.Resources is null && message.RequiredCapabilities is null && message.CommandId is null && message.Invocation is not null)
+        { RestorableSettingInvocations.ValidateLease(message.Invocation); return; }
+        if (message.Type == "lease-setting-release" && message.Resources is null && message.RequiredCapabilities is null && message.CommandId is null && message.Invocation is null) return;
         throw new InvalidDataException("Provider 请求字段无效。");
     }
     public static async Task WriteAsync(Stream stream, ProviderMessage message, CancellationToken token)
