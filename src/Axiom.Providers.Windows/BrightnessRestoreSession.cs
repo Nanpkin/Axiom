@@ -1,0 +1,187 @@
+using System.Globalization;
+using System.Threading.Channels;
+
+namespace Axiom.Providers.Windows;
+
+// WMI and DXVA2 can refer to the same screen. An owned restoration blocks other Axiom brightness writes.
+internal static class BrightnessNativeOwnership
+{
+    private static Lease? active;
+    internal static IDisposable? TryAcquire()
+    {
+        var lease = new Lease(); return Interlocked.CompareExchange(ref active, lease, null) is null ? lease : null;
+    }
+    internal static Task DrainAsync() => Volatile.Read(ref active)?.Stopped.Task ?? Task.CompletedTask;
+    private sealed class Lease : IDisposable
+    {
+        internal readonly TaskCompletionSource Stopped = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public void Dispose() { if (ReferenceEquals(Interlocked.CompareExchange(ref active, null, this), this)) Stopped.TrySetResult(); }
+    }
+}
+
+internal sealed class BrightnessRestoreTarget
+{
+    internal readonly uint Baseline;
+    internal readonly Func<int, uint?> Map;
+    internal readonly ConditionalSettingTransaction<uint> Transaction;
+    internal uint? LastRead;
+    internal BrightnessRestoreTarget(uint baseline, Func<int, uint?> map, Func<uint?> read, Func<uint, bool> write)
+    {
+        Baseline = baseline; Map = map;
+        Transaction = new(baseline, () =>
+        {
+            LastRead = read(); return LastRead ?? throw new IOException("原亮度目标未知。");
+        }, value => { if (!write(value)) throw new IOException("原亮度目标未接受设置。"); }, "屏幕亮度");
+    }
+}
+internal sealed class BrightnessRestoreCapture(IReadOnlyList<BrightnessRestoreTarget> targets, int unknown, int unsupported,
+    Action<CancellationToken> useToken, Action close) : IDisposable
+{
+    internal readonly IReadOnlyList<BrightnessRestoreTarget> Targets = targets;
+    internal readonly int Unknown = unknown, Unsupported = unsupported;
+    internal readonly Action<CancellationToken> UseToken = useToken;
+    public void Dispose() => close();
+}
+
+// One worker keeps captured WMI objects/physical handles on their original thread. Requests are not polled or queued behind writes.
+internal sealed class BrightnessRestoreSession : IRestorableSettingSession
+{
+    private sealed record Request(int? Percent, CancellationToken Token, TaskCompletionSource<RestorableSettingResult> Result);
+    private readonly Channel<Request> requests = Channel.CreateBounded<Request>(1);
+    private readonly SemaphoreSlim phase = new(1, 1);
+    private readonly TaskCompletionSource ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource<RestorableSettingResult> stopped = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly CancellationTokenSource captureStop;
+    private readonly string? selection;
+    private readonly TimeSpan timeout;
+    private readonly TimeProvider time;
+    private int terminal, closeRequested;
+    private BrightnessRestoreSession(string? selection, TimeSpan timeout, TimeProvider time, CancellationToken token)
+    { this.selection = selection; this.timeout = timeout; this.time = time; captureStop = CancellationTokenSource.CreateLinkedTokenSource(token); }
+    internal static async Task<IRestorableSettingSession> CreateAsync(Func<CancellationToken, BrightnessRestoreCapture> capture,
+        string? selection, TimeSpan timeout, CancellationToken token, TimeProvider? time = null)
+    {
+        token.ThrowIfCancellationRequested(); var ownership = BrightnessNativeOwnership.TryAcquire() ?? throw new IOException("Axiom已有亮度操作或恢复租约；请先暂停已有亮度恢复任务，并等待原生操作与恢复清理结束，再启用另一亮度恢复任务。本次不排队、不修改。");
+        var session = new BrightnessRestoreSession(selection, timeout, time ?? TimeProvider.System, token);
+        try { new Thread(() => session.Run(capture, ownership)) { IsBackground = true, Name = "Axiom owned brightness restoration" }.Start(); }
+        catch { ownership.Dispose(); session.captureStop.Dispose(); throw; }
+        try { await session.ready.Task.WaitAsync(timeout, session.time, token); return session; }
+        catch { session.RequestClose(); throw; } // the actual worker keeps ownership/resources until it returns and cleans up
+    }
+    public async Task<RestorableSettingResult> ApplyAsync(IReadOnlyDictionary<string, string> parameters, CancellationToken token)
+    {
+        if (!parameters.TryGetValue("percent", out var text) || !int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var percent) || percent is < 0 or > 100)
+            throw new ArgumentException("恢复租约亮度须为0–100整数。");
+        if (selection is not null && (!parameters.TryGetValue("target", out var target) || target != selection))
+        { Interlocked.Exchange(ref terminal, 1); return new(false, "本次亮度租约的屏幕范围已固定；不会改控新屏幕。", false); }
+        if (Volatile.Read(ref terminal) != 0 || !phase.Wait(0)) return new(false, "亮度租约已让出或上次原生操作尚未返回；不重新捕获基线。", false);
+        return await SubmitAsync(percent, token);
+    }
+    public async Task<RestorableSettingResult> ReleaseAsync(CancellationToken token)
+    {
+        Interlocked.Exchange(ref terminal, 1);
+        if (stopped.Task.IsCompleted) return await stopped.Task;
+        try { await phase.WaitAsync(token).WaitAsync(timeout, time, token); }
+        catch (Exception error) when (error is OperationCanceledException or TimeoutException)
+        { RequestClose(); return new(false, "亮度释放等待原生操作结束；恢复尚未确认，句柄与准入仍保留。", false); }
+        if (stopped.Task.IsCompleted) { phase.Release(); return await stopped.Task; }
+        return await SubmitAsync(null, token);
+    }
+    private async Task<RestorableSettingResult> SubmitAsync(int? percent, CancellationToken token)
+    {
+        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(token);
+        var result = new TaskCompletionSource<RestorableSettingResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (!requests.Writer.TryWrite(new(percent, lifetime.Token, result)))
+        { phase.Release(); return new(false, "亮度租约已结束；不会写入或重新捕获。", false); }
+        try { return await result.Task.WaitAsync(timeout, time, token); }
+        catch (Exception error) when (error is OperationCanceledException or TimeoutException)
+        {
+            Interlocked.Exchange(ref terminal, 1);
+            return new(false, "亮度操作取消或超时，可能已设置但未确认；不重试，原生返回后才释放资源。", false);
+        }
+        finally { lifetime.Cancel(); } // worker, rather than the awaiting caller, releases phase admission
+    }
+    private void RequestClose()
+    {
+        Interlocked.Exchange(ref terminal, 1); Interlocked.Exchange(ref closeRequested, 1);
+        try { captureStop.Cancel(); } catch (ObjectDisposedException) { } requests.Writer.TryComplete();
+    }
+    public async ValueTask DisposeAsync() { RequestClose(); await stopped.Task; }
+    private void Run(Func<CancellationToken, BrightnessRestoreCapture> create, IDisposable ownership)
+    {
+        BrightnessRestoreCapture? capture = null; Request? release = null;
+        RestorableSettingResult receipt = new(false, "未取得已知亮度基线，本次未修改。", false); var releaseAttempted = false;
+        try
+        {
+            capture = create(captureStop.Token); captureStop.Token.ThrowIfCancellationRequested();
+            if (capture.Targets.Count == 0) throw new IOException("没有可确认支持的已知亮度目标；本次未修改。");
+            ready.TrySetResult();
+            while (requests.Reader.WaitToReadAsync().AsTask().GetAwaiter().GetResult() && requests.Reader.TryRead(out var request))
+            {
+                if (request.Percent is null)
+                {
+                    release = request; releaseAttempted = true; receipt = Restore(capture, request.Token); break;
+                }
+                try
+                {
+                    var applied = Apply(capture, request.Percent.Value, request.Token);
+                    if (!applied.Owned) Interlocked.Exchange(ref terminal, 1);
+                    request.Result.TrySetResult(applied);
+                }
+                catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
+                {
+                    Interlocked.Exchange(ref terminal, 1); request.Result.TrySetResult(new(false, "亮度设置未确认；不重新捕获或重试，结束时仅恢复仍归本次租约所有的已确认值。", false));
+                }
+                finally { phase.Release(); }
+                if (Volatile.Read(ref closeRequested) != 0) break;
+            }
+        }
+        catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
+        { ready.TrySetException(error); receipt = new(false, "亮度捕获或恢复未确认；原目标可能不可用，不会改控新屏幕。", false); }
+        finally
+        {
+            try
+            {
+                if (capture is not null && !releaseAttempted)
+                {
+                    using var cleanup = new CancellationTokenSource(timeout); receipt = Restore(capture, cleanup.Token);
+                }
+            }
+            catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException)) { receipt = new(false, "亮度恢复未确认；不会重试或改控新屏幕。", false); }
+            try { capture?.Dispose(); }
+            catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException)) { receipt = new(false, receipt.Reason + " 亮度资源释放未确认。", false); }
+            requests.Writer.TryComplete(); Interlocked.Exchange(ref terminal, 1);
+            while (requests.Reader.TryRead(out var pending)) { pending.Result.TrySetResult(new(false, "亮度租约已结束。", false)); phase.Release(); }
+            if (release is not null) phase.Release();
+            captureStop.Dispose(); ownership.Dispose(); stopped.TrySetResult(receipt); release?.Result.TrySetResult(receipt);
+        }
+    }
+    private static RestorableSettingResult Apply(BrightnessRestoreCapture capture, int percent, CancellationToken token)
+    {
+        capture.UseToken(token); var confirmed = 0; var failed = capture.Unknown; var relinquished = 0;
+        foreach (var target in capture.Targets)
+        {
+            token.ThrowIfCancellationRequested();
+            if (!target.Transaction.Owned) { relinquished++; continue; }
+            var requested = target.Map(percent);
+            if (!requested.HasValue) { target.Transaction.Relinquish(); failed++; continue; }
+            var receipt = target.Transaction.Apply(requested.Value, token); token.ThrowIfCancellationRequested();
+            if (receipt.Success && receipt.Owned) confirmed++; else failed++;
+        }
+        var owned = confirmed > 0 && failed == 0 && relinquished == 0;
+        return new(owned, $"亮度条件设置{(owned ? "已确认" : confirmed > 0 ? "部分完成" : "未确认")}：{confirmed}块确认，{capture.Unsupported}块已知不支持跳过，{failed}个目标未知或失败，{relinquished}块已让出；外部改变或未确认不覆盖，本次基线保留。", owned);
+    }
+    private static RestorableSettingResult Restore(BrightnessRestoreCapture capture, CancellationToken token)
+    {
+        capture.UseToken(token); var restored = 0; var skipped = 0; var failed = 0;
+        foreach (var target in capture.Targets)
+        {
+            token.ThrowIfCancellationRequested(); var previouslyOwned = target.Transaction.Owned;
+            var receipt = target.Transaction.Release(token); token.ThrowIfCancellationRequested();
+            if (!previouslyOwned || receipt.Success && target.LastRead != target.Baseline) skipped++;
+            else if (receipt.Success) restored++;
+            else failed++;
+        }
+        return new(failed == 0, $"亮度结束恢复：{restored}块基线读回确认，{skipped}块其他来源改变/设备未知/未确认值未覆盖，{failed}块恢复未确认；不重试、不改控新屏幕。", false);
+    }
+}

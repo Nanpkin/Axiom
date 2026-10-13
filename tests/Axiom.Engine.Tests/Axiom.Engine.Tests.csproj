@@ -1,7 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <Compile Include="../../src/Axiom.Providers.Windows/RestorableSettingSession.cs" Link="RestorableSettingSession.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/ConditionalSettingTransaction.cs" Link="ConditionalSettingTransaction.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/SerializedRestorableSettingSession.cs" Link="SerializedRestorableSettingSession.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/TaskbarAutoHideRestoration.cs" Link="TaskbarAutoHideRestoration.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/TaskbarAutoHideOperation.cs" Link="TaskbarAutoHideOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/TaskbarAppBarData.cs" Link="TaskbarAppBarData.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/BrightnessRestoreSession.cs" Link="BrightnessRestoreSession.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/HardwareBrightnessOperation.cs" Link="HardwareBrightnessOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/NetworkCategoryState.cs" Link="NetworkCategoryState.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/NetworkCategoryObservation.cs" Link="NetworkCategoryObservation.cs" />
@@ -60,6 +65,9 @@
     <Compile Include="../../src/Axiom.SessionAgent/WifiProfileCapabilityProvider.cs" Link="WifiProfileCapabilityProvider.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WifiProfileState.cs" Link="WifiProfileState.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsWifiProfiles.cs" Link="WindowsWifiProfiles.cs" />
+    <Compile Include="../../src/Axiom.SessionAgent/RestorableSettingCapabilityProvider.cs" Link="RestorableSettingCapabilityProvider.cs" />
+    <Compile Include="../../src/Axiom.SessionAgent/SessionRestorableLeaseStream.cs" Link="SessionRestorableLeaseStream.cs" />
+    <Compile Include="../../src/Axiom.ServiceHost/PluginTaskRuntime.Restorable.cs" Link="PluginTaskRuntime.Restorable.cs" />
     <Compile Include="../../src/Axiom.ServiceHost/PluginTaskRuntime.KeepAwake.cs" Link="PluginTaskRuntime.KeepAwake.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/KeepAwakeCapabilityProvider.cs" Link="KeepAwakeCapabilityProvider.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/SessionDesiredLeaseStream.cs" Link="SessionDesiredLeaseStream.cs" />
@@ -84,6 +92,10 @@
     <Compile Include="../../src/Axiom.Providers.Windows/DisplayOffOperation.cs" Link="DisplayOffOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/SessionLockOperation.cs" Link="SessionLockOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/BuiltInBrightnessOperation.cs" Link="BuiltInBrightnessOperation.cs" />
+    <Compile Include="../../src/Axiom.SessionAgent/SessionLockStateCapabilityProvider.cs" Link="SessionLockStateCapabilityProvider.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/SessionLockStateObservation.cs" Link="SessionLockStateObservation.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsSessionLockState.cs" Link="WindowsSessionLockState.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsSessionLock.cs" Link="WindowsSessionLock.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/SessionLockStateReader.cs" Link="SessionLockStateReader.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/OnceEventSource.cs" Link="OnceEventSource.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/DailyEventSource.cs" Link="DailyEventSource.cs" />

@@ -64,6 +64,14 @@ internal sealed class CapabilityProviderServer(string sid, IEnumerable<ISessionC
                     TrayCatalogValidation.Validate(catalog);
                     await ProviderProtocol.WriteAsync(pipe, new(1, "tray", request.RequestId, Tray: catalog), lifetime.Token); return;
                 }
+                if (request.Type == "lease-setting")
+                {
+                    var provider = registry.GetValueOrDefault(request.Invocation!.CapabilityId) as ISessionRestorableCapabilityProvider
+                        ?? throw new ArgumentException("未注册此可恢复设置租约。");
+                    lifetime.CancelAfter(Timeout.InfiniteTimeSpan);
+                    await SessionRestorableLeaseStream.RunAsync(pipe, request, provider, lifetime.Token);
+                    return;
+                }
                 if (request.Type == "lease")
                 {
                     var provider = registry.GetValueOrDefault(request.Invocation!.CapabilityId) as ISessionDesiredCapabilityProvider

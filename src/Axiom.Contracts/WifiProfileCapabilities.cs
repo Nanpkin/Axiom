@@ -11,11 +11,11 @@ public static class WifiProfileCapabilities
     public static TaskCapability ConnectedDescriptor { get; } = new(Connected, 1, TaskCapabilityKind.Detection, "网络", "指定 Wi-Fi 已连接",
         "任一所选 Wi-Fi 配置文件从未连接变为已连接时执行。", [Profiles],
         "按需共享 Windows 原生 Wi-Fi 通知，无周期检查。首次、重新启用或重连时已连接不补执行；同组选项之间切换不重复触发。",
-        "只核验本机 Wi-Fi 配置文件，不检查互联网连通性，不记录或导出 SSID、地址或密码。极短连接可能在查询前已结束；配置文件名只保存在本地。无 Wi-Fi 网卡、服务不可用或 Windows 隐私设置阻止查询时为未知。");
+        "只核验本机 Wi-Fi 配置文件，不检查互联网连通性，不记录或导出 SSID、地址或密码。极短连接可能在查询前已结束；配置文件名只保存在本地。无 Wi-Fi 网卡、服务不可用或 Windows 隐私设置阻止查询时为未知。", IsStateCondition: true);
     public static TaskCapability DisconnectedDescriptor { get; } = new(Disconnected, 1, TaskCapabilityKind.Detection, "网络", "指定 Wi-Fi 全部断开",
         "所选 Wi-Fi 配置文件从至少一个已连接变为全部未连接时执行。", [Profiles],
         "复用同一原生通知；只有所有网卡都能确认未连接到所选配置文件才成立。首次、重新启用或重连时已断开不补执行。",
-        "未知网卡状态不当作断开。无 Wi-Fi 硬件、服务不可用或查询失败为未知；不检查有线网络或互联网连通性。");
+        "未知网卡状态不当作断开。无 Wi-Fi 硬件、服务不可用或查询失败为未知；不检查有线网络或互联网连通性。", IsStateCondition: true);
 
     public static string[] Parse(string value)
     {

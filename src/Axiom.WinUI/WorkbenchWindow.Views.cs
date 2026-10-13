@@ -77,7 +77,7 @@ public sealed partial class WorkbenchWindow
                 var query = ruleSearch.Trim();
                 var visible = (status?.Tasks ?? []).Where(task => (ruleStateFilter == 0 || task.Paused == (ruleStateFilter == 2)) &&
                     (query.Length == 0 || task.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                     (FindCapability(task.Detection, TaskCapabilityKind.Detection)?.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                     TaskDetections(task).Any(d => FindCapability(d, TaskCapabilityKind.Detection)?.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
                      (FindCapability(task.Action, TaskCapabilityKind.Action)?.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false))).ToArray();
                 shown.Text = $"显示 {visible.Length} / {status?.Tasks.Length ?? 0} 个任务";
                 cards.Children.Clear();
@@ -86,7 +86,7 @@ public sealed partial class WorkbenchWindow
                 {
                     var body = Column(14);
                     var heading = Row(12); heading.Children.Add(Text(task.Title, 20, Ink, true)); heading.Children.Add(Badge(task.Paused ? "已暂停" : "已启用", task.Paused)); body.Children.Add(heading);
-                    body.Children.Add(Text("检测  " + Summary(task.Detection, TaskCapabilityKind.Detection), 14, Muted));
+                    body.Children.Add(Text("检测  " + DetectionSummary(task), 14, Muted));
                     body.Children.Add(Text("执行  " + Summary(task.Action, TaskCapabilityKind.Action), 15, Ink, true));
                     if (task.TimeWindow is { } window)
                     {
@@ -112,8 +112,9 @@ public sealed partial class WorkbenchWindow
         var back = Action("← 返回任务列表"); back.Click += async (_, _) => { if (!await ConfirmDiscardAsync()) return; editing = false; notice.IsOpen = false; Render(); }; content.Children.Add(back);
         var name = new TextBox { Header = "任务名称", PlaceholderText = "为这个任务起一个容易识别的名字", MaxLength = 120, Text = editor.Title };
         name.TextChanged += (_, _) => editor.Title = name.Text; content.Children.Add(name);
+        var detectionHost = new ContentControl { HorizontalContentAlignment = HorizontalAlignment.Stretch };
         var actionHost = new ContentControl { HorizontalContentAlignment = HorizontalAlignment.Stretch };
-        var save = Action("保存任务", true); save.IsEnabled = editor.Complete; save.Click += async (_, _) => await SaveAsync();
+        var save = Action("保存任务", true); save.IsEnabled = EditorCanSave; save.Click += async (_, _) => await SaveAsync();
         var behavior = Column(12); behavior.Children.Add(Text("03   运行方式", 18, Ink, true));
         var actionDescriptor = FindCapability(editor.Action, TaskCapabilityKind.Action);
         var timeWindowHost = new ContentControl { HorizontalContentAlignment = HorizontalAlignment.Stretch };
@@ -123,15 +124,16 @@ public sealed partial class WorkbenchWindow
         void SelectionChanged(TaskCapabilityKind kind)
         {
             if (kind == TaskCapabilityKind.Detection) BuildActions();
+            else if (editor.Composite) detectionHost.Content = BuildDetectionSection(SelectionChanged);
             var selected = FindCapability(editor.Action, TaskCapabilityKind.Action);
             behaviorText.Text = selected?.Behavior ?? "选择动作后，这里会说明执行和结束方式。";
             warningText.Text = editor.Version > 0 ? selected?.EditWarning ?? "" : "";
-            save.IsEnabled = editor.Complete;
+            save.IsEnabled = EditorCanSave;
             UpdateTimeWindow();
         }
         void BuildActions() => actionHost.Content = BuildCapabilitySection(TaskCapabilityKind.Action,
             "02   执行什么", "选择条件满足后要执行的动作。", editor.Action, SelectionChanged);
-        content.Children.Add(BuildCapabilitySection(TaskCapabilityKind.Detection, "01   检测什么", "选择需要检测的状态或事件。", editor.Detection, SelectionChanged));
+        detectionHost.Content = BuildDetectionSection(SelectionChanged); content.Children.Add(detectionHost);
         BuildActions(); content.Children.Add(actionHost);
         behavior.Children.Add(behaviorText);
         UpdateTimeWindow(); behavior.Children.Add(timeWindowHost);
@@ -160,12 +162,13 @@ public sealed partial class WorkbenchWindow
     private Border BuildCapabilitySection(TaskCapabilityKind kind, string title, string hint, TaskInvocation? invocation, Action<TaskCapabilityKind> changed)
     {
         var body = Column(12); body.Children.Add(Text(title, 18, Ink, true)); body.Children.Add(Text(hint, 13, Muted));
-        var choices = (status?.Capabilities ?? []).Where(x => x.Kind == kind && (kind != TaskCapabilityKind.Action || editor.Detection is null ||
-            status!.Combinations.Contains(new(editor.Detection.CapabilityId, x.Id)))).Select(x => new CapabilityChoice(x)).ToArray();
+        var choices = (status?.Capabilities ?? []).Where(x => x.Kind == kind && (kind != TaskCapabilityKind.Action || editor.SupportsAction(x, status!.Combinations))).Select(x => new CapabilityChoice(x)).ToArray();
         var picker = new ComboBox { Header = kind == TaskCapabilityKind.Detection ? "检测类型" : "动作类型", PlaceholderText = "请选择类型", ItemsSource = choices,
             DisplayMemberPath = nameof(CapabilityChoice.Label), HorizontalAlignment = HorizontalAlignment.Stretch };
         picker.SelectedItem = choices.FirstOrDefault(x => x.Descriptor.Id == invocation?.CapabilityId);
         var parameters = Column(12);
+        if (kind == TaskCapabilityKind.Action && editor.Composite && invocation is not null && !choices.Any(c => c.Descriptor.Id == invocation.CapabilityId))
+            body.Children.Add(Text("原动作不支持全部条件，参数仍保留。请选择兼容动作后保存。", 12, Amber));
         void ShowParameters(TaskInvocation? current)
         {
             parameters.Children.Clear();
@@ -196,57 +199,58 @@ public sealed partial class WorkbenchWindow
         body.Children.Add(parameters); ShowParameters(invocation);
         return Card(body);
     }
-    private void AddField(StackPanel body, TaskCapability descriptor, TaskInvocation invocation, TaskField field)
+    private void AddField(StackPanel body, TaskCapability descriptor, TaskInvocation invocation, TaskField field, Action<string, string>? changed = null)
     {
+        changed ??= (key, value) => editor.SetParameter(descriptor.Kind, key, value);
         invocation.Parameters.TryGetValue(field.Id, out var value);
         switch (field.Kind)
         {
             case TaskFieldKind.FilePath:
             case TaskFieldKind.DirectoryPath:
                 var path = new TextBox { Header = field.Label, Text = value ?? "", MaxLength = field.MaximumLength };
-                path.TextChanged += (_, _) => editor.SetParameter(descriptor.Kind, field.Id, path.Text); body.Children.Add(path);
+                path.TextChanged += (_, _) => changed(field.Id, path.Text); body.Children.Add(path);
                 AddLocalPathBrowse(body, path, field.Kind == TaskFieldKind.FilePath, field.Kind == TaskFieldKind.DirectoryPath); break;
             case TaskFieldKind.Number:
                 var number = new NumberBox { Header = field.Label,
                     Minimum = (double)(field.Minimum ?? decimal.MinValue), Maximum = (double)(field.Maximum ?? decimal.MaxValue),
                     Value = double.TryParse(value, System.Globalization.CultureInfo.InvariantCulture, out var parsed) ? parsed : double.NaN,
                     SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact, SmallChange = 1, LargeChange = 10 };
-                number.ValueChanged += (_, _) => editor.SetParameter(descriptor.Kind, field.Id,
+                number.ValueChanged += (_, _) => changed(field.Id,
                     double.IsNaN(number.Value) ? "" : number.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
                 body.Children.Add(number); break;
             case TaskFieldKind.Text:
                 var text = new TextBox { Header = field.Label, Text = value ?? "", MaxLength = field.MaximumLength };
-                text.TextChanged += (_, _) => editor.SetParameter(descriptor.Kind, field.Id, text.Text); body.Children.Add(text);
+                text.TextChanged += (_, _) => changed(field.Id, text.Text); body.Children.Add(text);
                 if (field.BrowseLocalPath) AddLocalPathBrowse(body, text, true, true);
                 break;
             case TaskFieldKind.TextList:
                 if (field.EditAsList)
-                { body.Children.Add(BuildNamedListEditor(field, value, selection => editor.SetParameter(descriptor.Kind, field.Id, selection))); break; }
+                { body.Children.Add(BuildNamedListEditor(field, value, selection => changed(field.Id, selection))); break; }
                 var lines = new TextBox { Header = field.Label, MaxLength = field.MaximumLength,
                     AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 112, Text = value ?? "" };
-                lines.TextChanged += (_, _) => editor.SetParameter(descriptor.Kind, field.Id, lines.Text); body.Children.Add(lines); break;
+                lines.TextChanged += (_, _) => changed(field.Id, lines.Text); body.Children.Add(lines); break;
             case TaskFieldKind.ProcessSelection:
-                body.Children.Add(BuildProcessPicker(value, selection => editor.SetParameter(descriptor.Kind, field.Id, selection)));
+                body.Children.Add(BuildProcessPicker(value, selection => changed(field.Id, selection)));
                 break;
             case TaskFieldKind.HotkeyList:
                 body.Children.Add(Text(field.Label, 14, Ink, true));
-                body.Children.Add(BuildHotkeyPicker(value, descriptor.Kind == TaskCapabilityKind.Detection, selection => editor.SetParameter(descriptor.Kind, field.Id, selection)));
+                body.Children.Add(BuildHotkeyPicker(value, descriptor.Kind == TaskCapabilityKind.Detection, selection => changed(field.Id, selection)));
                 break;
             case TaskFieldKind.ExecutableSelection:
             case TaskFieldKind.TraySelection:
                 body.Children.Add(Text(field.Label, 14, Ink, true));
-                body.Children.Add(BuildProcessPicker(value, selection => editor.SetParameter(descriptor.Kind, field.Id, selection), false, true, field.Kind == TaskFieldKind.TraySelection));
+                body.Children.Add(BuildProcessPicker(value, selection => changed(field.Id, selection), false, true, field.Kind == TaskFieldKind.TraySelection));
                 break;
             case TaskFieldKind.Boolean:
                 var toggle = new ToggleSwitch { Header = field.Label, IsOn = value == "true", OnContent = "开", OffContent = "关" };
-                toggle.Toggled += (_, _) => editor.SetParameter(descriptor.Kind, field.Id, toggle.IsOn ? "true" : "false"); body.Children.Add(toggle); break;
+                toggle.Toggled += (_, _) => changed(field.Id, toggle.IsOn ? "true" : "false"); body.Children.Add(toggle); break;
             case TaskFieldKind.Choice:
             case TaskFieldKind.Resource:
                 var choices = field.Choices;
                 if (!string.IsNullOrEmpty(value) && !choices.Any(x => x.Value == value)) choices = choices.Add(new(value, "原选择（当前不可用）"));
                 var select = new ComboBox { Header = field.Label, PlaceholderText = "请选择", ItemsSource = choices, DisplayMemberPath = nameof(TaskChoice.Label), HorizontalAlignment = HorizontalAlignment.Stretch };
                 select.SelectedItem = choices.FirstOrDefault(x => x.Value == value);
-                select.SelectionChanged += (_, _) => { if (select.SelectedItem is TaskChoice item) editor.SetParameter(descriptor.Kind, field.Id, item.Value); }; body.Children.Add(select);
+                select.SelectionChanged += (_, _) => { if (select.SelectedItem is TaskChoice item) changed(field.Id, item.Value); }; body.Children.Add(select);
                 if (field.Choices.IsEmpty) { body.Children.Add(Text("当前没有可用选项，连接设备或恢复功能后刷新。", 12, Amber)); body.Children.Add(RefreshButton()); }
                 break;
             default: body.Children.Add(Text("此参数类型需要更新 Axiom 后编辑。", 12, Amber)); break;

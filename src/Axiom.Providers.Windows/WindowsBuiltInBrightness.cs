@@ -4,14 +4,14 @@ using System.Runtime.Versioning;
 namespace Axiom.Providers.Windows;
 
 [SupportedOSPlatform("windows")]
-public static class WindowsBuiltInBrightness
+public static partial class WindowsBuiltInBrightness
 {
     private static readonly BoundedNativeCommand Commands = new("内置屏幕亮度", TimeSpan.FromSeconds(5));
-    public static Task DrainAsync() => Commands.DrainAsync().WaitAsync(TimeSpan.FromSeconds(5));
+    public static Task DrainAsync() => Task.WhenAll(Commands.DrainAsync(), BrightnessNativeOwnership.DrainAsync()).WaitAsync(TimeSpan.FromSeconds(10));
     public static Task<(bool Success, string Reason)> SetAsync(int percent, CancellationToken token)
     {
         if (percent is < 0 or > 100) throw new ArgumentException("亮度须为0–100整数。");
-        return Commands.RunAsync(cancellation =>
+        return RunSingleAsync(cancellation =>
         {
             using var api = new Api(cancellation);
             return BuiltInBrightnessOperation.Apply(api, percent, cancellation);
@@ -21,7 +21,7 @@ public static class WindowsBuiltInBrightness
     public static Task<(bool Success, string Reason)> AdjustAsync(string operation, int step, CancellationToken token)
     {
         if (operation is not ("increase" or "decrease") || step is < 1 or > 100) throw new ArgumentException("相对亮度参数无效。");
-        return Commands.RunAsync(cancellation =>
+        return RunSingleAsync(cancellation =>
         {
             using var api = new Api(cancellation);
             return BuiltInBrightnessOperation.Adjust(api, operation, step, cancellation);
@@ -29,8 +29,16 @@ public static class WindowsBuiltInBrightness
     }
 
     private sealed record Panel(ManagementObject Brightness, ManagementObject Methods, ManagementObject Connection);
+    private static Task<(bool Success, string Reason)> RunSingleAsync(Func<CancellationToken, (bool Success, string Reason)> action, CancellationToken token) =>
+        Commands.RunAsync(cancellation =>
+        {
+            using var ownership = BrightnessNativeOwnership.TryAcquire();
+            return ownership is null ? (false, "Axiom已有亮度恢复租约或原生操作；请先暂停已有亮度恢复任务并等待释放完成，再执行其他亮度动作。本次未执行，不排队。") : action(cancellation);
+        }, token);
     private sealed class Api(CancellationToken token) : IBuiltInBrightnessApi, IDisposable
     {
+        internal bool Authorized(string sid) => WindowsHardwareBrightness.AuthorizedUser(sid, token);
+        internal void UseToken(CancellationToken value) => token = value;
         private readonly List<ManagementObject> owned = [];
         private readonly Dictionary<string, Panel> supported = new(StringComparer.OrdinalIgnoreCase);
         public IReadOnlyList<BrightnessPanel> FindPanels()
@@ -107,6 +115,11 @@ public static class WindowsBuiltInBrightness
         private static string? Key(ManagementObject item) => item["InstanceName"] is string { Length: > 0 and <= 2048 } key ? key : null;
         private static Dictionary<string, ManagementObject[]> Index(IEnumerable<ManagementObject> items) => items.Where(item => Key(item) is not null)
             .GroupBy(item => Key(item)!, StringComparer.OrdinalIgnoreCase).ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.OrdinalIgnoreCase);
-        public void Dispose() { foreach (var item in owned) item.Dispose(); }
+        public void Dispose()
+        {
+            var failed = false;
+            foreach (var item in owned) try { item.Dispose(); } catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException)) { failed = true; }
+            if (failed) throw new IOException("部分内屏亮度资源释放未确认。");
+        }
     }
 }

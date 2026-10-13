@@ -19,7 +19,7 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
     private readonly EngineHost activity;
     private readonly string sid;
     private readonly ResourceScope scope;
-    private readonly AutomationTaskCompiler compiler = new();
+    private readonly AutomationTaskCompiler compiler = new(supportsCompositeDetection: true);
     private readonly RuntimeClock clock;
     private readonly SemaphoreSlim gate = new(1, 1);
     private readonly ImmutableDictionary<string, CapabilityBinding> bindings;
@@ -40,6 +40,7 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
     private string state = "等待条件", reason = "程序任务等待下一次状态变化。";
     private DateTimeOffset at = DateTimeOffset.MinValue;
     public ImmutableArray<TaskCombination> Combinations { get; }
+    public bool SupportsCompositeDetection => true;
     public PluginTaskRuntime(IEnumerable<IAutomationPlugin> plugins, SqliteAutomationTaskStore database, string sid, EngineHost activity, Func<uint>? bootIdentity = null)
     {
         this.database = database; this.sid = sid; this.activity = activity; this.bootIdentity = bootIdentity;
@@ -49,10 +50,11 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
         foreach (var detection in modules.SelectMany(p => p.Detections).DistinctBy(d => d.Descriptor.Id)) compiler.Register(detection);
         foreach (var action in modules.SelectMany(p => p.Actions)) compiler.Register(action);
         Combinations = [.. modules.SelectMany(p => p.Combinations)];
+        foreach (var combination in Combinations) compiler.RegisterCombination(combination);
         bindings = modules.SelectMany(p => p.Bindings).DistinctBy(b => b.Descriptor.Id).ToImmutableDictionary(b => b.Descriptor.Id);
-        if (Combinations.Distinct().Count() != Combinations.Length || bindings.Values.Any(b => b.Descriptor.DesiredState && b.Descriptor.Id != KeepAwakeCapabilities.Hold ||
+        if (Combinations.Distinct().Count() != Combinations.Length || bindings.Values.Any(b => b.Descriptor.DesiredState && b.Descriptor.Id != KeepAwakeCapabilities.Hold && !RestorableSettingInvocations.IsRestorable(b.Descriptor.Id) ||
             b.Descriptor.Command && (b.Descriptor.Parameters != TaskInvocationCommands.Schema || b.ParametersKind != ScalarKind.Text)))
-            throw new ArgumentException("插件组合重复，或未采用当前会话命令/保持唤醒租约 contract；其他 Desired State 需独立生命周期适配器。");
+            throw new ArgumentException("插件组合重复，或未采用当前会话命令/保持唤醒/可恢复设置租约contract。");
         clock = new RuntimeClock(TimeProvider.System); scheduler = new(clock); engine = new(clock, scheduler, this); engine.Start();
         engine.ConfigureAutomation(this, this);
         foreach (var binding in bindings.Values) engine.RegisterCapability(binding);
@@ -62,7 +64,7 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
         tasks = await database.ListAsync();
         foreach (var task in tasks)
         {
-            try { engine.SetRule(compiler.Compile(task, sid, scope)); }
+            try { RequireSupportedTask(task); engine.SetRule(compiler.Compile(task, sid, scope)); }
             catch (ArgumentException error) { Record("任务暂不可用", task.Title + "：" + error.Message, ActivityLevel.Warning); }
         }
         startupTasks = tasks.Where(t => !t.Paused && t.Detection.CapabilityId == AxiomStartupPlugin.CapabilityId).ToImmutableDictionary(t => t.Id, t => t.Version);
@@ -81,11 +83,11 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
     public AuthorizationDecision Authorize(string principal, ResourceKey key, CapabilityOperation operation) => new(
         principal == sid && key.Scope == scope && bindings.TryGetValue(key.CapabilityId, out var b) &&
         (operation == CapabilityOperation.Observe && b.Descriptor.Observe || operation == CapabilityOperation.ExecuteCommand && b.Descriptor.Command ||
-            operation == CapabilityOperation.ApplyDesired && b.Descriptor.Id == KeepAwakeCapabilities.Hold && b.Descriptor.DesiredState),
+            operation == CapabilityOperation.ApplyDesired && (b.Descriptor.Id == KeepAwakeCapabilities.Hold || RestorableSettingInvocations.IsRestorable(b.Descriptor.Id)) && b.Descriptor.DesiredState),
         "same-user-session registered plugin");
     public Guid NextId() => Guid.NewGuid();
     public ValueTask<Outcome> ApplyDesiredAsync(DesiredState desired, CancellationToken token) =>
-        ApplyKeepAwakeAsync(desired, token);
+        RestorableSettingInvocations.IsRestorable(desired.Key.CapabilityId) ? ApplyRestorableAsync(desired, token) : ApplyKeepAwakeAsync(desired, token);
     public async ValueTask<Outcome> ExecuteCommandAsync(Command command, CancellationToken token)
     {
         try
@@ -115,15 +117,28 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
             return new(OutcomeStatus.Unknown, message, command.CommandId);
         }
     }
+    private bool IsSupportedTask(AutomationTask task)
+    {
+        try
+        {
+            compiler.Validate(task);
+            return TaskDetectionExpressions.ValidateTask(task).All(leaf => Combinations.Contains(new(leaf.CapabilityId, task.Action.CapabilityId)));
+        }
+        catch (ArgumentException) { return false; }
+    }
+    private void RequireSupportedTask(AutomationTask task)
+    {
+        if (!IsSupportedTask(task)) throw new ArgumentException("插件不支持所有条件与同一动作的组合。");
+    }
     public async Task<AutomationTask> SaveAsync(AutomationTask task, CancellationToken token)
     {
-        if (!Combinations.Contains(new(task.Detection.CapabilityId, task.Action.CapabilityId))) throw new ArgumentException("插件不支持此任务组合。");
+        RequireSupportedTask(task);
         _ = compiler.Compile(task, sid, scope);
         await gate.WaitAsync(token);
         try
         {
             if (stopping) throw new InvalidOperationException("后台正在停止，请重新打开 Axiom。");
-            var candidate = tasks.Where(t => t.Id != task.Id).Append(task).Where(t => !t.Paused && Combinations.Contains(new(t.Detection.CapabilityId,t.Action.CapabilityId)))
+            var candidate = tasks.Where(t => t.Id != task.Id).Append(task).Where(t => !t.Paused && IsSupportedTask(t))
                 .SelectMany(t => { var rule = compiler.Compile(t, sid, scope); return rule.Condition.Dependencies.Append(rule.Action.Key).Where(k => bindings[k.CapabilityId].Descriptor.Observe); }).Distinct().Count();
             if (candidate > 128) throw new ArgumentException("启用的插件任务最多检测 128 个资源。");
             var saved = await database.SaveAsync(task, token);
@@ -158,11 +173,11 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
                     p.Value.Observation.Quality != StateQuality.Known ? observationReasons.GetValueOrDefault(p.Key, "状态未知") : p.Key.CapabilityId == OnceTimeCapabilities.Due ? observationReasons.GetValueOrDefault(p.Key, "等待指定日期和时刻") : p.Key.CapabilityId == HotkeyCapabilities.Pressed
                         ? "等待快捷键" : p.Value.Observation.Value?.Number is not null ? "等待下一次事件" : p.Key.CapabilityId == AxiomStartupPlugin.CapabilityId
                         ? p.Value.Observation.Value?.Boolean == true ? "已触发启动条件" : "等待下次启动"
-                        : p.Key.CapabilityId == KeepAwakeCapabilities.Hold ? p.Value.Observation.Value?.Boolean == true ? "Axiom 正持有唤醒请求" : "未持有唤醒请求" : p.Key.CapabilityId == WindowPresenceCapabilities.Visible ? p.Value.Observation.Value?.Boolean == true ? "窗口已显示" : "没有可见主窗口" : p.Key.CapabilityId == ForegroundCapabilities.Active ? p.Value.Observation.Value?.Boolean == true ? "正在前台" : "不在前台" : p.Value.Observation.Value?.Boolean == true ? "正在运行" : "未运行")),
+                        : p.Key.CapabilityId == KeepAwakeCapabilities.Hold ? p.Value.Observation.Value?.Boolean == true ? "Axiom 正持有唤醒请求" : "未持有唤醒请求" : p.Key.CapabilityId == WindowPresenceCapabilities.Visible ? p.Value.Observation.Value?.Boolean == true ? "窗口已显示" : "没有可见主窗口" : p.Key.CapabilityId == SessionLockStateCapabilities.State ? p.Value.Observation.Value?.Boolean == true ? "已锁定" : "未锁定" : p.Key.CapabilityId == ForegroundCapabilities.Active ? p.Value.Observation.Value?.Boolean == true ? "正在前台" : "不在前台" : p.Value.Observation.Value?.Boolean == true ? "正在运行" : "未运行")),
                  .. tasks.Where(t => t.TimeWindow is not null).Select(t => new TaskObservation(t.Title + " · 时间限制",
                     t.Paused ? "已暂停" : engine.GetRuleEvaluation(t.Id).Reason.StartsWith("OutsideTimeWindow", StringComparison.Ordinal)
                         ? "上次触发已跳过：不在允许时段，进入时段不会补执行。"
-                        : t.TimeWindow!.Contains(clock.UtcNow, clock.LocalTimeZone) ? "读取时在允许时段；等待新的条件边沿。" : "读取时在时段外；新的触发将跳过。", t.Id))]);
+                        : t.TimeWindow!.Contains(clock.UtcNow, clock.LocalTimeZone) ? "读取时在允许时段；等待新的条件边沿。" : "读取时在时段外；新的触发将跳过。", t.Id))], CompositeDetectionVersion: 1);
         }
         finally { gate.Release(); }
     }
@@ -306,6 +321,7 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
             watchCancel?.Cancel(); if (watcher is not null) await watcher.WaitAsync(token);
             await engine.WaitForIdleAsync(token);
             await DrainPowerLeasesAsync(token);
+            await DrainRestorableSettingsAsync(token);
         }
         finally { gate.Release(); }
     }
@@ -314,6 +330,7 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
         watchCancel?.Cancel(); if (watcher is not null) await watcher;
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5)); await engine.StopAndWaitAsync(deadline.Token);
         await DrainPowerLeasesAsync(deadline.Token);
+        await DrainRestorableSettingsAsync(deadline.Token);
         engine.Dispose(); scheduler.Dispose(); watchCancel?.Dispose(); gate.Dispose();
     }
 }
