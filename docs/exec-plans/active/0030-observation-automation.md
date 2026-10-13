@@ -2,6 +2,16 @@
 
 四阶段最小闭环已接通：实用自动化→用户主动限时观察→本地证据/离线AI审阅→暂停规则或确认过的源码扩展。上一阶段十项实用能力已随预览 .3交付，所有者明确继续idea提出与实施，功能范围/API障碍见[功能清单](../../product/functional-roadmap.md)，操作与限制见[当前状态](../../product/current-state.md)。负责人只协调审查/Git操作，代理实施；最小必要验证，不重复铺框架或保留过期流水。
 
+## 当前用户功能轮（2026-10-13）
+
+用户新增能在组合状态成立期间控制明确设置，条件结束后按固定目标和基线恢复；并通过快捷键相对调整亮度或一次切换任务栏自动隐藏。负责人协调审查/Git发布，独立实现agent提交后由整合agent接真实注册/模板/文档/入口。
+
+- [x] 内屏/支持硬件屏相对亮度及任务栏AutoHide一次开/关已整合；实际注册/严格导入/SQLite保存及暂停模板检查、Agent/Host构建通过。
+- [ ] AND/OR/NOT真实UI与Host，schema3保持legacy首leaf anchor、深度4/叶16、Snapshots CompositeVersion1。
+- [ ] 明确`*.restore`状态动作、共享Desired租约/胜者更新与亮度恢复；旧Command schema不变，Unknown和固定身份/手动接管边界保留。
+- [ ] 全功能接齐后统一一次原64KiB匿名目录完整fields/pairs、复合导入/保存及CLI构建；不放宽预算、不删机器参数，不本地重跑旧全套。
+- [ ] Windows实效单列：未操作真实亮度/任务栏/麦克风/电源/按键，设备及桌面效果由Windows环境验收。
+
 ## 当前交付与接续
 
 本轮功能交付提交`2c5523810232926d2263d4bb3ff26dc8380cafb7`（.4固定来源）已合入11项新增功能，60能力/56默认暂停模板。[PR #11准确检查37884966178](https://github.com/Starvan/Axiom/actions/runs/37884966178)的核心、Windows原生、构建及便携/安装包全部成功；该功能提交与最终受测头同tree。[准确main检查37885759825](https://github.com/Starvan/Axiom/actions/runs/37885759825)已全部成功，包含Windows核心/原生、媒体只读与完整构建。
