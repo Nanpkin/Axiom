@@ -28,7 +28,7 @@ public static class UsageAnalysis
             {
                 foreach (var property in type.Properties.Where(p => p.Name is nameof(TaskCapability.Description) or nameof(TaskCapability.Behavior) or nameof(TaskCapability.EditWarning)))
                     property.ShouldSerialize = (_, value) => value is not "";
-                foreach (var property in type.Properties.Where(p => p.Name == nameof(TaskCapability.SupportsTimeWindow)))
+                foreach (var property in type.Properties.Where(p => p.Name is nameof(TaskCapability.SupportsTimeWindow) or nameof(TaskCapability.IsStateCondition) or nameof(TaskCapability.SupportsCompositeDetection)))
                     property.ShouldSerialize = (_, value) => value is true;
             }
             if (type.Type != typeof(TaskField)) return;

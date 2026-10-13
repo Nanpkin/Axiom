@@ -51,8 +51,10 @@ public sealed class CompositeDetectionTests
         Assert.Throws<ArgumentException>(() => TaskDetectionExpressions.ValidateTask(TaskFor() with { SchemaVersion = 3 }));
         var json = JsonSerializer.Serialize(task); var restored = JsonSerializer.Deserialize<AutomationTask>(json)!;
         Assert.Equal(4, TaskDetectionExpressions.ValidateTask(restored).Length);
-        Assert.DoesNotContain("DetectionExpression", JsonSerializer.Serialize(TaskFor()));
-        Assert.DoesNotContain("CompositeDetectionVersion", JsonSerializer.Serialize(Registered().Catalog with { CompositeDetectionVersion = 0 }));
+        var single = JsonSerializer.Deserialize<AutomationTask>(JsonSerializer.Serialize(TaskFor()))!;
+        Assert.Null(single.DetectionExpression); Assert.Equal(1, single.SchemaVersion); Assert.Single(TaskDetectionExpressions.ValidateTask(single));
+        var legacySnapshot = JsonSerializer.Deserialize<AutomationSnapshot>(JsonSerializer.Serialize(Registered().Catalog with { CompositeDetectionVersion = 0 }))!;
+        Assert.Equal(0, legacySnapshot.CompositeDetectionVersion);
     }
 
     [Fact]
