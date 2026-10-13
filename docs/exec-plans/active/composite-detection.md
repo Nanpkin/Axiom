@@ -8,4 +8,4 @@
 
 必要验证：6–8项有意义的树界限/Unknown/旧兼容/路由与反馈/SQLite与严格导入/实际Engine触发和Desired释放，相关Host/Agent编译；不全套或重复目录预算。Windows原生锁定状态只读查询留CI，真实锁屏不在验证操作中。
 
-进度：协议与共享数据模型已确定；核心编译、保存、后台和状态叶实施中。由负责人整合UI与明确.restore动作、执行Git发布。
+进度：契约fb38e4a已交UI；Compiler/Router/Host/SQLite/严格导入导出及session.lock-state真实源接通，7直接corecases通过，相关Host/Agent/Windows Provider编译通过。自有WTS窗口+Host假Provider去重订阅案例仅编译待WindowsCI；UI和明确.restore动作由负责人同批整合，Git发布及完整目录预算不在本代理执行。

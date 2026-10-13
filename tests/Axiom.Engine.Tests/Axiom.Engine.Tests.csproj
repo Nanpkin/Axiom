@@ -82,6 +82,10 @@
     <Compile Include="../../src/Axiom.Providers.Windows/DisplayOffOperation.cs" Link="DisplayOffOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/SessionLockOperation.cs" Link="SessionLockOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/BuiltInBrightnessOperation.cs" Link="BuiltInBrightnessOperation.cs" />
+    <Compile Include="../../src/Axiom.SessionAgent/SessionLockStateCapabilityProvider.cs" Link="SessionLockStateCapabilityProvider.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/SessionLockStateObservation.cs" Link="SessionLockStateObservation.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsSessionLockState.cs" Link="WindowsSessionLockState.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsSessionLock.cs" Link="WindowsSessionLock.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/SessionLockStateReader.cs" Link="SessionLockStateReader.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/OnceEventSource.cs" Link="OnceEventSource.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/DailyEventSource.cs" Link="DailyEventSource.cs" />
