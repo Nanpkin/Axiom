@@ -1,5 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <Compile Include="../../src/Axiom.Providers.Windows/RestorableSettingSession.cs" Link="RestorableSettingSession.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/ConditionalSettingTransaction.cs" Link="ConditionalSettingTransaction.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/BrightnessRestoreSession.cs" Link="BrightnessRestoreSession.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/HardwareBrightnessOperation.cs" Link="HardwareBrightnessOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/NetworkCategoryState.cs" Link="NetworkCategoryState.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/NetworkCategoryObservation.cs" Link="NetworkCategoryObservation.cs" />
