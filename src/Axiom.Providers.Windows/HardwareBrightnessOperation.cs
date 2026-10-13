@@ -26,7 +26,20 @@ internal static class HardwareBrightnessOperation
         // DWORD ranges can span almost UInt32.MaxValue; use UInt64 before multiplying or rounding.
         return (uint)(range.Minimum + ((ulong)range.Maximum - range.Minimum) * (uint)percent / 100);
     }
-    internal static (bool Success, string Reason) Apply(IHardwareBrightnessApi api, string target, int percent, CancellationToken token)
+    internal static uint? AdjustedValue(HardwareBrightnessRange? range, int delta)
+    {
+        if (delta is < -100 or > 100 or 0 || Map(range, 0) is null) return null;
+        var distance = (((ulong)range!.Maximum - range.Minimum) * (uint)Math.Abs(delta) + 50) / 100;
+        return delta > 0 ? (uint)Math.Min((ulong)range.Maximum, range.Current + distance) :
+            (uint)Math.Max((ulong)range.Minimum, (ulong)range.Current - Math.Min((ulong)range.Current, distance));
+    }
+    internal static (bool Success, string Reason) Apply(IHardwareBrightnessApi api, string target, int percent, CancellationToken token) => ApplyCore(api, target, percent, null, token);
+    internal static (bool Success, string Reason) Adjust(IHardwareBrightnessApi api, string target, string operation, int step, CancellationToken token)
+    {
+        if (operation is not ("increase" or "decrease") || step is < 1 or > 100) throw new ArgumentException("相对亮度参数无效。");
+        return ApplyCore(api, target, 0, operation == "increase" ? step : -step, token);
+    }
+    private static (bool Success, string Reason) ApplyCore(IHardwareBrightnessApi api, string target, int percent, int? delta, CancellationToken token)
     {
         if (target is not ("primary" or "all") || percent is < 0 or > 100) throw new ArgumentException("硬件亮度参数无效。");
         token.ThrowIfCancellationRequested();
@@ -75,7 +88,7 @@ internal static class HardwareBrightnessOperation
                     if (!caps.HasValue) { unknown++; continue; }
                     if ((caps.Value & 0x2) == 0) { unsupported++; continue; } // MC_CAPS_BRIGHTNESS
                     var read = api.Read(monitor); token.ThrowIfCancellationRequested();
-                    var mapped = Map(read, percent);
+                    var mapped = delta.HasValue ? AdjustedValue(read, delta.Value) : Map(read, percent);
                     if (!mapped.HasValue) { unknown++; continue; }
                     range = read!; requested = mapped.Value;
                     var authorized = api.IsAuthorized(); token.ThrowIfCancellationRequested();
@@ -101,7 +114,7 @@ internal static class HardwareBrightnessOperation
                 try { lease.Dispose(); } catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException)) { cleanupFailed++; }
         }
         var success = succeeded > 0 && unknown == 0 && failed == 0 && cleanupFailed == 0;
-        return (success, $"硬件屏幕亮度{(success ? "已确认" : succeeded > 0 ? "部分完成" : "未确认")}：已确认{succeeded}块为{percent}%，已知不支持而跳过{unsupported}块，状态或范围未知而未写入{unknown}个目标，写入/读回未确认{failed}块" +
+        return (success, $"硬件屏幕亮度{(success ? "已确认" : succeeded > 0 ? "部分完成" : "未确认")}：已确认{succeeded}块{(delta.HasValue ? $"相对调整{delta.Value}个百分点（范围限幅）" : $"为{percent}%")}，已知不支持而跳过{unsupported}块，状态或范围未知而未写入{unknown}个目标，写入/读回未确认{failed}块" +
             (cleanupFailed == 0 ? "。" : $"，{cleanupFailed}组句柄释放未确认。") + "新亮度保留，不重试、不恢复旧值；需要屏幕与连接支持且启用硬件亮度控制。");
     }
 }

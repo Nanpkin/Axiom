@@ -71,3 +71,5 @@ PowerSaverStateTests
 ForegroundScreenCoverTests
 WorkPreparationTests
 HardwareBrightnessTests
+
+BrightnessAdjustmentTests
