@@ -170,7 +170,7 @@ Engine在新条件边沿/事件进入延迟前、延迟deadline以及队列取�
 Release用独立清理token，末尾全部finally尝试清理，内屏对象及每组物理句柄清理异常不阻断其他资源。Apply/捕获/Release均10秒有界等待，调用者超时取消并不表示真实原生停止，资源与准入仍保留到worker真正返回；只按事件/条件生命周期工作，不重试或相对累加。比较与写入非原子、异常进程退出/驱动阻塞不能保证恢复，实机支持性待验。UI退出不结束后台租约；暂停、删除、Unknown及条件结束走共享租约释放回执。
 ## 有界状态组合检测
 
-`TaskDetectionExpression(Kind, Invocation?, Children)`只支持leaf/all/any/not：leaf只有Invocation；all/any至少2个子节点；not恰好1个。根为深度1，最多4层、16叶、64节点，空组/混合叶与子节点/未知运算符/越界拒绝。没有脚本或任意表达式。`AutomationTask.DetectionExpression`非空时必须task schema3，`Detection`严格按内容等于深度优先有序首叶，仅供旧展示，绝不替代树执行。schema1/2不得携树；3可保留原TimeWindow并沿原动作门禁校验。默认null/false新增字段不写旧单任务JSON。
+`TaskDetectionExpression(Kind, Invocation?, Children)`只支持leaf/all/any/not：leaf只有Invocation；all/any至少2个子节点；not恰好1个。根为深度1，最多4层、16叶、64节点，空组/混合叶与子节点/未知运算符/越界拒绝。没有脚本或任意表达式。`AutomationTask.DetectionExpression`非空时必须task schema3，`Detection`严格按内容等于深度优先有序首叶，仅供旧展示，绝不替代树执行。schema1/2不得携树；3可保留原TimeWindow并沿原动作门禁校验。Domain不依赖JSON，叶的默认Children归一为空数组；常规序列化允许null/false默认字段，单检测及协商语义由版本/树校验保持，匿名摘要末级省略false标记仍还原false。
 
 Snapshot.CompositeDetectionVersion=1及所选action.SupportsCompositeDetection=true共同协商；只有检测IsStateCondition=true可选为叶，脉冲/快捷键/定时/启动检测保留单检测路径、不组合或否定。PluginTaskRuntime启用compiler支持并登记每个允许对，编译、保存、加载和Router逐叶检查同一个动作/同一个支持树的backend，继承全部反馈排除。HDR旧backend/legacy转换明确拒绝树。Domain已有All/Any/Not三值：NOT Unknown=Unknown，AND中明确false可决定false，OR中明确true可决定true；Engine依赖集合及观察计划去重合并，未知/结束/暂停/源释放撤销持续授权，首次及恢复snapshot不补Command。
 

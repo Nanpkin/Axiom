@@ -121,7 +121,7 @@ public sealed class ApplicationAudioActivityTests
         var paths = App() + "\n" + App("SyntheticConference"); var draft = template.Draft with { Detection = Detection(paths) };
         var compiled = compiler.Compile(draft, "owner", ResourceScope.Session("owner", 1)); Assert.Equal(2, compiled.Condition.Dependencies.Count());
         Assert.Equal(RuleActionKind.Desired, compiled.Action.Kind);
-        Assert.Equal(new[] { KeepAwakeCapabilities.Hold, NotificationCapabilities.Show }.Order(), catalog.Combinations.Where(c => c.DetectionId == ApplicationAudioActivityCapabilities.Active).Select(c => c.ActionId).Order());
+        Assert.Equal(new[] { KeepAwakeCapabilities.Hold, NotificationCapabilities.Show, TaskbarAutoHideRestoreCapabilities.Restore }.Order(), catalog.Combinations.Where(c => c.DetectionId == ApplicationAudioActivityCapabilities.Active).Select(c => c.ActionId).Order());
         var now = DateTimeOffset.UtcNow; var recorder = new UsageRecorder(new(5, false, true, [], SystemEvents: true), now);
         recorder.Add(new(now, "process-start", App())); recorder.Add(new(now.AddSeconds(1), "process-start", App("SyntheticConference")));
         var aliases = string.Join("\n", recorder.Session.Objects.Select(o => o.Id));
