@@ -25,7 +25,7 @@ public static partial class WindowsHardwareBrightness
         Commands.RunAsync(cancellation =>
         {
             using var ownership = BrightnessNativeOwnership.TryAcquire();
-            return ownership is null ? (false, "Axiom已有亮度恢复租约或原生操作；本次未执行，不排队。") : action(cancellation);
+            return ownership is null ? (false, "Axiom已有亮度恢复租约或原生操作；请先暂停已有亮度恢复任务并等待释放完成，再执行其他亮度动作。本次未执行，不排队。") : action(cancellation);
         }, token);
     private sealed class Api(string sid, CancellationToken token) : IHardwareBrightnessApi
     {
