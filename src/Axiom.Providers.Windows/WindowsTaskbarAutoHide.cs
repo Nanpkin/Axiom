@@ -7,7 +7,7 @@ using Microsoft.Win32.SafeHandles;
 namespace Axiom.Providers.Windows;
 
 [SupportedOSPlatform("windows")]
-public static class WindowsTaskbarAutoHide
+public static partial class WindowsTaskbarAutoHide
 {
     private static readonly BoundedNativeCommand Commands = new("任务栏自动隐藏", TimeSpan.FromSeconds(5));
     public static Task DrainAsync() => Commands.DrainAsync().WaitAsync(TimeSpan.FromSeconds(5));

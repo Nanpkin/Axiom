@@ -43,6 +43,7 @@ KeepAwakeTests
 WifiProfileTests
 PowerSchemeTests
 TaskbarAutoHideTests
+TaskbarAutoHideRestoreTests
 UsbDeviceTests
 WindowMonitorTests
 SessionLockTests
