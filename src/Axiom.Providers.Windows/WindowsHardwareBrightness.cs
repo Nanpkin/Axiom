@@ -16,6 +16,11 @@ public static class WindowsHardwareBrightness
         if (target is not ("primary" or "all") || percent is < 0 or > 100) throw new ArgumentException("硬件亮度参数无效。");
         return Commands.RunAsync(cancellation => HardwareBrightnessOperation.Apply(new Api(sid, cancellation), target, percent, cancellation), token);
     }
+    public static Task<(bool Success, string Reason)> AdjustAsync(string target, string operation, int step, string sid, CancellationToken token)
+    {
+        if (target is not ("primary" or "all") || operation is not ("increase" or "decrease") || step is < 1 or > 100) throw new ArgumentException("相对亮度参数无效。");
+        return Commands.RunAsync(cancellation => HardwareBrightnessOperation.Adjust(new Api(sid, cancellation), target, operation, step, cancellation), token);
+    }
     private sealed class Api(string sid, CancellationToken token) : IHardwareBrightnessApi
     {
         public bool IsAuthorized()

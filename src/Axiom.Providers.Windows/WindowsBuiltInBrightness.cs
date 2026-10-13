@@ -18,6 +18,16 @@ public static class WindowsBuiltInBrightness
         }, token);
     }
 
+    public static Task<(bool Success, string Reason)> AdjustAsync(string operation, int step, CancellationToken token)
+    {
+        if (operation is not ("increase" or "decrease") || step is < 1 or > 100) throw new ArgumentException("相对亮度参数无效。");
+        return Commands.RunAsync(cancellation =>
+        {
+            using var api = new Api(cancellation);
+            return BuiltInBrightnessOperation.Adjust(api, operation, step, cancellation);
+        }, token);
+    }
+
     private sealed record Panel(ManagementObject Brightness, ManagementObject Methods, ManagementObject Connection);
     private sealed class Api(CancellationToken token) : IBuiltInBrightnessApi, IDisposable
     {

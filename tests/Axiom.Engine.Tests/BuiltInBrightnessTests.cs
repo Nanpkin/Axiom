@@ -22,7 +22,7 @@ public sealed class BuiltInBrightnessTests
         foreach (var detection in new[] { SystemEventCapabilities.Event, HotkeyCapabilities.Pressed, ForegroundCapabilities.Active,
             DailyTimeCapabilities.Due, WifiProfileCapabilities.Connected, UsbDeviceCapabilities.Present })
             Assert.Contains(plugin.Combinations, c => c.DetectionId == detection && c.ActionId == BuiltInBrightnessCapabilities.Set);
-        Assert.Equal(RetryCategory.Never, Assert.Single(plugin.Bindings).Descriptor.Retry);
+        Assert.Equal(RetryCategory.Never, Assert.Single(plugin.Bindings, b => b.Descriptor.Id == BuiltInBrightnessCapabilities.Set).Descriptor.Retry);
         Assert.Contains("所有活动内置面板", action.Descriptor.Description); Assert.Contains("外接DDC/CI", action.Descriptor.EditWarning);
     }
     [Theory]
