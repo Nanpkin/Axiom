@@ -7,7 +7,7 @@ using System.Text;
 namespace Axiom.Providers.Windows;
 
 [SupportedOSPlatform("windows")]
-public static class WindowsWindowActions
+public static partial class WindowsWindowActions
 {
     public static Task<ProgramControlResult> MoveToMonitorAsync(string path, string title, TimeSpan wait, string monitor, CancellationToken token) =>
         CloseAsync(path, title, wait, token, monitorSelection: monitor);

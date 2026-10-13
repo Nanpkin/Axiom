@@ -360,6 +360,7 @@ public static class UsageAnalysis
                 OpenTargetBatchCapabilities.Validate(missing.Contains("targets") ? resolved with { Parameters = resolved.Parameters.SetItem("targets", "网页 | https://example.invalid/review") } : resolved);
             if (missing.Count > 0) return resolved;
             // Provider-specific constraints are also checked before offering the draft.
+            if (resolved.CapabilityId is ConditionRestoreCapabilities.Playback or ConditionRestoreCapabilities.Microphone or ConditionRestoreCapabilities.PowerScheme or ConditionRestoreCapabilities.ProgramPriority or ConditionRestoreCapabilities.WindowState) ConditionRestoreCapabilities.Validate(resolved);
             if (resolved.CapabilityId == NetworkCategoryCapabilities.State) NetworkCategoryCapabilities.Validate(resolved);
             if (resolved.CapabilityId == InternetConnectivityCapabilities.State) InternetConnectivityCapabilities.Validate(resolved);
             if (resolved.CapabilityId == FileArrivalCapabilities.Arrived) FileArrivalCapabilities.Validate(resolved);

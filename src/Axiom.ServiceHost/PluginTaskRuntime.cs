@@ -50,9 +50,9 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
         foreach (var action in modules.SelectMany(p => p.Actions)) compiler.Register(action);
         Combinations = [.. modules.SelectMany(p => p.Combinations)];
         bindings = modules.SelectMany(p => p.Bindings).DistinctBy(b => b.Descriptor.Id).ToImmutableDictionary(b => b.Descriptor.Id);
-        if (Combinations.Distinct().Count() != Combinations.Length || bindings.Values.Any(b => b.Descriptor.DesiredState && b.Descriptor.Id != KeepAwakeCapabilities.Hold ||
+        if (Combinations.Distinct().Count() != Combinations.Length || bindings.Values.Any(b => b.Descriptor.DesiredState && b.Descriptor.Id != KeepAwakeCapabilities.Hold && !RestorableSettingInvocations.IsRestorable(b.Descriptor.Id) ||
             b.Descriptor.Command && (b.Descriptor.Parameters != TaskInvocationCommands.Schema || b.ParametersKind != ScalarKind.Text)))
-            throw new ArgumentException("插件组合重复，或未采用当前会话命令/保持唤醒租约 contract；其他 Desired State 需独立生命周期适配器。");
+            throw new ArgumentException("插件组合重复，或未采用当前会话命令/保持唤醒/可恢复设置租约contract。");
         clock = new RuntimeClock(TimeProvider.System); scheduler = new(clock); engine = new(clock, scheduler, this); engine.Start();
         engine.ConfigureAutomation(this, this);
         foreach (var binding in bindings.Values) engine.RegisterCapability(binding);
@@ -81,11 +81,11 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
     public AuthorizationDecision Authorize(string principal, ResourceKey key, CapabilityOperation operation) => new(
         principal == sid && key.Scope == scope && bindings.TryGetValue(key.CapabilityId, out var b) &&
         (operation == CapabilityOperation.Observe && b.Descriptor.Observe || operation == CapabilityOperation.ExecuteCommand && b.Descriptor.Command ||
-            operation == CapabilityOperation.ApplyDesired && b.Descriptor.Id == KeepAwakeCapabilities.Hold && b.Descriptor.DesiredState),
+            operation == CapabilityOperation.ApplyDesired && (b.Descriptor.Id == KeepAwakeCapabilities.Hold || RestorableSettingInvocations.IsRestorable(b.Descriptor.Id)) && b.Descriptor.DesiredState),
         "same-user-session registered plugin");
     public Guid NextId() => Guid.NewGuid();
     public ValueTask<Outcome> ApplyDesiredAsync(DesiredState desired, CancellationToken token) =>
-        ApplyKeepAwakeAsync(desired, token);
+        RestorableSettingInvocations.IsRestorable(desired.Key.CapabilityId) ? ApplyRestorableAsync(desired, token) : ApplyKeepAwakeAsync(desired, token);
     public async ValueTask<Outcome> ExecuteCommandAsync(Command command, CancellationToken token)
     {
         try
@@ -306,6 +306,7 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
             watchCancel?.Cancel(); if (watcher is not null) await watcher.WaitAsync(token);
             await engine.WaitForIdleAsync(token);
             await DrainPowerLeasesAsync(token);
+            await DrainRestorableSettingsAsync(token);
         }
         finally { gate.Release(); }
     }
@@ -314,6 +315,7 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
         watchCancel?.Cancel(); if (watcher is not null) await watcher;
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5)); await engine.StopAndWaitAsync(deadline.Token);
         await DrainPowerLeasesAsync(deadline.Token);
+        await DrainRestorableSettingsAsync(deadline.Token);
         engine.Dispose(); scheduler.Dispose(); watchCancel?.Dispose(); gate.Dispose();
     }
 }

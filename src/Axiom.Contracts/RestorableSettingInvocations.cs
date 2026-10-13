@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Axiom.Domain;
 
 namespace Axiom.Contracts;
@@ -20,6 +21,7 @@ public static class RestorableSettingInvocations
     {
         ValidateLease(invocation);
         var parameters = invocation.Parameters.SetItem("delaySeconds", "0");
+        if (parameters.TryGetValue("executable", out var path)) parameters = parameters.SetItem("executable", ExecutablePaths.ValidatePath(path).ToLowerInvariant());
         if (invocation.CapabilityId == "audio.playback.restore" && parameters.GetValueOrDefault("operation") != "volume") parameters = parameters.SetItem("percent", "0");
         return invocation with { Parameters = parameters };
     }
@@ -29,5 +31,6 @@ public static class RestorableSettingInvocations
         return JsonSerializer.Serialize(new { normalized.CapabilityId, normalized.SchemaVersion,
             Parameters = new SortedDictionary<string, string>(normalized.Parameters, StringComparer.Ordinal) });
     }
-    public static TaskInvocation Decode(string text) => JsonSerializer.Deserialize<TaskInvocation>(text) ?? throw new ArgumentException("条件恢复参数为空。");
+    public static TaskInvocation Decode(string text) => JsonSerializer.Deserialize<TaskInvocation>(text,
+        new JsonSerializerOptions { UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow, MaxDepth = 16 }) ?? throw new ArgumentException("条件恢复参数为空。");
 }
