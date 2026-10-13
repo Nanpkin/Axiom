@@ -8,6 +8,6 @@
 
 必要验证：6–8项有意义的树界限/Unknown/旧兼容/路由与反馈/SQLite与严格导入/实际Engine触发和Desired释放，相关Host/Agent编译；不全套或重复目录预算。Windows原生锁定状态只读查询留CI，真实锁屏不在验证操作中。
 
-进度：契约fb38e4a已交UI；Compiler/Router/Host/SQLite/严格导入导出及session.lock-state真实源接通，7直接corecases通过，相关Host/Agent/Windows Provider编译通过。自有WTS窗口+Host假Provider去重订阅案例仅编译待WindowsCI；UI和明确.restore动作由负责人同批整合，Git发布及完整目录预算不在本代理执行。
+状态：Compiler/Router/Host、真实嵌套WinUI、SQLite/严格导入、session.lock-state与全部.restore消费者及Host/Agent更新/释放已完成整合；仅持续状态、Unknown取非仍Unknown，离散事件独立。首次保存schema3树事务性升tasks.db至user_version 3，旧版本随后不能继续使用该任务库，新应用继续完整读取旧1/2记录。复合恢复导入/暂停保存重开、树映射、实际流与共享仲裁、真实完整目录原64KiB字段/允许对往返已通过。
 
-整合接续：真实嵌套UI、全部.restore消费者及Host/Agent更新/释放已接通；复合播放恢复严格导入/暂停保存重开、实际流与共享仲裁必要检查通过，Windows实际编译/合成端到端仍交CI，设备效果单列。仅持续状态、Unknown取非仍Unknown，单次事件不夹树。
+交付验收：[PR #14准确检查38359914254](https://github.com/Starvan/Axiom/actions/runs/38359914254)受测头`00272a7f881fbb16845c06c044ec422882d12477`、准确main `dcfd6f1d315c14cd210c28113fd9c763ca5b8066`的[检查38361014974](https://github.com/Starvan/Axiom/actions/runs/38361014974)均全部成功，含Windows原生、自有WTS/Provider去重订阅、合成Host→Agent恢复E2E及完整WinUI构建。真实窗口组移动/焦点/弹窗与WTS/RDP/设备效果仍待实机，不将编译或合成检查记为所有者现场已验。[预览 v0.2.0-preview.20261013.1](https://github.com/Starvan/Axiom/releases/tag/v0.2.0-preview.20261013.1)已实际发布（预发布、非草稿），标签与target_commitish指向该main；发布构建38361440941成功，四项uploaded资产与SHA-256摘要已独立核验，详情见[当前状态](../../product/current-state.md)。
