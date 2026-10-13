@@ -15,7 +15,13 @@ internal static class BuiltInBrightnessOperation
     internal static bool IsInternalConnection(uint technology) => technology is 0x80000000 or 6 or 11 or 13; // INTERNAL/LVDS/embedded DisplayPort/embedded UDI
     internal static BrightnessPanelSupport ConnectionSupport(uint technology) => IsInternalConnection(technology) ? BrightnessPanelSupport.Supported :
         technology is <= 5 or 8 or 9 or 10 or 12 or 14 or 15 or 16 or 17 ? BrightnessPanelSupport.Ignore : BrightnessPanelSupport.Unknown;
-    internal static (bool Success, string Reason) Apply(IBuiltInBrightnessApi api, int percent, CancellationToken token)
+    internal static (bool Success, string Reason) Apply(IBuiltInBrightnessApi api, int percent, CancellationToken token) => ApplyCore(api, percent, null, token);
+    internal static (bool Success, string Reason) Adjust(IBuiltInBrightnessApi api, string operation, int step, CancellationToken token)
+    {
+        if (operation is not ("increase" or "decrease") || step is < 1 or > 100) throw new ArgumentException("相对亮度参数无效。");
+        return ApplyCore(api, 0, operation == "increase" ? step : -step, token);
+    }
+    private static (bool Success, string Reason) ApplyCore(IBuiltInBrightnessApi api, int percent, int? delta, CancellationToken token)
     {
         if (percent is < 0 or > 100) throw new ArgumentException("亮度须为0–100整数。");
         token.ThrowIfCancellationRequested();
@@ -36,10 +42,17 @@ internal static class BuiltInBrightnessOperation
             {
                 var verified = api.Verify(panel.Key); token.ThrowIfCancellationRequested();
                 if (!verified) { failed++; continue; }
-                var error = api.Set(panel.Key, (byte)percent); token.ThrowIfCancellationRequested();
+                var requested = percent;
+                if (delta.HasValue)
+                {
+                    var current = api.Read(panel.Key); token.ThrowIfCancellationRequested();
+                    if (current is not (>= 0 and <= 100)) { failed++; continue; }
+                    requested = Math.Clamp(current.Value + delta.Value, 0, 100);
+                }
+                var error = api.Set(panel.Key, (byte)requested); token.ThrowIfCancellationRequested();
                 if (error != 0) { failed++; continue; }
                 var actual = api.Read(panel.Key); token.ThrowIfCancellationRequested();
-                if (actual == percent) succeeded++; else failed++;
+                if (actual == requested) succeeded++; else failed++;
             }
             catch (OperationCanceledException) { throw; }
             catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException)) { failed++; }
@@ -47,6 +60,6 @@ internal static class BuiltInBrightnessOperation
         if (succeeded == 0 && failed == 0)
             return (false, "没有可确认支持WMI亮度设置的活动内置面板，本次未修改；外接显示器不在范围，缺失接口或未知身份不会尝试设置。");
         var success = failed == 0 && skipped == 0;
-        return (success, $"内置屏幕亮度{(success ? "已确认" : succeeded > 0 ? "部分完成" : "未确认")}：{succeeded}块面板读回确认为{percent}%，{failed}块写入/读回失败或身份变化，{skipped}块接口缺失或身份无法核对而未修改。新亮度保留，不重试、不恢复旧值；不处理外接显示器。");
+        return (success, $"内置屏幕亮度{(success ? "已确认" : succeeded > 0 ? "部分完成" : "未确认")}：{succeeded}块面板读回确认{(delta.HasValue ? $"相对调整{delta.Value}个百分点（0–100%限幅）" : $"为{percent}%")}，{failed}块写入/读回失败或身份变化，{skipped}块接口缺失或身份无法核对而未修改。新亮度保留，不重试、不恢复旧值；不处理外接显示器。");
     }
 }

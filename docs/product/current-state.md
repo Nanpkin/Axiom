@@ -136,3 +136,10 @@
 
 
 本批同时接通“Windows报告的电池节能状态”`power.saver-state`，以及默认暂停的开启后调暗内置屏幕模板。公开GUID_POWER_SAVING_STATUS只作提示，读取GetSystemPowerStatus.SystemStatusFlag，仅文档0/1已知；不要求电脑有电池，不假定新版节能功能/强度支持，不以电量阈值/电源方案/模式替代。未知不当关闭，注册失败仅拒新条件，新消息不触发旧电源边沿；不组合方案切换或保持唤醒，不修改节能状态。两条件共用局部PowerContextObservation合并/失效/基线helper，各自状态解析和Provider独立。每能力4项合成检查通过，提取helper后方案4项直接复跑通过；Agent/Provider交叉构建通过。新增Windows原生用例仅自有窗口通知与只读SystemStatusFlag，Windows CI及真实设备/策略待验。
+
+
+## 亮度相对调整增量
+
+新增`display.brightness-adjust`与`display.hardware-brightness-adjust`，在已有内屏WMI/支持硬件屏模块中选择提高或降低1–100整数百分点；内屏沿用全部支持内屏，硬件沿用主屏/全部支持屏幕，旧绝对设置schema与默认行为不变。每块目标先读已知当前值再一次写读回，到原范围端点限幅；硬件用UInt64将幅度四舍五入到原生单位，粗粒度可能保持原值。未知不写，部分结果明确，不自动恢复或重复累加。
+
+两个默认暂停快捷键模板分别降低内屏5个百分点、提高主屏硬件亮度5个百分点；可编辑方向/幅度/延迟并保存、严格导入和暂停，界面退出后台继续。相对与绝对共享原native Commands准入，取消/超时保持原生资源到真实返回。2项新增合成检查及2个直接受影响的旧注册检查通过；Agent/Provider构建零警告/错误。未运行真实亮度读写或全套/目录预算；实际WMI/DDC/CI/粒度与驱动待设备验证。
