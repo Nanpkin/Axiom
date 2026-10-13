@@ -76,3 +76,4 @@ HardwareBrightnessTests
 
 BrightnessAdjustmentTests
 BrightnessRestoreTests
+CompositeEditorTests
