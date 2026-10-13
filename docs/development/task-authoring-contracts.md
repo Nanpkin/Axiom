@@ -163,7 +163,7 @@ Engine在新条件边沿/事件进入延迟前、延迟deadline以及队列取�
 
 ## 条件期间亮度与结束恢复
 
-`display.brightness.restore`/`display.hardware-brightness.restore`新schema 1沿原绝对percent/delay及硬件primary/all字段，不更改旧Command行为。只有持续检测组合，亮度模块各自固定`brightness`Desired资源，配置经严格校验后沿`RestorableSettingInvocations`规范化绝对目标；不同硬件selection同资源竞争，不在本lease内改目标。首次capture只Known，硬件原始DWORD范围/值保留而非重算百分比基线；更新百分比不重抓基线，相对增减保持一次Command。
+`display.brightness.restore`/`display.hardware-brightness.restore`新schema 1沿原绝对percent/delay及硬件primary/all字段，不更改旧Command行为。只有持续检测组合，亮度模块各自固定`brightness`Desired资源，配置经严格校验后沿`RestorableSettingInvocations`规范化绝对目标；不同硬件selection同资源竞争；范围改变先等待旧lease明确释放/清理确认才新捕获，不在原lease内换目标。首次capture只Known，硬件原始DWORD范围/值保留而非重算百分比基线；更新百分比不重抓基线，相对增减保持一次Command。
 
 本地两个native入口共享亮度ownership，恢复期间其他Axiom亮度写拒绝，外部变化仅在下一次更新/释放查询时核验，无周期读取或持续压制。原生worker固定所有WMI对象/物理句柄并同线程执行；displayOnly拓扑/恢复信号永久失效本轮，失败不枚举替代屏。per-target共享ConditionalSettingTransaction当前/最后确认相等检查，Unknown、不一致/其他来源改变后让出，不恢复猜测值；部分支持/未知/写读回/恢复与资源失败只输出计数，不输出设备描述或WMI身份。
 
