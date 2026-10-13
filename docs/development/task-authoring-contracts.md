@@ -168,3 +168,12 @@ Engine在新条件边沿/事件进入延迟前、延迟deadline以及队列取�
 本地两个native入口共享亮度ownership，恢复期间其他Axiom亮度写拒绝，外部变化仅在下一次更新/释放查询时核验，无周期读取或持续压制。原生worker固定所有WMI对象/物理句柄并同线程执行；displayOnly拓扑/恢复信号永久失效本轮，失败不枚举替代屏。per-target共享ConditionalSettingTransaction当前/最后确认相等检查，Unknown、不一致/其他来源改变后让出，不恢复猜测值；部分支持/未知/写读回/恢复与资源失败只输出计数，不输出设备描述或WMI身份。
 
 Release用独立清理token，末尾全部finally尝试清理，内屏对象及每组物理句柄清理异常不阻断其他资源。Apply/捕获/Release均10秒有界等待，调用者超时取消并不表示真实原生停止，资源与准入仍保留到worker真正返回；只按事件/条件生命周期工作，不重试或相对累加。比较与写入非原子、异常进程退出/驱动阻塞不能保证恢复，实机支持性待验。UI退出不结束后台租约；暂停、删除、Unknown及条件结束走共享租约释放回执。
+## 有界状态组合检测
+
+`TaskDetectionExpression(Kind, Invocation?, Children)`只支持leaf/all/any/not：leaf只有Invocation；all/any至少2个子节点；not恰好1个。根为深度1，最多4层、16叶、64节点，空组/混合叶与子节点/未知运算符/越界拒绝。没有脚本或任意表达式。`AutomationTask.DetectionExpression`非空时必须task schema3，`Detection`严格按内容等于深度优先有序首叶，仅供旧展示，绝不替代树执行。schema1/2不得携树；3可保留原TimeWindow并沿原动作门禁校验。默认null/false新增字段不写旧单任务JSON。
+
+Snapshot.CompositeDetectionVersion=1及所选action.SupportsCompositeDetection=true共同协商；只有检测IsStateCondition=true可选为叶，脉冲/快捷键/定时/启动检测保留单检测路径、不组合或否定。PluginTaskRuntime启用compiler支持并登记每个允许对，编译、保存、加载和Router逐叶检查同一个动作/同一个支持树的backend，继承全部反馈排除。HDR旧backend/legacy转换明确拒绝树。Domain已有All/Any/Not三值：NOT Unknown=Unknown，AND中明确false可决定false，OR中明确true可决定true；Engine依赖集合及观察计划去重合并，未知/结束/暂停/源释放撤销持续授权，首次及恢复snapshot不补Command。
+
+SQLite无需新配置表：schema3树JSON保存/读回，首次保存3时在同一事务把user_version提升3，重新打开不降版；旧应用在读取/覆盖前因数据库版本较新拒绝，旧1/2记录由新应用完整读取。任务管道仍版本1/原frame上限，save先检查树结构与schema，未知新树不能落回anchor。AI建议组合使用UsageImport.Version2且携同一DetectionExpression/首叶Detection，版本1不能夹树；逐叶解析观察别名、必填/手填和能力约束，每叶支持同动作且目录协商才给默认暂停schema3草稿。匿名摘要/机器目录保留协商及state/action标记，原64KiB不变。
+
+“非锁定”使用独立`session.lock-state`，state=locked|unlocked，资源current-session为锁定bool；只读WTSInfoEx当前Active会话及锁元数据，未知/非活动不假未锁定，不读取用户名等内容。WindowsSessionEvents(lockStateOnly:true)先订阅后初读；7/8仅提示查询，1/3/5/9及恢复先Unknown再重查建基线，2/4/6及挂起只失效等待报告。64有界合并保留reset，队列失败立即标记并清缓存，新kind不进旧租约；没有轮询、锁屏请求或自动解锁。允许提醒、播放设置/应用音量及保持唤醒，排除锁屏/显示动作反馈。

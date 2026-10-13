@@ -12,7 +12,7 @@ public static class PowerStateCapabilities
             [new("ac", "已接电"), new("battery", "电池供电"), new("battery-below", "电池供电且低于阈值")]),
          new("threshold", "低电量阈值（%）", TaskFieldKind.Number, true, "仅低电量条件使用；严格低于此值才成立。", "20", 2, [], Minimum: 1, Maximum: 99)],
         "共享 Windows 供电和电量通知，通知后读取当前状态，无周期查询。首次、重新启用、睡眠恢复或未知状态恢复只建立基线，不补一次性动作；条件期间保持唤醒按已知当前状态生效。",
-        "Windows 未知供电、电量或查询失败时，相关条件为未知，不当作低电量。无电池不会满足低电量条件。阈值变化前已发生的电量跨越不补执行；短暂变化可能在查询前已结束。");
+        "Windows 未知供电、电量或查询失败时，相关条件为未知，不当作低电量。无电池不会满足低电量条件。阈值变化前已发生的电量跨越不补执行；短暂变化可能在查询前已结束。", IsStateCondition: true);
 
     public static string Validate(TaskInvocation invocation)
     {

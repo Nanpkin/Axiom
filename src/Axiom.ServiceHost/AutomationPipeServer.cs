@@ -38,7 +38,8 @@ internal sealed class AutomationPipeServer(ImmutableArray<IAutomationTaskBackend
             Capabilities = [.. snapshots.SelectMany(x => x.Capabilities).DistinctBy(x => (x.Kind, x.Id))],
             Combinations = [.. snapshots.SelectMany(x => x.Combinations)],
             Observations = [.. snapshots.SelectMany(x => x.Observations)],
-            DetectionAvailable = snapshots.All(x => x.DetectionAvailable)
+            DetectionAvailable = snapshots.All(x => x.DetectionAvailable),
+            CompositeDetectionVersion = snapshots.Max(x => x.CompositeDetectionVersion)
         };
     }
     private async Task HandleAsync(NamedPipeServerStream pipe)
