@@ -61,7 +61,7 @@ internal sealed class BrightnessRestoreSession : IRestorableSettingSession
     internal static async Task<IRestorableSettingSession> CreateAsync(Func<CancellationToken, BrightnessRestoreCapture> capture,
         string? selection, TimeSpan timeout, CancellationToken token, TimeProvider? time = null)
     {
-        token.ThrowIfCancellationRequested(); var ownership = BrightnessNativeOwnership.TryAcquire() ?? throw new IOException("Axiom已有亮度操作或恢复租约；本次不排队、不修改。");
+        token.ThrowIfCancellationRequested(); var ownership = BrightnessNativeOwnership.TryAcquire() ?? throw new IOException("Axiom已有亮度操作或恢复租约；请先暂停已有亮度恢复任务，并等待原生操作与恢复清理结束，再启用另一亮度恢复任务。本次不排队、不修改。");
         var session = new BrightnessRestoreSession(selection, timeout, time ?? TimeProvider.System, token);
         try { new Thread(() => session.Run(capture, ownership)) { IsBackground = true, Name = "Axiom owned brightness restoration" }.Start(); }
         catch { ownership.Dispose(); session.captureStop.Dispose(); throw; }
