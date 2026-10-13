@@ -75,6 +75,7 @@ public static class AutomationProtocol
             _ => false
         };
         if (!valid) throw new InvalidDataException("请求操作或字段无效。");
+        if (request.Type == "save") TaskDetectionExpressions.ValidateTask(request.Task!);
     }
     public static async Task WriteAsync(Stream stream, AutomationMessage message, CancellationToken token)
     {

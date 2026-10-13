@@ -34,6 +34,7 @@ public interface IAutomationPlugin
 public interface IAutomationTaskBackend
 {
     ImmutableArray<TaskCombination> Combinations { get; }
+    bool SupportsCompositeDetection => false;
     Task<AutomationSnapshot> ReadAsync(CancellationToken token);
     Task<AutomationTask> SaveAsync(AutomationTask task, CancellationToken token);
     Task DeleteAsync(string id, long expectedVersion, CancellationToken token);
@@ -44,10 +45,12 @@ public interface IAutomationRuntimeLifetime
     Task EnsureSafeToStopAsync(CancellationToken token);
 }
 
-public sealed class AutomationTaskCompiler
+public sealed class AutomationTaskCompiler(bool supportsCompositeDetection = false)
 {
     private readonly Dictionary<string, ITaskDetectionCompiler> detections = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ITaskActionCompiler> actions = new(StringComparer.Ordinal);
+    private readonly HashSet<TaskCombination> combinations = [];
+    public void RegisterCombination(TaskCombination combination) => combinations.Add(combination);
     public void Register(ITaskDetectionCompiler compiler)
     {
         CheckDescriptor(compiler.Descriptor, TaskCapabilityKind.Detection);
@@ -58,26 +61,48 @@ public sealed class AutomationTaskCompiler
         CheckDescriptor(compiler.Descriptor, TaskCapabilityKind.Action);
         if (!actions.TryAdd(compiler.Descriptor.Id, compiler)) throw new ArgumentException("动作类型重复。");
     }
-    public ImmutableArray<TaskCapability> Catalog => [.. detections.Values.Select(x => x.Descriptor), .. actions.Values.Select(x => x.Descriptor with { SupportsTimeWindow = x.SupportsTimeWindow })];
+    public ImmutableArray<TaskCapability> Catalog => [.. detections.Values.Select(x => x.Descriptor), .. actions.Values.Select(x => x.Descriptor with { SupportsTimeWindow = x.SupportsTimeWindow, SupportsCompositeDetection = supportsCompositeDetection })];
     public RuleDefinition Compile(AutomationTask task, string principal, ResourceScope scope)
     {
         Validate(task);
         var timing = actions[task.Action.CapabilityId].Timing(task.Action);
         return new(task.Id, Math.Max(1, task.Version), principal, scope,
-            detections[task.Detection.CapabilityId].Compile(task.Detection, scope, task.Id),
+            task.DetectionExpression is null ? detections[task.Detection.CapabilityId].Compile(task.Detection, scope, task.Id) : CompileExpression(task.DetectionExpression),
             actions[task.Action.CapabilityId].Compile(task.Action, scope), enabled: !task.Paused,
             timing: new(timing.Debounce, timing.MinimumDuration, timing.Cooldown, timing.MaximumInputAge, task.TimeWindow));
+        RuleCondition CompileExpression(TaskDetectionExpression node) => node.Kind switch
+        {
+            "leaf" => CompileLeaf(node.Invocation!),
+            "all" => RuleCondition.All([.. node.Children.Select(CompileExpression)]),
+            "any" => RuleCondition.Any([.. node.Children.Select(CompileExpression)]),
+            "not" => RuleCondition.Not(CompileExpression(node.Children[0])),
+            _ => throw new ArgumentException("无效组合检测。")
+        };
+        RuleCondition CompileLeaf(TaskInvocation leaf)
+        {
+            var condition = detections[leaf.CapabilityId].Compile(leaf, scope, task.Id);
+            if (HasEvent(condition)) throw new ArgumentException("事件脉冲不能用于状态组合或非条件。");
+            return condition;
+        }
+        static bool HasEvent(RuleCondition condition) => condition.Kind == ConditionKind.Event || condition.Children.Any(HasEvent);
     }
     public void Validate(AutomationTask task)
     {
-        if (task.SchemaVersion != (task.TimeWindow is null ? 1 : 2) || !Guid.TryParseExact(task.Id, "D", out _) || task.Version < 0 ||
+        var leaves = TaskDetectionExpressions.ValidateTask(task);
+        if (!Guid.TryParseExact(task.Id, "D", out _) || task.Version < 0 ||
             string.IsNullOrWhiteSpace(task.Title) || task.Title.Length > 120 || task.Detection is null || task.Action is null)
             throw new ArgumentException("任务格式或版本无效。");
-        if (!detections.TryGetValue(task.Detection.CapabilityId, out var detection) ||
-            !actions.TryGetValue(task.Action.CapabilityId, out var action)) throw new ArgumentException("任务使用了未注册的检测或动作。");
+        if (!actions.TryGetValue(task.Action.CapabilityId, out var action)) throw new ArgumentException("任务使用了未注册的动作。");
+        if (task.DetectionExpression is not null && !supportsCompositeDetection) throw new ArgumentException("此后台不支持组合检测，不能只执行首条件。");
+        foreach (var leaf in leaves)
+        {
+            if (!detections.TryGetValue(leaf.CapabilityId, out var detection)) throw new ArgumentException("任务使用了未注册的检测。");
+            ValidateInvocation(leaf, detection.Descriptor);
+            if (task.DetectionExpression is not null && (!detection.Descriptor.IsStateCondition || !combinations.Contains(new(leaf.CapabilityId, task.Action.CapabilityId))))
+                throw new ArgumentException("每个组合叶必须是状态条件且支持同一个动作；事件及反馈组合不可使用。");
+        }
         task.TimeWindow?.Validate();
         if (task.TimeWindow is not null && !action.SupportsTimeWindow) throw new ArgumentException("此动作暂不支持时间段限制，请关闭限制或选择一次性动作。");
-        ValidateInvocation(task.Detection, detection.Descriptor);
         ValidateInvocation(task.Action, action.Descriptor);
     }
     public static void ValidateInvocation(TaskInvocation invocation, TaskCapability descriptor)
@@ -121,6 +146,11 @@ public sealed class AutomationTaskRouter
         var combinations = this.backends.SelectMany(x => x.Combinations).ToArray();
         if (combinations.Distinct().Count() != combinations.Length) throw new ArgumentException("任务组合重复注册。");
     }
-    public IAutomationTaskBackend Resolve(AutomationTask task) => backends.SingleOrDefault(x => x.Combinations.Contains(new(task.Detection.CapabilityId, task.Action.CapabilityId)))
-        ?? throw new ArgumentException("这组检测与动作尚无可用的执行适配器。");
+    public IAutomationTaskBackend Resolve(AutomationTask task)
+    {
+        var leaves = TaskDetectionExpressions.ValidateTask(task);
+        return backends.SingleOrDefault(x => (task.DetectionExpression is null || x.SupportsCompositeDetection) &&
+            leaves.All(leaf => x.Combinations.Contains(new(leaf.CapabilityId, task.Action.CapabilityId))))
+            ?? throw new ArgumentException("这组检测与动作没有支持全部条件的执行适配器；不会只执行首条件。");
+    }
 }

@@ -12,6 +12,9 @@ public static class WindowsSessionLock
     public static Task<(bool Success, string Reason)> LockAsync(CancellationToken token) =>
         Commands.RunAsync(cancellation => SessionLockOperation.Apply(new Api(cancellation), cancellation), token);
 
+    public static bool? ReadLocked(CancellationToken token) => new Api(token).GetCurrentState() switch
+    { SessionLockState.Locked => true, SessionLockState.Unlocked => false, _ => null };
+
     private sealed class Api(CancellationToken token) : ISessionLockApi
     {
         public SessionLockState GetCurrentState()

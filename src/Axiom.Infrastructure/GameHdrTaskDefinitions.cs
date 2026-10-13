@@ -11,7 +11,7 @@ public sealed class ProcessRunningTaskDetection : ITaskDetectionCompiler
         "程序", "程序运行", "检测当前用户会话中指定程序的运行状态。",
         [new("processNames", "检测的程序", TaskFieldKind.ProcessSelection, true,
             "任意一个程序运行即满足条件，包含没有窗口的进程。仅检测当前用户会话。", null, 32768, [])],
-        "任意一个指定程序运行期间条件成立；全部退出后条件结束。", "");
+        "任意一个指定程序运行期间条件成立；全部退出后条件结束。", "", IsStateCondition: true);
     public RuleCondition Compile(TaskInvocation configuration, ResourceScope scope)
     {
         AutomationTaskCompiler.ValidateInvocation(configuration, Descriptor);
@@ -66,6 +66,8 @@ public static class GameHdrTasks
         new("display.hdr", 1, ImmutableDictionary<string, string>.Empty.Add("display", rule.DisplayPath).Add("enabled", rule.HdrEnabled ? "true" : "false")));
     public static GameHdrRuleDto ToLegacy(AutomationTask task)
     {
+        if (task.DetectionExpression is not null || task.SchemaVersion == 3) throw new ArgumentException("HDR旧适配器不支持组合检测，不能忽略条件树。");
+        TaskDetectionExpressions.ValidateTask(task);
         if (task.TimeWindow is not null) throw new ArgumentException("HDR 不支持命令时间段限制。");
         if (task.Detection.CapabilityId != "process.running" || task.Action.CapabilityId != "display.hdr")
             throw new ArgumentException("当前适配器不支持此任务组合。");

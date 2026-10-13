@@ -7,9 +7,9 @@
 用户新增能在组合状态成立期间控制明确设置，条件结束后按固定目标和基线恢复；并通过快捷键相对调整亮度或一次切换任务栏自动隐藏。负责人协调审查/Git发布，独立实现agent提交后由整合agent接真实注册/模板/文档/入口。
 
 - [x] 内屏/支持硬件屏相对亮度及任务栏AutoHide一次开/关已整合；实际注册/严格导入/SQLite保存及暂停模板检查、Agent/Host构建通过。
-- [ ] AND/OR/NOT真实UI与Host，schema3保持legacy首leaf anchor、深度4/叶16、Snapshots CompositeVersion1。
-- [ ] 明确`*.restore`状态动作、共享Desired租约/胜者更新与亮度恢复；旧Command schema不变，Unknown和固定身份/手动接管边界保留。
-- [ ] 全功能接齐后统一一次原64KiB匿名目录完整fields/pairs、复合导入/保存及CLI构建；不放宽预算、不删机器参数，不本地重跑旧全套。
+- [x] AND/OR/NOT真实UI与Host，schema3保持legacy首leaf anchor、深度4/叶16、Snapshots CompositeVersion1。
+- [x] 明确`*.restore`状态动作、共享Desired租约/胜者更新与亮度恢复；旧Command schema不变，Unknown和固定身份/手动接管边界保留。
+- [x] 最终实际Compiler.Catalog原64KiB完整fields/pairs、复合恢复导入/暂停保存及Agent/Host CLI构建；不放宽预算、不删机器参数，不本地重跑旧全套。
 - [ ] Windows实效单列：未操作真实亮度/任务栏/麦克风/电源/按键，设备及桌面效果由Windows环境验收。
 
 ## 当前交付与接续

@@ -7,22 +7,29 @@ using System.Security.Principal;
 namespace Axiom.Providers.Windows;
 
 [SupportedOSPlatform("windows")]
-public static class WindowsHardwareBrightness
+public static partial class WindowsHardwareBrightness
 {
     private static readonly BoundedNativeCommand Commands = new("硬件屏幕亮度", TimeSpan.FromSeconds(10));
-    public static Task DrainAsync() => Commands.DrainAsync().WaitAsync(TimeSpan.FromSeconds(10));
+    public static Task DrainAsync() => Task.WhenAll(Commands.DrainAsync(), BrightnessNativeOwnership.DrainAsync()).WaitAsync(TimeSpan.FromSeconds(10));
     public static Task<(bool Success, string Reason)> SetAsync(string target, int percent, string sid, CancellationToken token)
     {
         if (target is not ("primary" or "all") || percent is < 0 or > 100) throw new ArgumentException("硬件亮度参数无效。");
-        return Commands.RunAsync(cancellation => HardwareBrightnessOperation.Apply(new Api(sid, cancellation), target, percent, cancellation), token);
+        return RunSingleAsync(cancellation => HardwareBrightnessOperation.Apply(new Api(sid, cancellation), target, percent, cancellation), token);
     }
     public static Task<(bool Success, string Reason)> AdjustAsync(string target, string operation, int step, string sid, CancellationToken token)
     {
         if (target is not ("primary" or "all") || operation is not ("increase" or "decrease") || step is < 1 or > 100) throw new ArgumentException("相对亮度参数无效。");
-        return Commands.RunAsync(cancellation => HardwareBrightnessOperation.Adjust(new Api(sid, cancellation), target, operation, step, cancellation), token);
+        return RunSingleAsync(cancellation => HardwareBrightnessOperation.Adjust(new Api(sid, cancellation), target, operation, step, cancellation), token);
     }
+    private static Task<(bool Success, string Reason)> RunSingleAsync(Func<CancellationToken, (bool Success, string Reason)> action, CancellationToken token) =>
+        Commands.RunAsync(cancellation =>
+        {
+            using var ownership = BrightnessNativeOwnership.TryAcquire();
+            return ownership is null ? (false, "Axiom已有亮度恢复租约或原生操作；请先暂停已有亮度恢复任务并等待释放完成，再执行其他亮度动作。本次未执行，不排队。") : action(cancellation);
+        }, token);
     private sealed class Api(string sid, CancellationToken token) : IHardwareBrightnessApi
     {
+        internal void UseToken(CancellationToken value) => token = value;
         public bool IsAuthorized()
         {
             token.ThrowIfCancellationRequested();

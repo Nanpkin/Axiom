@@ -22,6 +22,7 @@ public sealed class WindowsSessionEvents : IDisposable
     private readonly bool schemeOnly;
     private readonly bool saverOnly;
     private readonly bool presenceOnly;
+    private readonly bool lockStateOnly;
     private volatile bool failed;
     private bool disposed;
     private readonly Hub owner;
@@ -30,9 +31,9 @@ public sealed class WindowsSessionEvents : IDisposable
     public ChannelReader<byte> ClockChanges => clocks.Reader;
     public bool Failed => failed;
     internal nint NotificationWindow => owner.Window;
-    public WindowsSessionEvents(bool clockOnly = false, bool usbOnly = false, bool powerOnly = false, bool displayOnly = false, bool screenPowerOnly = false, bool schemeOnly = false, bool saverOnly = false, bool presenceOnly = false)
+    public WindowsSessionEvents(bool clockOnly = false, bool usbOnly = false, bool powerOnly = false, bool displayOnly = false, bool screenPowerOnly = false, bool schemeOnly = false, bool saverOnly = false, bool presenceOnly = false, bool lockStateOnly = false)
     {
-        this.clockOnly = clockOnly; this.usbOnly = usbOnly; this.powerOnly = powerOnly; this.displayOnly = displayOnly; this.screenPowerOnly = screenPowerOnly; this.schemeOnly = schemeOnly; this.saverOnly = saverOnly; this.presenceOnly = presenceOnly;
+        this.clockOnly = clockOnly; this.usbOnly = usbOnly; this.powerOnly = powerOnly; this.displayOnly = displayOnly; this.screenPowerOnly = screenPowerOnly; this.schemeOnly = schemeOnly; this.saverOnly = saverOnly; this.presenceOnly = presenceOnly; this.lockStateOnly = lockStateOnly;
         lock (Gate)
         {
             shared ??= new Hub(); owner = shared; owner.Clients.Add(this);
@@ -173,6 +174,9 @@ public sealed class WindowsSessionEvents : IDisposable
             if (message == 0x007E) { Publish("display-changed"); return 0; } // WM_DISPLAYCHANGE; do not retain resolution/depth payload
             if (message == 0x02B1)
             {
+                if (w is 1 or 3 or 5 or 9) LockStateChanged("session-lock-resumed");
+                if (w is 2 or 4 or 6) LockStateChanged("session-lock-reset");
+                if (w is 7 or 8) LockStateChanged("session-lock-changed");
                 if (w is 1 or 2 or 3 or 4 or 5 or 6 or 9) PresenceStateChanged(null); // connection/logon/control change invalidates the session report
                 if (w is 1 or 2 or 3 or 4) ScreenStateChanged(null); // console/remote attachment is not a physical screen report
                 if (w == 7) Publish("locked"); else if (w == 8) Publish("unlocked");
@@ -212,8 +216,8 @@ public sealed class WindowsSessionEvents : IDisposable
                     }
                     else if (setting == AcDcPowerSource) PowerStateChanged();
                 }
-                if (w == 0x04) { PresenceStateChanged(null); ScreenStateChanged(null); SchemeStateChanged(true); SaverStateChanged(true); } // suspend invalidates cached state before possible resume notifications
-                if (w is 0x07 or 0x12) PresenceStateChanged(null);
+                if (w == 0x04) { LockStateChanged("session-lock-reset"); PresenceStateChanged(null); ScreenStateChanged(null); SchemeStateChanged(true); SaverStateChanged(true); } // suspend invalidates cached state before possible resume notifications
+                if (w is 0x07 or 0x12) { LockStateChanged("session-lock-resumed"); PresenceStateChanged(null); }
                 if (w == 0x12) { ScreenStateChanged(null); ClockChanged(); Publish("resumed"); } // automatic resume; do not also emit the interactive-resume broadcast
                 if (w == 0x0A)
                 {
@@ -238,41 +242,52 @@ public sealed class WindowsSessionEvents : IDisposable
             lock (Gate) foreach (var client in Clients)
             {
                 client.failed = true;
-                if (client.presenceOnly) while (client.queue.Reader.TryRead(out _)) { }
+                if (client.presenceOnly || client.lockStateOnly) while (client.queue.Reader.TryRead(out _)) { }
                 client.queue.Writer.TryComplete(error); client.clocks.Writer.TryComplete(error);
             }
         }
         private void Publish(string kind)
         {
             lock (Gate) foreach (var client in Clients)
-                if (!client.presenceOnly && !client.clockOnly && !client.screenPowerOnly && (!client.displayOnly || kind is "display-changed" or "resumed") && (!client.powerOnly || kind == "resumed") && (!client.schemeOnly || kind == "resumed") && (!client.saverOnly || kind == "resumed") && (!client.usbOnly || kind is "usb-arrived" or "usb-removed" or "resumed") && !client.queue.Writer.TryWrite(kind))
+                if (!client.lockStateOnly && !client.presenceOnly && !client.clockOnly && !client.screenPowerOnly && (!client.displayOnly || kind is "display-changed" or "resumed") && (!client.powerOnly || kind == "resumed") && (!client.schemeOnly || kind == "resumed") && (!client.saverOnly || kind == "resumed") && (!client.usbOnly || kind is "usb-arrived" or "usb-removed" or "resumed") && !client.queue.Writer.TryWrite(kind))
                 { client.failed = true; client.queue.Writer.TryComplete(new IOException("系统事件队列已满，检测状态未知。")); }
         }
         private void PowerStateChanged()
         {
             lock (Gate) foreach (var client in Clients)
-                if (!client.presenceOnly && client.powerOnly && !client.schemeOnly && !client.saverOnly && !client.clockOnly && !client.usbOnly && !client.screenPowerOnly && !client.queue.Writer.TryWrite("power-state-changed"))
+                if (!client.lockStateOnly && !client.presenceOnly && client.powerOnly && !client.schemeOnly && !client.saverOnly && !client.clockOnly && !client.usbOnly && !client.screenPowerOnly && !client.queue.Writer.TryWrite("power-state-changed"))
                 { client.failed = true; client.queue.Writer.TryComplete(new IOException("供电状态通知队列已满，检测状态未知。")); }
         }
         private void SaverStateChanged(bool reset)
         {
             lock (Gate) foreach (var client in Clients)
-                if (client.saverOnly && !client.presenceOnly && !client.schemeOnly && !client.clockOnly && !client.usbOnly && !client.powerOnly && !client.displayOnly && !client.screenPowerOnly &&
+                if (!client.lockStateOnly && client.saverOnly && !client.presenceOnly && !client.schemeOnly && !client.clockOnly && !client.usbOnly && !client.powerOnly && !client.displayOnly && !client.screenPowerOnly &&
                     !client.queue.Writer.TryWrite(reset ? "power-saver-reset" : "power-saver-changed"))
                 { client.failed = true; client.queue.Writer.TryComplete(new IOException("Windows节能通知队列已满，状态未知。")); }
         }
         private void SchemeStateChanged(bool reset)
         {
             lock (Gate) foreach (var client in Clients)
-                if (!client.presenceOnly && client.schemeOnly && !client.saverOnly && !client.clockOnly && !client.usbOnly && !client.powerOnly && !client.displayOnly && !client.screenPowerOnly &&
+                if (!client.lockStateOnly && !client.presenceOnly && client.schemeOnly && !client.saverOnly && !client.clockOnly && !client.usbOnly && !client.powerOnly && !client.displayOnly && !client.screenPowerOnly &&
                     !client.queue.Writer.TryWrite(reset ? "power-scheme-reset" : "power-scheme-changed"))
                 { client.failed = true; client.queue.Writer.TryComplete(new IOException("电源方案通知队列已满，状态未知。")); }
+        }
+        private void LockStateChanged(string kind)
+        {
+            lock (Gate) foreach (var client in Clients)
+                if (client.lockStateOnly && !client.presenceOnly && !client.saverOnly && !client.schemeOnly && !client.clockOnly && !client.usbOnly && !client.powerOnly && !client.displayOnly && !client.screenPowerOnly &&
+                    !client.queue.Writer.TryWrite(kind))
+                {
+                    client.failed = true;
+                    while (client.queue.Reader.TryRead(out _)) { }
+                    client.queue.Writer.TryComplete(new IOException("会话锁定通知队列已满，状态未知。"));
+                }
         }
         private void PresenceStateChanged(uint? state)
         {
             var kind = state switch { 0 => "presence-present", 1 => "presence-absent", 2 => "presence-inactive", _ => "presence-reset" };
             lock (Gate) foreach (var client in Clients)
-                if (client.presenceOnly && !client.saverOnly && !client.schemeOnly && !client.clockOnly && !client.usbOnly && !client.powerOnly && !client.displayOnly && !client.screenPowerOnly &&
+                if (!client.lockStateOnly && client.presenceOnly && !client.saverOnly && !client.schemeOnly && !client.clockOnly && !client.usbOnly && !client.powerOnly && !client.displayOnly && !client.screenPowerOnly &&
                     !client.queue.Writer.TryWrite(kind))
                 {
                     client.failed = true;
@@ -284,7 +299,7 @@ public sealed class WindowsSessionEvents : IDisposable
         {
             var kind = state switch { 0 => "screen-off", 1 => "screen-on", 2 => "screen-dim", _ => "screen-reset" };
             lock (Gate) foreach (var client in Clients)
-                if (!client.presenceOnly && client.screenPowerOnly && !client.schemeOnly && !client.saverOnly && !client.clockOnly && !client.usbOnly && !client.powerOnly && !client.displayOnly && !client.queue.Writer.TryWrite(kind))
+                if (!client.lockStateOnly && !client.presenceOnly && client.screenPowerOnly && !client.schemeOnly && !client.saverOnly && !client.clockOnly && !client.usbOnly && !client.powerOnly && !client.displayOnly && !client.queue.Writer.TryWrite(kind))
                 { client.failed = true; client.queue.Writer.TryComplete(new IOException("屏幕电源通知队列已满，状态未知。")); }
         }
     }

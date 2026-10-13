@@ -5,7 +5,7 @@ using System.Runtime.Versioning;
 namespace Axiom.Providers.Windows;
 
 [SupportedOSPlatform("windows")]
-public static class WindowsPowerScheme
+public static partial class WindowsPowerScheme
 {
     private static readonly BoundedNativeCommand Commands = new("电源方案", TimeSpan.FromSeconds(5));
     public static Task DrainAsync() => Commands.DrainAsync().WaitAsync(TimeSpan.FromSeconds(5));

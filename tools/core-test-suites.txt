@@ -43,6 +43,7 @@ KeepAwakeTests
 WifiProfileTests
 PowerSchemeTests
 TaskbarAutoHideTests
+TaskbarAutoHideRestoreTests
 UsbDeviceTests
 WindowMonitorTests
 SessionLockTests
@@ -74,3 +75,7 @@ WorkPreparationTests
 HardwareBrightnessTests
 
 BrightnessAdjustmentTests
+BrightnessRestoreTests
+CompositeEditorTests
+CompositeDetectionTests
+ConditionRestoreTests
