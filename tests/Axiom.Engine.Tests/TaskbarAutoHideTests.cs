@@ -81,11 +81,11 @@ public sealed class TaskbarAutoHideTests
         Assert.ThrowsAny<OperationCanceledException>(() => TaskbarAutoHideOperation.Apply(written, true, afterWrite.Token)); Assert.Equal(1u, written.Flags); Assert.Equal(1, written.Writes); Assert.Equal(1, written.Reads);
         using var release = new ManualResetEventSlim(); var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var api = new Api { AfterWrite = () => { entered.SetResult(); release.Wait(); } };
-        var commands = new BoundedNativeCommand("任务栏", TimeSpan.FromMilliseconds(50));
-        var request = commands.RunAsync(token => TaskbarAutoHideOperation.Apply(api, true, token), default);
+        var time = new ManualTimeProvider(); var commands = new BoundedNativeCommand("任务栏", TimeSpan.FromSeconds(5));
+        var request = commands.RunAsync(token => TaskbarAutoHideOperation.Apply(api, true, token), default, time);
         try
         {
-            await entered.Task.WaitAsync(TimeSpan.FromSeconds(2)); var timedOut = await request;
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(2)); time.Advance(TimeSpan.FromSeconds(5)); var timedOut = await request;
             Assert.False(timedOut.Success); Assert.Contains("超时", timedOut.Reason); Assert.False(commands.DrainAsync().IsCompleted);
             var overlap = await commands.RunAsync(token => TaskbarAutoHideOperation.Apply(api, false, token), default);
             Assert.False(overlap.Success); Assert.Contains("不排队", overlap.Reason); Assert.Equal(1u, api.Flags); Assert.Equal(1, api.Writes);
