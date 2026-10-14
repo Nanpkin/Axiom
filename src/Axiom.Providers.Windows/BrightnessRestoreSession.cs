@@ -122,17 +122,19 @@ internal sealed class BrightnessRestoreSession : IRestorableSettingSession
                 {
                     release = request; releaseAttempted = true; receipt = Restore(capture, request.Token); break;
                 }
-                try
+                CompleteApply(phase, request.Result, () =>
                 {
-                    var applied = Apply(capture, request.Percent.Value, request.Token);
-                    if (!applied.Owned) Interlocked.Exchange(ref terminal, 1);
-                    request.Result.TrySetResult(applied);
-                }
-                catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
-                {
-                    Interlocked.Exchange(ref terminal, 1); request.Result.TrySetResult(new(false, "亮度设置未确认；不重新捕获或重试，结束时仅恢复仍归本次租约所有的已确认值。", false));
-                }
-                finally { phase.Release(); }
+                    try
+                    {
+                        var applied = Apply(capture, request.Percent.Value, request.Token);
+                        if (!applied.Owned) Interlocked.Exchange(ref terminal, 1);
+                        return applied;
+                    }
+                    catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
+                    {
+                        Interlocked.Exchange(ref terminal, 1); return new(false, "亮度设置未确认；不重新捕获或重试，结束时仅恢复仍归本次租约所有的已确认值。", false);
+                    }
+                });
                 if (Volatile.Read(ref closeRequested) != 0) break;
             }
         }
@@ -155,6 +157,15 @@ internal sealed class BrightnessRestoreSession : IRestorableSettingSession
             if (release is not null) phase.Release();
             captureStop.Dispose(); ownership.Dispose(); stopped.TrySetResult(receipt); release?.Result.TrySetResult(receipt);
         }
+    }
+    internal static void CompleteApply(SemaphoreSlim admission, TaskCompletionSource<RestorableSettingResult> completion,
+        Func<RestorableSettingResult> apply)
+    {
+        RestorableSettingResult receipt;
+        try { receipt = apply(); }
+        finally { admission.Release(); }
+        // An awaiting consumer may run before TrySetResult returns, even with asynchronous continuations.
+        completion.TrySetResult(receipt);
     }
     private static RestorableSettingResult Apply(BrightnessRestoreCapture capture, int percent, CancellationToken token)
     {

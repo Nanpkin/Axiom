@@ -13,6 +13,10 @@
 
 ## 已实现
 
+分类窗口已随[PR #17](https://github.com/Starvan/Axiom/pull/17)合入main cfdf3e1dc5474ec0170f454f5a688c633b1dffeb，[准确PR检查38571798623](https://github.com/Starvan/Axiom/actions/runs/38571798623)及[main检查38572936430](https://github.com/Starvan/Axiom/actions/runs/38572936430)全部成功。本机已验来源与该main的源码/测试/构建工具一致。v0.2.0-preview.20261014.2标签已推，但[发布重复检查38573635790](https://github.com/Starvan/Axiom/actions/runs/38573635790)的Windows核心遇到硬件亮度恢复第二次Apply未持有失败，尚未发布分发资产；正独立定位回执/准入释放时序，不重写该标签。
+
+发布检查暴露的亮度竞争已在独立修复分支完成：原worker先发布回执再释放phase，续体立即第二次Apply可能误报忙。改为操作完成→terminal决定→释放准入→发布成功/失败回执，原阻塞/取消/超时仍由worker真实结束才释放。新确定性回归反转旧顺序立即失败；15项亮度相关与完整核心6+748项通过，Provider/Agent构建零警告错误。尚待新来源CI/发布及本机同步，分类UI现有实机结论保留。
+
 本轮新增：新建/编辑任务的检测类型、动作类型以及组合叶子状态类型，点击“选择/更改”打开应用内分类窗口；按声明类别浏览、搜索名称/说明/类别、单选并查看行为说明，“选用”才回填。取消和确认同类型保留原参数，空结果不自动选中，动作及组合叶子仍按兼容性过滤。新增6项选择检查与3项既有受控运行时gap/配置竞争回归，最终单核完整核心6+747项通过，原断言/期限保留；WinUI Release构建零警告错误。固定本机预览 `0.2.0-preview.local.20261014.2` 已正常更新启动，干净来源b2f397ae985bd86426bb656c8774598cb0e03fc9；真实UI主流程、800×650两主题的三条完整候选/滚动/底部按钮、重开定位原选项、Esc/标准关闭与规则指纹保持通过，登录启动保持启用并指向固定预览。匿名证据见[UI验收](../development/preview-ui-acceptance.md)。[PR #17](https://github.com/Starvan/Axiom/pull/17)首轮失败不计通过，最终CI/发布尚未完成；进度见[本轮计划](../exec-plans/active/categorized-capability-picker.md)。
 
 | 场景 | 当前行为和限制 |
