@@ -75,8 +75,12 @@ public static partial class WindowsHardwareBrightness
         }
         public HardwareBrightnessRange? Read(nint monitor)
         {
-            token.ThrowIfCancellationRequested();
-            return GetMonitorBrightness(monitor, out var minimum, out var current, out var maximum) ? new(minimum, current, maximum) : null;
+            return HardwareBrightnessReadPolicy.Read(() =>
+            {
+                var accepted = GetMonitorBrightness(monitor, out var minimum, out var current, out var maximum);
+                var error = accepted ? 0 : Marshal.GetLastPInvokeError();
+                return (accepted ? new HardwareBrightnessRange(minimum, current, maximum) : null, error);
+            }, token);
         }
         public bool Set(nint monitor, uint brightness)
         {

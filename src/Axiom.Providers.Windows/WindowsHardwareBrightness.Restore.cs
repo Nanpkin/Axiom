@@ -42,20 +42,9 @@ public static partial class WindowsHardwareBrightness
                 token.ThrowIfCancellationRequested();
                 try
                 {
-                    var caps = api.Capabilities(monitor); token.ThrowIfCancellationRequested();
-                    if (!caps.HasValue) { unknown++; continue; }
-                    if ((caps.Value & 2) == 0) { unsupported++; continue; }
-                    var baseline = api.Read(monitor); token.ThrowIfCancellationRequested();
-                    if (!topology.Valid || HardwareBrightnessOperation.Map(baseline, 0) is null) { unknown++; continue; }
-                    targets.Add(new(baseline!.Current, p => HardwareBrightnessOperation.Map(baseline, p),
-                        () =>
-                        {
-                            if (!topology.Valid || !api.IsAuthorized()) return null;
-                            var currentCaps = api.Capabilities(monitor);
-                            if (!currentCaps.HasValue || (currentCaps.Value & 2) == 0) return null;
-                            var read = api.Read(monitor);
-                            return read is not null && read.Minimum == baseline.Minimum && read.Maximum == baseline.Maximum && HardwareBrightnessOperation.Map(read, 0).HasValue ? read.Current : null;
-                        }, value => topology.Valid && api.IsAuthorized() && api.Set(monitor, value)));
+                    var target = HardwareBrightnessOperation.CaptureTarget(api, monitor, () => topology.Valid, token, out var notSupported);
+                    if (target is null) { if (notSupported) unsupported++; else unknown++; continue; }
+                    targets.Add(target);
                 }
                 catch (Exception error) when (error is not (OperationCanceledException or OutOfMemoryException or StackOverflowException)) { unknown++; }
             }
