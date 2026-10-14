@@ -7,6 +7,7 @@ using Axiom.Providers.Windows;
 
 namespace Axiom.Engine.Tests;
 
+[Collection("Brightness native ownership")]
 public sealed class BrightnessRestoreTests
 {
     private static Dictionary<string, string> Parameters(int percent) => new() { ["percent"] = percent.ToString(System.Globalization.CultureInfo.InvariantCulture), ["delaySeconds"] = "0", ["target"] = "primary" };
