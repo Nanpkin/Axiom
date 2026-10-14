@@ -13,13 +13,13 @@
 
 ## 已实现
 
-分类窗口已随[PR #17](https://github.com/Starvan/Axiom/pull/17)合入main cfdf3e1dc5474ec0170f454f5a688c633b1dffeb，[准确PR检查38571798623](https://github.com/Starvan/Axiom/actions/runs/38571798623)及[main检查38572936430](https://github.com/Starvan/Axiom/actions/runs/38572936430)全部成功。本机已验来源与该main的源码/测试/构建工具一致。v0.2.0-preview.20261014.2标签已推，但[发布重复检查38573635790](https://github.com/Starvan/Axiom/actions/runs/38573635790)的Windows核心遇到硬件亮度恢复第二次Apply未持有失败，尚未发布分发资产；正独立定位回执/准入释放时序，不重写该标签。
+本轮新增：新建/编辑任务的检测类型、动作类型及组合叶子状态类型，点击“选择/更改”打开共用应用内分类窗口；按声明类别浏览，搜索名称/说明/类别，单选并查看行为说明，“选用”才回填。取消和确认同类型保留参数，空结果不自动选中，候选仍按兼容性过滤。真实UI主流程、800×650深浅两主题的至少三条完整候选/独立滚动/底部按钮、重开定位原选项、Esc与标准关闭通过；测试只用未保存草稿，没有保存/启停/删除规则或执行硬件动作。匿名结论见[UI验收](../development/preview-ui-acceptance.md)。
 
-发布检查暴露的亮度竞争已在独立修复分支完成：原worker先发布回执再释放phase，续体立即第二次Apply可能误报忙。改为操作完成→terminal决定→释放准入→发布成功/失败回执，原阻塞/取消/超时仍由worker真实结束才释放。新确定性回归反转旧顺序立即失败；15项亮度相关与完整核心6+748项通过，Provider/Agent构建零警告错误。尚待新来源CI/发布及本机同步，分类UI现有实机结论保留。
+固定本机预览已更新为 `0.2.0-preview.local.20261014.3`，干净来源fdd40e2e34cec650495ef8970c63efc439ec36b8，产品源码/构建工具与最终main f6c3d157c82dd73b465a7568a9c04475393bdc98一致；其后的变更只有测试握手和交接文档，无需再替换本机。正常停止/构建/启动、三角色实际路径、真实UI连接、规则内容指纹保持及登录启动原启用状态已核验，启动位置指向固定预览。上述完整UI验收在同一WinUI源码的前一local.2成品完成，最终local.3再次核对身份/连接/规则保持。
 
-亮度顺序修复已随[PR #18](https://github.com/Starvan/Axiom/pull/18)及[检查38575070281](https://github.com/Starvan/Axiom/actions/runs/38575070281)全部成功合入main1ed452c；固定本机预览已更新为 `0.2.0-preview.local.20261014.3`，干净来源fdd40e2e34cec650495ef8970c63efc439ec36b8，三角色路径/真实UI连接、规则指纹保持和登录启用状态已核验。该main检查38576224893遇到旧应用音频合成测试的2秒同步握手等待超时；独立Channel调度诊断已证明测试占池自饿死，现仅改两处为同期限异步握手，不改生产音频或放宽断言。此检查通过前不推新版本标签，旧失败不计通过。
+分类UI、亮度回执顺序和音频测试握手分别随[PR #17](https://github.com/Starvan/Axiom/pull/17)、[PR #18](https://github.com/Starvan/Axiom/pull/18)、[PR #19](https://github.com/Starvan/Axiom/pull/19)合入main，各准确检查[38571798623](https://github.com/Starvan/Axiom/actions/runs/38571798623)、[38575070281](https://github.com/Starvan/Axiom/actions/runs/38575070281)、[38577431811](https://github.com/Starvan/Axiom/actions/runs/38577431811)及[最终main检查38578606997](https://github.com/Starvan/Axiom/actions/runs/38578606997)全部成功。最终单核核心6+748项、WinUI及Provider/Agent Release构建通过；首轮失败不计通过。[预览v0.2.0-preview.20261014.3](https://github.com/Starvan/Axiom/releases/tag/v0.2.0-preview.20261014.3)已实际发布（预发布、非草稿），标签与Release target均为上述最终main，[发布38579285230](https://github.com/Starvan/Axiom/actions/runs/38579285230)全部成功。负责人独立核验四项uploaded资产及GitHub SHA256摘要：便携zip72,999,202字节、安装exe49,512,498字节、BUILD-INFO.json236字节、SHA256SUMS.txt318字节；发布作业完成来源/校验验证。实施与失败证据见[已完成计划](../exec-plans/completed/categorized-capability-picker.md)。
 
-本轮新增：新建/编辑任务的检测类型、动作类型以及组合叶子状态类型，点击“选择/更改”打开应用内分类窗口；按声明类别浏览、搜索名称/说明/类别、单选并查看行为说明，“选用”才回填。取消和确认同类型保留原参数，空结果不自动选中，动作及组合叶子仍按兼容性过滤。新增6项选择检查与3项既有受控运行时gap/配置竞争回归，最终单核完整核心6+747项通过，原断言/期限保留；WinUI Release构建零警告错误。固定本机预览 `0.2.0-preview.local.20261014.2` 已正常更新启动，干净来源b2f397ae985bd86426bb656c8774598cb0e03fc9；真实UI主流程、800×650两主题的三条完整候选/滚动/底部按钮、重开定位原选项、Esc/标准关闭与规则指纹保持通过，登录启动保持启用并指向固定预览。匿名证据见[UI验收](../development/preview-ui-acceptance.md)。[PR #17](https://github.com/Starvan/Axiom/pull/17)首轮失败不计通过，最终CI/发布尚未完成；进度见[本轮计划](../exec-plans/active/categorized-capability-picker.md)。
+直接修复边界：受控运行时Ingress冻结失效前配置/模式代际，避免Unknown后的新配置被误记阻塞，3路确定性回归；亮度真实worker先完成原生操作及terminal决定、释放phase，再发布成功/失败回执，取消/超时未结束仍保留准入，反转旧顺序确定性失败；音频合成测试只把两处2秒同步握手改为同期限异步TCS，保留10秒总期限及行为断言，无生产音频改动。旧v0.2.0-preview.20261014.2标签保留且未发布资产，不重写历史；经过及失败证据索引留已完成计划。本轮指定UI与本机同步已完成，真实规则链路、其他设备/多屏和完整性能边界仍按下文独立待验。
 
 | 场景 | 当前行为和限制 |
 |---|---|
@@ -58,7 +58,7 @@
 
 本轮合成入口验证覆盖实际复合恢复动作严格导入→暂停SQLite保存/重开→Desired编译、树UI映射、实际租约流获胜更新/释放、共享Engine仲裁与全部暂停模板；Agent/Host CLI交叉构建零警告/错误。完整匿名目录使用与Host相同的真实Compiler.Catalog和组合协商标记；原64KiB预算检查已通过，全部字段/true元数据/名称/允许对、128对象/12handled及Prompt/CRLF断言保留。最末摘要仅用完整ID唯一数组与每条pair的零基索引压缩，不去重或改变授权；旧分组fallback保留。[PR #14准确检查38359914254](https://github.com/Starvan/Axiom/actions/runs/38359914254)及[准确main检查38361014974](https://github.com/Starvan/Axiom/actions/runs/38361014974)的源码检查均已全部成功，包含Linux/Windows核心、Windows原生与只读媒体、实际Host→Agent合成恢复E2E及完整WinUI构建；PR另完成便携/安装包构建。WinUI组移动、焦点、弹窗等真实窗口交互及实际设备/桌面效果仍待Windows实机；合成恢复E2E不修改真实设置，本轮没有操作所有者的亮度、任务栏、音频/收音、电源、优先级、窗口或按键。
 
-## 本轮交付与接续
+## 先前硬件亮度兼容修复（预览 .1）
 
 2026-10-14 所有者报告亮度不可用但Power Display可调，已用旧便携版真实`WindowsHardwareBrightness.SetAsync`复现：能力查询报`0xC0262589`而亮度实际可读，旧实现提前拒绝。独立原生小幅写入生效，但即时读回也会暂态失败。源码最小修复先以已知有效实时范围准入，能力查询仅分类读数未知目标；统一Command绝对/相对及恢复捕获/守卫，固定同一高层接口。只有上述明确暂态错误允许原句柄最多3次只读查询，失败后可取消等待150ms；成功即返回实际值，其他错误即停，每次Set仍单次、不轮询、不跨接口重写。新Provider真实公开入口的小幅设置/恢复均成功；`CreateRestorableSessionAsync`真实捕获→设置读回→Release基线读回→清理也成功，独立只读确认已回原亮度，未发关屏命令。14项受影响合成检查、完整核心6+738项通过；Agent/Provider Release构建零警告错误。原始硬件值/日志/夹具只留忽略的`artifacts/brightness-smoke`，临时二进制按统一脚本清理；未保存/启停规则，未替换桌面旧包或重启其后台。修复已合入main并发布新预览，准确证据见下段；其他设备/多屏/真实规则链路仍待验。
 
