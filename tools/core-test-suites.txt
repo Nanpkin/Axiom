@@ -77,5 +77,6 @@ HardwareBrightnessTests
 BrightnessAdjustmentTests
 BrightnessRestoreTests
 CompositeEditorTests
+CapabilityPickerTests
 CompositeDetectionTests
 ConditionRestoreTests
