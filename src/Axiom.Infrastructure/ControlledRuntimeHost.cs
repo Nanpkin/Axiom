@@ -71,6 +71,7 @@ public sealed class ControlledRuntimeHost
     internal Func<Task>? BeforeDisposeCommit { get; set; }
     internal Func<Task>? BeforePlanIteration { get; set; }
     internal Action? AfterCallbackAdmission { get; set; }
+    internal Action? AfterGapInvalidation { get; set; }
     internal Func<Task>? BeforeSnapshotAcknowledgment { get; set; }
     internal Func<Task>? AfterIngressBatch { get; set; }
     internal Func<int, Task>? AfterDeferredBatch { get; set; }
@@ -204,22 +205,25 @@ public sealed class ControlledRuntimeHost
                 if (!active || stopping) return;
                 if (Interlocked.Exchange(ref inbox.Gap, 0) != 0)
                 {
-                    paused = true; baselineReady = false; Interlocked.Increment(ref epoch);
-                    Invalidate();
-                    error = "Observation gap; explicit recovery required.";
-                    recoveryRequired = true;
+                    // Freeze the failed demand before publishing Unknown: its subscribers may immediately change configuration.
                     var current = engine.GetObservationPlan();
                     blocked = (current.ConfigurationRevision, current.ModeGeneration);
+                    paused = true; baselineReady = false; Interlocked.Increment(ref epoch);
+                    Invalidate();
+                    AfterGapInvalidation?.Invoke();
+                    error = "Observation gap; explicit recovery required.";
+                    recoveryRequired = true;
                 }
                 if (paused) continue; // Keep events newer than the pending snapshot's watermark.
+                var deferredPlan = engine.GetObservationPlan();
                 try { if (canDrainDeferred) drained = DrainDeferred(); }
                 catch (Exception exception)
                 {
                     error ??= "Observation processing failed: " + exception.Message;
                     SynchronizeEngineStop();
                     if (stopping) return;
+                    blocked = (deferredPlan.ConfigurationRevision, deferredPlan.ModeGeneration);
                     paused = true; baselineReady = false; recoveryRequired = true; Invalidate();
-                    var current = engine.GetObservationPlan(); blocked = (current.ConfigurationRevision, current.ModeGeneration);
                     continue;
                 }
                 // A bounded batch under the gate prevents an endless producer from starving control.
@@ -231,9 +235,10 @@ public sealed class ControlledRuntimeHost
                     if (lastSequence >= 0 && item.Sequence - lastSequence != 1)
                     {
                         Interlocked.Decrement(ref inbox.Buffered);
-                        paused = true; baselineReady = false; Interlocked.Increment(ref epoch); Invalidate(); recoveryRequired = true;
-                        error = "Source sequence gap; explicit recovery required.";
                         var current = engine.GetObservationPlan(); blocked = (current.ConfigurationRevision, current.ModeGeneration);
+                        paused = true; baselineReady = false; Interlocked.Increment(ref epoch); Invalidate(); recoveryRequired = true;
+                        AfterGapInvalidation?.Invoke();
+                        error = "Source sequence gap; explicit recovery required.";
                         break;
                     }
                     lastSequence = item.Sequence;
@@ -243,6 +248,7 @@ public sealed class ControlledRuntimeHost
                     if (item.Observation is null || !held.ContainsKey(item.Observation.Key)) continue;
                     if (baselineWatermarks.TryGetValue(item.Observation.Key, out var fence) && item.Sequence <= fence) continue;
                     UpdateResult result;
+                    var updatePlan = engine.GetObservationPlan();
                     try { result = engine.Update(sources[item.Observation.Key], ++sourceSequences[item.Observation.Key], item.Observation); }
                     catch (Exception exception)
                     {
@@ -254,10 +260,11 @@ public sealed class ControlledRuntimeHost
                     }
                     if (result.Status is UpdateStatus.Gap or UpdateStatus.SnapshotRequired or UpdateStatus.StaleEpoch)
                     {
+                        blocked = (updatePlan.ConfigurationRevision, updatePlan.ModeGeneration);
                         paused = true; baselineReady = false; Interlocked.Increment(ref epoch); error = "Source sequence gap; explicit recovery required.";
                         Invalidate();
                         recoveryRequired = true;
-                        var current = engine.GetObservationPlan(); blocked = (current.ConfigurationRevision, current.ModeGeneration);
+                        AfterGapInvalidation?.Invoke();
                     }
                 }
                 if (!paused && (data.Reader.TryPeek(out _) || canDrainDeferred && deferred.Count != 0)) ingressWake.Writer.TryWrite(true);

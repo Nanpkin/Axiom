@@ -155,19 +155,13 @@ public sealed partial class WorkbenchWindow
             }; content.Children.Add(reload);
         }
     }
-    private sealed record CapabilityChoice(TaskCapability Descriptor)
-    {
-        public string Label => Descriptor.Category + " / " + Descriptor.Name;
-    }
     private Border BuildCapabilitySection(TaskCapabilityKind kind, string title, string hint, TaskInvocation? invocation, Action<TaskCapabilityKind> changed)
     {
         var body = Column(12); body.Children.Add(Text(title, 18, Ink, true)); body.Children.Add(Text(hint, 13, Muted));
-        var choices = (status?.Capabilities ?? []).Where(x => x.Kind == kind && (kind != TaskCapabilityKind.Action || editor.SupportsAction(x, status!.Combinations))).Select(x => new CapabilityChoice(x)).ToArray();
-        var picker = new ComboBox { Header = kind == TaskCapabilityKind.Detection ? "检测类型" : "动作类型", PlaceholderText = "请选择类型", ItemsSource = choices,
-            DisplayMemberPath = nameof(CapabilityChoice.Label), HorizontalAlignment = HorizontalAlignment.Stretch };
-        picker.SelectedItem = choices.FirstOrDefault(x => x.Descriptor.Id == invocation?.CapabilityId);
+        var choices = status is null ? [] : CapabilityPickerState.Candidates(status, editor, kind);
+        var picker = new ContentControl { HorizontalContentAlignment = HorizontalAlignment.Stretch };
         var parameters = Column(12);
-        if (kind == TaskCapabilityKind.Action && editor.Composite && invocation is not null && !choices.Any(c => c.Descriptor.Id == invocation.CapabilityId))
+        if (kind == TaskCapabilityKind.Action && editor.Composite && invocation is not null && !choices.Any(c => c.Id == invocation.CapabilityId))
             body.Children.Add(Text("原动作不支持全部条件，参数仍保留。请选择兼容动作后保存。", 12, Amber));
         void ShowParameters(TaskInvocation? current)
         {
@@ -188,13 +182,30 @@ public sealed partial class WorkbenchWindow
                     HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch });
             }
         }
-        picker.SelectionChanged += (_, _) =>
+        TaskInvocation? Current() => kind == TaskCapabilityKind.Detection ? editor.Detection : editor.Action;
+        Grid Selection() => BuildCapabilityPicker(kind == TaskCapabilityKind.Detection ? "检测类型" : "动作类型", Current(), kind,
+            "CapabilityPicker." + kind, ChooseAsync);
+        async Task ChooseAsync()
         {
-            if (picker.SelectedItem is not CapabilityChoice item) return;
-            editor.Select(item.Descriptor, status!.Combinations);
-            ShowParameters(kind == TaskCapabilityKind.Detection ? editor.Detection : editor.Action);
-            changed(kind);
-        };
+            if (busy || closed || !editing || page != Page.Rules || !picker.IsLoaded || status is null) return;
+            var snapshot = status; var id = editor.Id; var version = editor.TreeVersion; var before = Current();
+            var selection = await ShowCapabilityPickerAsync(kind == TaskCapabilityKind.Detection ? "选择检测类型" : "选择动作类型",
+                CapabilityPickerState.Candidates(snapshot, editor, kind), before);
+            if (selection is null || closed || busy || !editing || page != Page.Rules || !picker.IsLoaded || editor.Id != id ||
+                editor.TreeVersion != version || !ReferenceEquals(status, snapshot) || !ReferenceEquals(Current(), before)) return;
+            try
+            {
+                editor.Select(selection, snapshot.Combinations);
+                if (ReferenceEquals(Current(), before)) return;
+                DispatcherQueue.TryEnqueue(() =>
+                {
+                    if (closed || !editing || page != Page.Rules || !picker.IsLoaded || editor.Id != id || editor.TreeVersion != version) return;
+                    picker.Content = Selection(); ShowParameters(Current()); changed(kind);
+                });
+            }
+            catch (ArgumentException failure) { ShowNotice(failure.Message); }
+        }
+        picker.Content = Selection();
         body.Children.Add(picker);
         body.Children.Add(parameters); ShowParameters(invocation);
         return Card(body);

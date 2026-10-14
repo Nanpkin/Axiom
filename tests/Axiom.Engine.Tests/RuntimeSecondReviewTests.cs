@@ -117,6 +117,41 @@ public sealed class RuntimeSecondReviewTests
     }
 
     [Theory]
+    [InlineData("observer-gap")]
+    [InlineData("observer-sequence")]
+    [InlineData("engine-sequence")]
+    public async Task S3_ConfigurationChangedDuringGapInvalidationStillRecovers(string gap)
+    {
+        var f = new RuntimeFixture(); await Within(f.Start(command: true));
+        using var recovery = f.Engine.Subscribe([Input]).Subscription;
+        var changed = Barrier();
+        // Make the same race as a subscriber changing configuration immediately after Unknown deterministic.
+        f.Host.AfterGapInvalidation = () =>
+        {
+            Assert.Equal(StateQuality.Unknown, f.Engine.ReadSnapshot().States[Input].Observation.Quality);
+            f.Engine.SetRule(f.Rule(command: true, version: 2)); changed.TrySetResult();
+        };
+        try
+        {
+            if (gap == "observer-sequence") { f.Observer.Sequence++; f.Observer.Emit(Input, false); }
+            else if (gap == "engine-sequence")
+            {
+                // A source sequence rejection publishes Unknown inside Engine.Update, before host invalidation.
+                var sequences = (Dictionary<ResourceKey, long>)typeof(ControlledRuntimeHost)
+                    .GetField("sourceSequences", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(f.Host)!;
+                sequences[Input]++; f.Observer.Emit(Input, false);
+            }
+            else f.Observer.Gap();
+            await Within(changed.Task);
+            while ((await Within(recovery.ReadAsync().AsTask())).Kind != DeliveryKind.SnapshotApplied) { }
+            f.Observer.Emit(Input, true);
+            var call = await Within(f.Executor.NextAsync()); call.Complete(); await Within(f.Engine.WaitForIdleAsync());
+            Assert.Null(f.Host.Error); Assert.Equal(1, f.Executor.Count);
+        }
+        finally { f.Host.AfterGapInvalidation = null; await f.Stop(); }
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task S4_DeferredBatchesYieldGateAfter32AndPreserveOrder(bool stopAtBoundary)
