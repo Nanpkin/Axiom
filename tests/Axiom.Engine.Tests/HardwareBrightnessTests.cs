@@ -8,6 +8,7 @@ using Axiom.Providers.Windows;
 namespace Axiom.Engine.Tests;
 
 // Synthetic APIs only: these tests never instantiate the DXVA2 adapter or change any real display.
+[Collection("Brightness native ownership")]
 public sealed class HardwareBrightnessTests
 {
     private static TaskInvocation Invocation(string target = "primary", string percent = "30", string delay = "0") => new(HardwareBrightnessCapabilities.Set, 1,
@@ -67,13 +68,129 @@ public sealed class HardwareBrightnessTests
         var result = HardwareBrightnessOperation.Apply(primary, "primary", 30, default); Assert.True(result.Success); Assert.Equal(new nint[] { 1 }, primary.Acquired);
         Assert.Equal(40u, primary.Writes[11]); Assert.Equal(40u, primary.Writes[12]); Assert.False(primary.Writes.ContainsKey(21)); Assert.Equal(1, primary.Groups[1].Closes); Assert.Equal(0, primary.Groups[2].Closes);
         var all = new Api(); all.Groups[1] = new([11, 12, 13, 14]); all.Groups[2] = new([21]);
-        all.Caps[12] = 0; all.Caps[13] = null; all.Ranges[14] = new(10, 2, 110);
+        all.Caps[12] = 0; all.Ranges[12] = null; all.Caps[13] = null; all.Ranges[13] = null; all.Ranges[14] = new(10, 2, 110);
         result = HardwareBrightnessOperation.Apply(all, "all", 30, default); Assert.False(result.Success); Assert.Contains("部分完成", result.Reason);
         Assert.Contains("已知不支持而跳过1块", result.Reason); Assert.Contains("未知而未写入2个目标", result.Reason); Assert.Equal(new nint[] { 11, 21 }, all.Writes.Keys);
         Assert.All(all.Groups.Values, g => Assert.Equal(1, g.Closes));
-        var unsupported = new Api(); unsupported.Caps[11] = 0; unsupported.Caps[21] = 0;
+        var unsupported = new Api(); unsupported.Caps[11] = 0; unsupported.Ranges[11] = null; unsupported.Caps[21] = 0; unsupported.Ranges[21] = null;
         Assert.False(HardwareBrightnessOperation.Apply(unsupported, "all", 30, default).Success); Assert.Empty(unsupported.Writes);
         var unauthorized = new Api { Authorized = false }; Assert.False(HardwareBrightnessOperation.Apply(unauthorized, "all", 30, default).Success); Assert.Equal(0, unauthorized.Discoveries);
+    }
+    [Fact]
+    public void KnownLiveRangeAllowsAbsoluteAndRelativeWritesWithoutCapabilitiesButUnknownOrInvalidReadsNeverWrite()
+    {
+        foreach (var caps in new uint?[] { null, 0 }) foreach (var relative in new[] { false, true })
+        {
+            var api = new Api(); api.Caps[11] = caps; api.Caps[21] = caps;
+            var result = relative ? HardwareBrightnessOperation.Adjust(api, "all", "increase", 5, default) : HardwareBrightnessOperation.Apply(api, "all", 30, default);
+            Assert.True(result.Success); Assert.Equal(2, api.Writes.Count); Assert.All(api.Writes.Values, value => Assert.Equal(relative ? 75u : 40u, value));
+            Assert.Equal(0, api.CapabilityQueries); Assert.All(api.SetCounts.Values, count => Assert.Equal(1, count)); Assert.All(api.Groups.Values, group => Assert.Equal(1, group.Closes));
+        }
+        foreach (var range in new HardwareBrightnessRange?[] { null, new(3, 3, 3), new(10, 9, 110), new(10, 111, 110), new(100, 100, 10) })
+        foreach (var caps in new uint?[] { null, 0, 2 })
+        {
+            var api = new Api(); api.Ranges[11] = range; api.Caps[11] = caps;
+            var result = HardwareBrightnessOperation.Apply(api, "primary", 30, default);
+            Assert.False(result.Success); Assert.Empty(api.Writes); Assert.Equal(1, api.CapabilityQueries); Assert.Equal(1, api.Groups[1].Closes);
+            Assert.Contains(caps == 0 ? "已知不支持而跳过1块" : "未知而未写入1个目标", result.Reason);
+        }
+        var unreadable = new Api(); unreadable.ReadErrors.Add(11); unreadable.Caps[11] = 0;
+        Assert.Contains("已知不支持而跳过1块", HardwareBrightnessOperation.Apply(unreadable, "primary", 30, default).Reason); Assert.Empty(unreadable.Writes);
+        var unconfirmed = new Api(); unconfirmed.Caps[11] = null; unconfirmed.Readbacks[11] = null;
+        Assert.False(HardwareBrightnessOperation.Apply(unconfirmed, "primary", 30, default).Success); Assert.Equal(1, unconfirmed.SetCounts[11]);
+        Assert.Equal(0, unconfirmed.CapabilityQueries); Assert.Equal(1, unconfirmed.Groups[1].Closes);
+    }
+    [Fact]
+    public void ReadPolicyOnlyRequeriesObservedFramingFailuresUpToThreeTimesAndReturnsEverySuccessfulReplyImmediately()
+    {
+        var transient = HardwareBrightnessReadPolicy.InvalidMessageCommand;
+        foreach (var errors in new[] { new[] { transient, transient, 0 }, new[] { transient, transient, transient, 0 }, new[] { 5, 0 }, new[] { unchecked((int)0xC0262584), 0 }, new[] { unchecked((int)0xC026258C), 0 }, new[] { unchecked((int)0xC026258D), 0 } })
+        {
+            var calls = 0; var waits = 0;
+            var result = HardwareBrightnessReadPolicy.Read(() =>
+            {
+                var error = errors[calls++]; return (error == 0 ? new HardwareBrightnessRange(10, 70, 110) : null, error);
+            }, default, (delay, _) => { waits++; Assert.Equal(TimeSpan.FromMilliseconds(150), delay); });
+            var retries = errors[0] == transient; Assert.Equal(retries ? 3 : 1, calls); Assert.Equal(retries ? 2 : 0, waits);
+            if (retries && errors[2] == 0) Assert.Equal(70u, result!.Current); else Assert.Null(result);
+        }
+        foreach (var reply in new[] { new HardwareBrightnessRange(10, 45, 110), new HardwareBrightnessRange(10, 111, 110), new HardwareBrightnessRange(0, 0, 0) })
+        {
+            var calls = 0;
+            Assert.Same(reply, HardwareBrightnessReadPolicy.Read(() => { calls++; return (reply, 0); }, default, (_, _) => throw new InvalidOperationException("Successful replies must not wait.")));
+            Assert.Equal(1, calls);
+        }
+        using var stop = new CancellationTokenSource(); var queried = 0; stop.Cancel();
+        Assert.ThrowsAny<OperationCanceledException>(() => HardwareBrightnessReadPolicy.Read(() => { queried++; return (null, transient); }, stop.Token)); Assert.Equal(0, queried);
+        using var duringWait = new CancellationTokenSource();
+        Assert.ThrowsAny<OperationCanceledException>(() => HardwareBrightnessReadPolicy.Read(() => { queried++; return (null, transient); }, duringWait.Token, (_, _) => duringWait.Cancel())); Assert.Equal(1, queried);
+    }
+    [Fact]
+    public void TransientInitialAndReadbackFailuresRequeryOnlyReadsAndCancellationKeepsOneWriteAndReleasesLeases()
+    {
+        foreach (var relative in new[] { false, true })
+        {
+            var api = new Api(); api.NativeReadErrors.Enqueue(HardwareBrightnessReadPolicy.InvalidMessageCommand);
+            api.AfterSet = () => { api.NativeReadErrors.Enqueue(HardwareBrightnessReadPolicy.InvalidMessageCommand); api.NativeReadErrors.Enqueue(HardwareBrightnessReadPolicy.InvalidMessageCommand); };
+            var result = relative ? HardwareBrightnessOperation.Adjust(api, "primary", "increase", 5, default) : HardwareBrightnessOperation.Apply(api, "primary", 30, default);
+            Assert.True(result.Success); Assert.Equal(1, api.SetCounts[11]); Assert.Equal(3, api.ReadWaits); Assert.Equal(5, api.NativeReads); Assert.Equal(1, api.Groups[1].Closes);
+        }
+        using var stop = new CancellationTokenSource(); var canceled = new Api { ReadToken = stop.Token, AfterReadWait = stop.Cancel };
+        canceled.AfterSet = () => canceled.NativeReadErrors.Enqueue(HardwareBrightnessReadPolicy.InvalidMessageCommand);
+        Assert.ThrowsAny<OperationCanceledException>(() => HardwareBrightnessOperation.Apply(canceled, "primary", 30, stop.Token));
+        Assert.Equal(1, canceled.SetCounts[11]); Assert.Equal(2, canceled.NativeReads); Assert.Equal(1, canceled.ReadWaits); Assert.Equal(1, canceled.Groups[1].Closes);
+    }
+    [Fact(Timeout = 10000)]
+    public async Task HardwareRestoreUsesKnownRangeWithoutCapabilitiesAndKeepsOriginalRangeGuardsAndCleanup()
+    {
+        static Dictionary<string, string> Parameters(int value) => new() { ["percent"] = value.ToString(System.Globalization.CultureInfo.InvariantCulture), ["target"] = "primary" };
+        foreach (var caps in new uint?[] { null, 0 })
+        {
+            var api = new Api(); api.Caps[11] = caps; var closed = 0;
+            api.NativeReadErrors.Enqueue(HardwareBrightnessReadPolicy.InvalidMessageCommand);
+            api.AfterSet = () => api.NativeReadErrors.Enqueue(HardwareBrightnessReadPolicy.InvalidMessageCommand);
+            var session = await BrightnessRestoreSession.CreateAsync(token =>
+            {
+                var target = HardwareBrightnessOperation.CaptureTarget(api, 11, () => true, token, out var unsupported);
+                Assert.NotNull(target); Assert.False(unsupported);
+                return new([target], 0, 0, _ => { }, () => { closed++; api.Groups[1].Dispose(); });
+            }, "primary", TimeSpan.FromSeconds(10), default);
+            try
+            {
+                Assert.True((await session.ApplyAsync(Parameters(30), default)).Owned); Assert.Equal(40u, api.Writes[11]);
+                api.NativeReadErrors.Enqueue(HardwareBrightnessReadPolicy.InvalidMessageCommand);
+                Assert.True((await session.ApplyAsync(Parameters(50), default)).Owned); Assert.Equal(60u, api.Writes[11]);
+                Assert.True((await session.ReleaseAsync(default)).Success); Assert.Equal(70u, api.Writes[11]); Assert.Equal(3, api.SetCounts[11]);
+            }
+            finally { await session.DisposeAsync(); }
+            Assert.Equal(0, api.CapabilityQueries); Assert.Equal(5, api.ReadWaits); Assert.Equal(1, closed); Assert.Equal(1, api.Groups[1].Closes);
+        }
+        foreach (var guard in new[] { "range", "unknown", "topology", "authorization", "external", "readback" })
+        {
+            var api = new Api(); api.Caps[11] = null; var valid = true;
+            var session = await BrightnessRestoreSession.CreateAsync(token =>
+            {
+                var target = HardwareBrightnessOperation.CaptureTarget(api, 11, () => valid, token, out _);
+                return new([target!], 0, 0, _ => { }, () => api.Groups[1].Dispose());
+            }, "primary", TimeSpan.FromSeconds(10), default);
+            try
+            {
+                Assert.True((await session.ApplyAsync(Parameters(30), default)).Owned);
+                if (guard == "range") api.Readbacks[11] = new(0, 40, 110);
+                else if (guard == "unknown") api.Readbacks[11] = null;
+                else if (guard == "topology") valid = false;
+                else if (guard == "authorization") api.Authorized = false;
+                else if (guard == "external") api.Readbacks[11] = new(10, 45, 110);
+                else api.AfterSet = () => api.Readbacks[11] = null;
+                Assert.False((await session.ApplyAsync(Parameters(50), default)).Owned);
+                await session.ReleaseAsync(default);
+                Assert.Equal(guard == "readback" ? 2 : 1, api.SetCounts[11]); Assert.NotEqual(70u, api.Writes[11]);
+            }
+            finally { await session.DisposeAsync(); }
+            Assert.Equal(0, api.CapabilityQueries); Assert.Equal(1, api.Groups[1].Closes);
+        }
+        var unknown = new Api(); unknown.Ranges[11] = null; unknown.Caps[11] = null;
+        Assert.Null(HardwareBrightnessOperation.CaptureTarget(unknown, 11, () => true, default, out var notSupported)); Assert.False(notSupported); Assert.Empty(unknown.Writes);
     }
     [Fact]
     public void PartialFailuresReadbackMismatchAndBoundsNeverRetryOrClaimAllTargetsSucceededAndReleaseEveryLease()
@@ -141,8 +258,10 @@ public sealed class HardwareBrightnessTests
         internal readonly Dictionary<nint, Lease> Groups = new() { [1] = new([11]), [2] = new([21]) };
         internal readonly Dictionary<nint, uint?> Caps = []; internal readonly Dictionary<nint, HardwareBrightnessRange?> Ranges = [], Readbacks = [];
         internal readonly Dictionary<nint, uint> Writes = []; internal readonly Dictionary<nint, int> SetCounts = [];
-        internal readonly HashSet<nint> Refused = [], AcquireErrors = []; internal readonly List<nint> Acquired = [];
-        internal bool Authorized = true; internal int Discoveries; internal Action? AfterAcquire, AfterRead, AfterSet;
+        internal readonly HashSet<nint> Refused = [], AcquireErrors = [], ReadErrors = []; internal readonly List<nint> Acquired = [];
+        internal readonly Queue<int> NativeReadErrors = [];
+        internal bool Authorized = true; internal int Discoveries, CapabilityQueries, NativeReads, ReadWaits; internal Action? AfterAcquire, AfterRead, AfterSet, AfterReadWait;
+        internal CancellationToken ReadToken;
         public bool IsAuthorized() => Authorized;
         public IReadOnlyList<HardwareLogicalMonitor> ReadLogicalMonitors() { Discoveries++; return Logical; }
         public IHardwareMonitorLease Acquire(nint monitor, int remainingCapacity)
@@ -151,11 +270,17 @@ public sealed class HardwareBrightnessTests
             var lease = Groups[monitor]; if (lease.Handles.Count > Math.Min(8, remainingCapacity)) throw new HardwareBrightnessLimitException();
             Acquired.Add(monitor); AfterAcquire?.Invoke(); return lease;
         }
-        public uint? Capabilities(nint monitor) => Caps.TryGetValue(monitor, out var caps) ? caps : 2;
+        public uint? Capabilities(nint monitor) { CapabilityQueries++; return Caps.TryGetValue(monitor, out var caps) ? caps : 2; }
         public HardwareBrightnessRange? Read(nint monitor)
         {
-            HardwareBrightnessRange? range = Writes.TryGetValue(monitor, out var value) ? Readbacks.GetValueOrDefault(monitor, new(10, value, 110)) : Ranges.GetValueOrDefault(monitor, new(10, 70, 110));
-            AfterRead?.Invoke(); return range;
+            return HardwareBrightnessReadPolicy.Read(() =>
+            {
+                NativeReads++;
+                if (ReadErrors.Contains(monitor)) throw new IOException("synthetic unknown brightness");
+                var error = NativeReadErrors.Count > 0 ? NativeReadErrors.Dequeue() : 0;
+                HardwareBrightnessRange? range = error != 0 ? null : Writes.TryGetValue(monitor, out var value) ? Readbacks.GetValueOrDefault(monitor, new(10, value, 110)) : Ranges.GetValueOrDefault(monitor, new(10, 70, 110));
+                AfterRead?.Invoke(); return (range, error);
+            }, ReadToken, (delay, _) => { Assert.Equal(TimeSpan.FromMilliseconds(150), delay); ReadWaits++; AfterReadWait?.Invoke(); });
         }
         public bool Set(nint monitor, uint brightness) { SetCounts[monitor] = SetCounts.GetValueOrDefault(monitor) + 1; if (Refused.Contains(monitor)) return false; Writes[monitor] = brightness; AfterSet?.Invoke(); return true; }
     }

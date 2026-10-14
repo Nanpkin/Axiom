@@ -18,8 +18,55 @@ internal interface IHardwareBrightnessApi
 
 internal sealed class HardwareBrightnessLimitException : Exception { }
 
+internal static class HardwareBrightnessReadPolicy
+{
+    // A framing error observed on supported hardware can clear after the device settles.
+    // Only failed reads of this kind are queried again; writes and successful replies are never repeated.
+    internal const int InvalidMessageCommand = unchecked((int)0xC0262589);
+    internal static HardwareBrightnessRange? Read(Func<(HardwareBrightnessRange? Range, int Error)> query,
+        CancellationToken token, Action<TimeSpan, CancellationToken>? wait = null)
+    {
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            token.ThrowIfCancellationRequested();
+            var reply = query(); token.ThrowIfCancellationRequested();
+            if (reply.Range is not null || reply.Error != InvalidMessageCommand || attempt == 2) return reply.Range;
+            if (wait is not null) wait(TimeSpan.FromMilliseconds(150), token);
+            else if (token.WaitHandle.WaitOne(TimeSpan.FromMilliseconds(150))) token.ThrowIfCancellationRequested();
+        }
+        return null;
+    }
+}
+
 internal static class HardwareBrightnessOperation
 {
+    internal static HardwareBrightnessRange? ReadKnown(IHardwareBrightnessApi api, nint monitor, CancellationToken token, out bool unsupported)
+    {
+        unsupported = false;
+        // Some drivers cannot report capabilities even when the high-level brightness read/write works.
+        // A live, valid range is sufficient; capabilities only classify a target whose read is unknown.
+        HardwareBrightnessRange? range;
+        try { range = api.Read(monitor); }
+        catch (Exception error) when (error is not (OperationCanceledException or OutOfMemoryException or StackOverflowException)) { range = null; }
+        token.ThrowIfCancellationRequested();
+        if (Map(range, 0).HasValue) return range;
+        var caps = api.Capabilities(monitor); token.ThrowIfCancellationRequested();
+        unsupported = caps.HasValue && (caps.Value & 2) == 0;
+        return null;
+    }
+    internal static BrightnessRestoreTarget? CaptureTarget(IHardwareBrightnessApi api, nint monitor, Func<bool> valid,
+        CancellationToken token, out bool unsupported)
+    {
+        var baseline = ReadKnown(api, monitor, token, out unsupported);
+        if (baseline is null || !valid()) return null;
+        return new(baseline.Current, p => Map(baseline, p),
+            () =>
+            {
+                if (!valid() || !api.IsAuthorized()) return null;
+                var read = api.Read(monitor);
+                return read is not null && read.Minimum == baseline.Minimum && read.Maximum == baseline.Maximum && Map(read, 0).HasValue ? read.Current : null;
+            }, value => valid() && api.IsAuthorized() && api.Set(monitor, value));
+    }
     internal static uint? Map(HardwareBrightnessRange? range, int percent)
     {
         if (percent is < 0 or > 100 || range is null || range.Maximum <= range.Minimum || range.Current < range.Minimum || range.Current > range.Maximum) return null;
@@ -84,10 +131,8 @@ internal static class HardwareBrightnessOperation
                 HardwareBrightnessRange range;
                 try
                 {
-                    var caps = api.Capabilities(monitor); token.ThrowIfCancellationRequested();
-                    if (!caps.HasValue) { unknown++; continue; }
-                    if ((caps.Value & 0x2) == 0) { unsupported++; continue; } // MC_CAPS_BRIGHTNESS
-                    var read = api.Read(monitor); token.ThrowIfCancellationRequested();
+                    var read = ReadKnown(api, monitor, token, out var notSupported);
+                    if (read is null) { if (notSupported) unsupported++; else unknown++; continue; }
                     var mapped = delta.HasValue ? AdjustedValue(read, delta.Value) : Map(read, percent);
                     if (!mapped.HasValue) { unknown++; continue; }
                     range = read!; requested = mapped.Value;
