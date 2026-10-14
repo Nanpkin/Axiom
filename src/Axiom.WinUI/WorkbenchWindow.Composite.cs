@@ -85,16 +85,13 @@ public sealed partial class WorkbenchWindow
             body.Children.Add(heading);
             if (node.Kind == "leaf")
             {
-                var choices = (status?.Capabilities ?? []).Where(c => c.Kind == TaskCapabilityKind.Detection && c.IsStateCondition &&
-                    (editor.Action is null || status!.Combinations.Contains(new(c.Id, editor.Action.CapabilityId)))).Select(c => new CapabilityChoice(c)).ToArray();
-                var picker = new ComboBox { Header = "状态类型", PlaceholderText = "请选择状态", ItemsSource = choices,
-                    DisplayMemberPath = nameof(CapabilityChoice.Label), HorizontalAlignment = HorizontalAlignment.Stretch };
-                picker.SelectedItem = choices.FirstOrDefault(c => c.Descriptor.Id == node.Invocation?.CapabilityId);
+                var choices = status is null ? [] : CapabilityPickerState.Candidates(status, editor, TaskCapabilityKind.Detection, stateOnly: true);
+                var picker = new ContentControl { HorizontalContentAlignment = HorizontalAlignment.Stretch };
                 var fields = new ContentControl { HorizontalContentAlignment = HorizontalAlignment.Stretch };
                 void ShowLeafParameters(TaskInvocation? invocation)
                 {
                     var parameters = Column(10); var descriptor = FindCapability(invocation, TaskCapabilityKind.Detection);
-                    if (invocation is not null && (descriptor?.IsStateCondition != true || !choices.Any(c => c.Descriptor.Id == invocation.CapabilityId)))
+                    if (invocation is not null && (descriptor?.IsStateCondition != true || !choices.Any(c => c.Id == invocation.CapabilityId)))
                         parameters.Children.Add(Text("原条件当前不可用或与动作不兼容，配置仍保留。请恢复对应功能或选择兼容动作。", 12, Amber));
                     else if (choices.Length == 0) parameters.Children.Add(Text("当前没有兼容的状态检测，请先选择其他动作或刷新后台目录。", 12, Amber));
                     if (descriptor is not null && invocation is not null)
@@ -118,21 +115,29 @@ public sealed partial class WorkbenchWindow
                     else parameters.Children.Add(Text("选择状态类型后填写它的参数。", 12, Muted));
                     fields.Content = parameters;
                 }
-                picker.SelectionChanged += (_, _) =>
+                Grid Selection() => BuildCapabilityPicker("状态类型", editor.Node(path).Invocation, TaskCapabilityKind.Detection,
+                    "CapabilityPicker.State." + string.Join(".", path), ChooseAsync);
+                async Task ChooseAsync()
                 {
-                    if (editor.TreeVersion != version || picker.SelectedItem is not CapabilityChoice selection) return;
+                    if (busy || closed || !editing || page != Page.Rules || !picker.IsLoaded || editor.TreeVersion != version || status is null) return;
+                    var snapshot = status; var id = editor.Id; var before = editor.Node(path).Invocation;
+                    var selection = await ShowCapabilityPickerAsync("选择状态类型",
+                        CapabilityPickerState.Candidates(snapshot, editor, TaskCapabilityKind.Detection, stateOnly: true), before);
+                    if (selection is null || closed || busy || !editing || page != Page.Rules || !picker.IsLoaded || editor.Id != id ||
+                        editor.TreeVersion != version || !ReferenceEquals(status, snapshot) || !ReferenceEquals(editor.Node(path).Invocation, before)) return;
                     try
                     {
-                        editor.SelectLeaf(path, selection.Descriptor, status!.Combinations);
-                        // Keep the active type picker; replace only its detached parameter content after the callback returns.
+                        editor.SelectLeaf(path, selection, snapshot.Combinations);
+                        if (ReferenceEquals(editor.Node(path).Invocation, before)) return;
                         DispatcherQueue.TryEnqueue(() =>
                         {
-                            if (!editing || closed || editor.TreeVersion != version) return;
-                            ShowLeafParameters(editor.Node(path).Invocation); changed(TaskCapabilityKind.Detection);
+                            if (!editing || closed || page != Page.Rules || !picker.IsLoaded || editor.Id != id || editor.TreeVersion != version) return;
+                            picker.Content = Selection(); ShowLeafParameters(editor.Node(path).Invocation); changed(TaskCapabilityKind.Detection);
                         });
                     }
                     catch (ArgumentException failure) { ShowNotice(failure.Message); RefreshTree(); }
-                };
+                }
+                picker.Content = Selection();
                 body.Children.Add(picker); body.Children.Add(fields); ShowLeafParameters(node.Invocation);
             }
             else
