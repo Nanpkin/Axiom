@@ -105,6 +105,28 @@ public sealed class BrightnessRestoreTests
             finally { unblock.Set(); await session.DisposeAsync(); }
         }
     }
+    [Fact]
+    public async Task ApplyReceiptIsVisibleOnlyAfterAdmissionIsReleasedForSuccessfulAndFailedOutcomes()
+    {
+        foreach (var success in new[] { true, false })
+        {
+            using var admission = new SemaphoreSlim(0, 1);
+            // Inline the consumer to force it to inspect admission before the publishing call returns.
+            var completion = new TaskCompletionSource<RestorableSettingResult>();
+            var observer = completion.Task.ContinueWith(received =>
+            {
+                Assert.Equal(success, received.Result.Success);
+                if (!admission.Wait(0)) return false;
+                admission.Release(); return true;
+            }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+            BrightnessRestoreSession.CompleteApply(admission, completion, () =>
+            {
+                Assert.False(admission.Wait(0)); // the native operation still owns admission while it runs
+                return new(success, "synthetic result", success);
+            });
+            Assert.True(await observer);
+        }
+    }
     private static BrightnessRestoreCapture Capture(Target[] targets, Action close) => new(targets.Select(t => new BrightnessRestoreTarget(t.Current!.Value, p => (uint)p, t.Read, t.Write)).ToArray(), 0, 0, _ => { }, close);
     private sealed class Target(uint initial)
     {
