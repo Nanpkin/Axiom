@@ -34,7 +34,8 @@ public sealed partial class WorkbenchWindow
         var body = new Grid { RowSpacing = 12 };
         body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         body.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        body.RowDefinitions.Add(new RowDefinition { Height = new GridLength(100) });
+        var detailRow = new RowDefinition { Height = new GridLength(100) };
+        body.RowDefinitions.Add(detailRow);
         var search = new TextBox { Header = "查找类型", PlaceholderText = "搜索名称、说明或类别", MaxLength = 160 };
         AutomationProperties.SetName(search, "搜索能力类型"); AutomationProperties.SetAutomationId(search, "CapabilityPicker.Search");
         body.Children.Add(search);
@@ -93,7 +94,8 @@ public sealed partial class WorkbenchWindow
         {
             // Lists and long descriptions scroll independently; the dialog buttons stay outside this height.
             body.Width = Math.Clamp(shell.ActualWidth - 96, 280, 680);
-            body.Height = Math.Clamp(shell.ActualHeight - 260, 220, 470);
+            body.Height = Math.Clamp(shell.ActualHeight - 205, 250, 500);
+            detailRow.Height = new GridLength(shell.ActualHeight < 600 ? 64 : 100);
         }
         SizeChangedEventHandler resized = (_, _) => Resize();
         search.TextChanged += (_, _) => RenderResults();
@@ -104,7 +106,11 @@ public sealed partial class WorkbenchWindow
             draft.Select((results.SelectedItem as ListViewItem)?.Tag as TaskCapability); UpdateDetails();
         };
         dialog.PrimaryButtonClick += (_, args) => args.Cancel = draft.Selected is null;
-        dialog.Opened += (_, _) => { shell.SizeChanged += resized; Resize(); search.Focus(FocusState.Programmatic); };
+        dialog.Opened += (_, _) =>
+        {
+            shell.SizeChanged += resized; Resize(); search.Focus(FocusState.Programmatic);
+            if (results.SelectedItem is { } selected) results.ScrollIntoView(selected);
+        };
         dialog.Closed += (_, _) => shell.SizeChanged -= resized;
         Resize(); RenderResults();
         return await ShowDialogAsync(dialog) == ContentDialogResult.Primary ? draft.Selected : null;
