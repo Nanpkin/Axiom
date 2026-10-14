@@ -134,6 +134,7 @@
     <Compile Include="../../src/Axiom.ServiceHost/LocalPipeFactory.cs" Link="LocalPipeFactory.cs" />
     <Compile Include="../../src/Axiom.WinUI/WorkbenchPresentation.cs" Link="WorkbenchPresentation.cs" />
     <Compile Include="../../src/Axiom.WinUI/TaskEditorState.cs" Link="TaskEditorState.cs" />
+    <Compile Include="../../src/Axiom.WinUI/CapabilityPickerState.cs" Link="CapabilityPickerState.cs" />
     <Compile Include="../../src/Axiom.WinUI/ProcessSelectionState.cs" Link="ProcessSelectionState.cs" />
     <ProjectReference Include="../../src/Axiom.Engine/Axiom.Engine.csproj" />
     <ProjectReference Include="../../src/Axiom.Infrastructure/Axiom.Infrastructure.csproj" />
