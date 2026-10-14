@@ -57,11 +57,12 @@ public sealed class ApplicationAudioActivityTests
     {
         var api = new Api { Values = [new(App(), false)] };
         var hub = new ApplicationAudioActivityHub(notify => { api.Notify = notify; return api; }); using var source = hub.Subscribe([App()]); await Read(source, false);
-        using var entered = new ManualResetEventSlim(); using var release = new ManualResetEventSlim();
-        api.Values = [new(App(), true)]; api.BeforeRead = () => { entered.Set(); release.Wait(); };
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously); using var release = new ManualResetEventSlim();
+        api.Values = [new(App(), true)]; api.BeforeRead = () => { entered.TrySetResult(); release.Wait(); };
         try
         {
-            api.Emit(); Assert.True(entered.Wait(TimeSpan.FromSeconds(2)));
+            // The observer channel's wakeup may need the pool; do not occupy it while awaiting the native-read barrier.
+            api.Emit(); await entered.Task.WaitAsync(TimeSpan.FromSeconds(2));
             api.Notify!(new("default")); Assert.Null((await Read(source, null)).Active);
             var pointer = new Payload(); api.Notify(new("created", 0, pointer)); Assert.True(pointer.Disposed);
             api.Values = [new(App(), false)]; api.BeforeRead = null; release.Set();
@@ -77,11 +78,11 @@ public sealed class ApplicationAudioActivityTests
         var updates = Channel.CreateBounded<ProviderUpdate>(16); using var stop = new CancellationTokenSource();
         var run = new ApplicationAudioActivityCapabilityProvider(hub.Subscribe).ObserveAsync([new(ApplicationAudioActivityCapabilities.Active, App())], u => Assert.True(updates.Writer.TryWrite(u)), stop.Token);
         while ((await updates.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(3))).Samples[0].Quality != StateQuality.Known) { }
-        using var entered = new ManualResetEventSlim(); using var release = new ManualResetEventSlim();
-        api.BeforeRead = () => { entered.Set(); release.Wait(); };
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously); using var release = new ManualResetEventSlim();
+        api.BeforeRead = () => { entered.TrySetResult(); release.Wait(); };
         try
         {
-            api.Emit(); Assert.True(entered.Wait(TimeSpan.FromSeconds(2))); for (var i = 0; i < 65; i++) api.Emit();
+            api.Emit(); await entered.Task.WaitAsync(TimeSpan.FromSeconds(2)); for (var i = 0; i < 65; i++) api.Emit();
             Assert.Equal(StateQuality.Unknown, (await updates.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(3))).Samples[0].Quality);
             Assert.False(updates.Reader.TryRead(out _)); Assert.False(hub.Stopped.Task.IsCompleted);
             Assert.Throws<IOException>(() => hub.Subscribe([App()]));
