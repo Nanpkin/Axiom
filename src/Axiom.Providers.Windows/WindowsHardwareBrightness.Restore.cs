@@ -11,7 +11,7 @@ public static partial class WindowsHardwareBrightness
         return BrightnessRestoreSession.CreateAsync(cancellation => Capture(target, sid, cancellation), target, TimeSpan.FromSeconds(10), token);
     }
     internal static bool AuthorizedUser(string sid, CancellationToken token) => new Api(sid, token).IsAuthorized();
-    private static BrightnessRestoreCapture Capture(string selection, string sid, CancellationToken token)
+    internal static BrightnessRestoreCapture Capture(string selection, string sid, CancellationToken token)
     {
         var topology = new BrightnessRestoreTopology(); var api = new Api(sid, token);
         var leases = new List<IHardwareMonitorLease>(); var handedOff = false;

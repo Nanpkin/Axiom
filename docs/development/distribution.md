@@ -45,9 +45,9 @@ tools/dotnet.ps1 优先系统 SDK，NuGet 使用标准 `%USERPROFILE%\.nuget\pac
 
 1. 每批功能在 `codex/` 分支完成并 push；核对 PR 精确 head SHA 的全部检查和对应包，再由负责人合并 main。`artifacts`、bin/obj、数据库和所有者私人手册仍不提交；许可证尚未选择，公开源码另由所有者决定。
 2. 等 main 对应提交的 Check source 成功，再为这个提交创建明确标签并推送，例如 `v0.2.0-preview.20261009.1`。版本来自标签去掉 `v`，不按每个小提交自动递增或发布；同日下一批使用新的末尾序号。
-3. **Publish preview release** 自动确认标签 commit 属于 main，并复用 Check source 对该精确 SHA 再跑 Linux/Windows 核心、Windows 原生和完整应用构建；即使标签之前没有检查也不能绕过。随后复用 publish-package.ps1 新构建 ZIP、安装 EXE、BUILD-INFO.json 和 SHA256SUMS.txt，不下载旧 PR 或旧版本包来发布。
+3. **Publish preview release**自动确认标签commit属于main，并要求该精确SHA已有成功的main Check source相关检查；没有检查不能绕过。2026-10-15所有者要求减少测试，发布不再对同一SHA重复功能回归，不重跑无关套件。随后复用publish-package.ps1新构建ZIP、安装EXE、BUILD-INFO.json和SHA256SUMS.txt，不下载旧PR或旧版本包来发布；实际构建及来源/文件校验保留。
 4. 发布前核对四文件集合、全部 SHA256、版本、源码 SHA、干净源码标志，以及 ZIP 内外来源一致。只在最终发布 job 授予 contents:write；先创建 draft，上传全部四项并核对集合和大小，再标为 GitHub pre-release。说明链接到该固定提交的功能与限制；GitHub 自动附带的 Source code ZIP 是源码，不能当作运行包。
-5. 已发布标签不能覆盖或移动；修复后换新版本。失败只留下本机制标记的 draft 时，可在 **Actions → Publish preview release → Run workflow** 输入已存在标签的版本号（不含 `v`）重跑；必须还是同一 SHA，重新检查并构建所有包后才能续传和发布。其他 draft 不自动修改；普通 Build Windows packages 手动入口仍只产出 14 天保留的私有 Actions artifact。
+5. 已发布标签不能覆盖或移动；修复后换新版本。失败只留下本机制标记的draft时，可在 **Actions → Publish preview release → Run workflow** 输入已存在标签版本号（不含v）重试；必须仍为同一SHA，并确认其成功main检查，重新构建和校验所有包后才能续传发布，不重复无关功能测试。其他draft不自动修改；普通Build Windows packages手动入口仍只产出14天保留的私有Actions artifact。
 
 ```powershell
 # 在对应 main CI 成功后，使用已核对的提交创建标签；不移动现有标签。
@@ -55,7 +55,7 @@ git tag v0.2.0-preview.20261009.1 <已验证的main提交SHA>
 git push origin v0.2.0-preview.20261009.1
 ```
 
-GitHub 的预览发布由明确标签触发，与普通 push/PR 检查分开。合成回归由 `tools/test-release.ps1` 在两套 CI 核心作业中运行，覆盖版本输入、标签来源、hash、脏源码和旧 ZIP 来源拒绝；29项检查包含真实resolver入口的push和dispatch两种路径，以合成main/标签核对追加输出的version、tag及精确SHA并保留已有输出。PowerShell调用AppendAllLines明确使用string[]，避免普通Object[]在实际Release入口无法匹配.NET重载。首个`.1`标签的发布在此入口失败，未创建Release或资产；修复不移动旧标签，新发布使用检查成功的main和新版本。参考 [GitHub Releases](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository)。
+GitHub预览发布由明确标签触发，与普通push/PR检查分开。`tools/test-release.ps1`保留发布工具自身的相关合成回归入口，仅修改该边界时按需执行，不再每轮CI默认运行。真实发布仍必须校验版本输入、标签/main来源、hash、干净源码及ZIP内外来源；减少无关回归不取消这些交付校验。首个旧`.1`标签曾在resolver入口失败，未创建Release或资产，历史标签没有移动；详细历史不作为本轮重跑命令。参考[GitHub Releases](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository)。
 
 此预览未购买/配置代码签名证书，安装包和启动器为未签名应用；正式对外发布时再决定签名。自带运行依赖已核对发布内容，10-09 新布局后台/UI 实际启动，进程模块核对为包内 coreclr 和 WinUI。全新 Windows/未安装任何运行时、所有 DPI、电脑重启、完整性能预算仍属于第一版发布前验收，不能用本机已装开发环境替代。部署依据：[.NET Native AOT](https://learn.microsoft.com/en-us/dotnet/core/deploying/native-aot/)、[Windows App SDK 组件](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/release-notes/windows-app-sdk-1-8)。
 
