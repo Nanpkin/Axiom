@@ -6,25 +6,27 @@ namespace Axiom.Providers.Windows;
 [SupportedOSPlatform("windows")]
 public static partial class WindowsBuiltInBrightness
 {
-    private static readonly BoundedNativeCommand Commands = new("内置屏幕亮度", TimeSpan.FromSeconds(5));
+    private static readonly BoundedNativeCommand Commands = new("屏幕亮度（自动选择）", TimeSpan.FromSeconds(10));
     public static Task DrainAsync() => Task.WhenAll(Commands.DrainAsync(), BrightnessNativeOwnership.DrainAsync()).WaitAsync(TimeSpan.FromSeconds(10));
-    public static Task<(bool Success, string Reason)> SetAsync(int percent, CancellationToken token)
+    public static Task<(bool Success, string Reason)> SetAsync(int percent, string sid, CancellationToken token)
     {
         if (percent is < 0 or > 100) throw new ArgumentException("亮度须为0–100整数。");
         return RunSingleAsync(cancellation =>
         {
             using var api = new Api(cancellation);
-            return BuiltInBrightnessOperation.Apply(api, percent, cancellation);
+            if (!api.Authorized(sid)) return (false, "当前用户或活动会话与亮度授权不一致，本次未修改。");
+            return BuiltInBrightnessOperation.Apply(api, percent, cancellation, () => WindowsHardwareBrightness.SetOwned("primary", percent, sid, cancellation));
         }, token);
     }
 
-    public static Task<(bool Success, string Reason)> AdjustAsync(string operation, int step, CancellationToken token)
+    public static Task<(bool Success, string Reason)> AdjustAsync(string operation, int step, string sid, CancellationToken token)
     {
         if (operation is not ("increase" or "decrease") || step is < 1 or > 100) throw new ArgumentException("相对亮度参数无效。");
         return RunSingleAsync(cancellation =>
         {
             using var api = new Api(cancellation);
-            return BuiltInBrightnessOperation.Adjust(api, operation, step, cancellation);
+            if (!api.Authorized(sid)) return (false, "当前用户或活动会话与亮度授权不一致，本次未修改。");
+            return BuiltInBrightnessOperation.Adjust(api, operation, step, cancellation, () => WindowsHardwareBrightness.AdjustOwned("primary", operation, step, sid, cancellation));
         }, token);
     }
 
@@ -43,11 +45,14 @@ public static partial class WindowsBuiltInBrightness
         private readonly Dictionary<string, Panel> supported = new(StringComparer.OrdinalIgnoreCase);
         public IReadOnlyList<BrightnessPanel> FindPanels()
         {
-            var brightness = Query("SELECT Active,InstanceName,CurrentBrightness FROM WmiMonitorBrightness");
-            var methods = Index(Query("SELECT Active,InstanceName FROM WmiMonitorBrightnessMethods"));
+            ManagementObject[] brightness;
+            try { brightness = Query("SELECT Active,InstanceName,CurrentBrightness FROM WmiMonitorBrightness"); }
+            catch (ManagementException error) when (owned.Count == 0 && (error.ErrorCode is ManagementStatus.NotSupported or ManagementStatus.InvalidClass)) { return []; }
+            if (brightness.Length == 0) return [];
             var connections = Index(Query("SELECT Active,InstanceName,VideoOutputTechnology FROM WmiMonitorConnectionParams"));
             var duplicates = Index(brightness);
             var result = new List<BrightnessPanel>();
+            var internalPanels = new List<(ManagementObject Brightness, string Key, ManagementObject Connection)>();
             foreach (var item in brightness)
             {
                 token.ThrowIfCancellationRequested();
@@ -59,10 +64,18 @@ public static partial class WindowsBuiltInBrightness
                 { result.Add(new(key ?? "", BrightnessPanelSupport.Unknown)); continue; }
                 var connectionSupport = BuiltInBrightnessOperation.ConnectionSupport(technology);
                 if (connectionSupport != BrightnessPanelSupport.Supported) { result.Add(new(key, connectionSupport)); continue; }
-                if (item["CurrentBrightness"] is not byte current || current > 100 || !methods.TryGetValue(key, out var writers) ||
+                internalPanels.Add((item, key, linked[0]));
+            }
+            if (internalPanels.Count == 0) return result;
+            // A missing Methods class after finding an internal reader is a failure, not proof of no internal panel.
+            var methods = Index(Query("SELECT Active,InstanceName FROM WmiMonitorBrightnessMethods"));
+            foreach (var panel in internalPanels)
+            {
+                token.ThrowIfCancellationRequested();
+                if (panel.Brightness["CurrentBrightness"] is not byte current || current > 100 || !methods.TryGetValue(panel.Key, out var writers) ||
                     writers.Length != 1 || writers[0]["Active"] is not true)
-                { result.Add(new(key, BrightnessPanelSupport.Unsupported)); continue; }
-                supported.Add(key, new(item, writers[0], linked[0])); result.Add(new(key, BrightnessPanelSupport.Supported));
+                { result.Add(new(panel.Key, BrightnessPanelSupport.Unsupported)); continue; }
+                supported.Add(panel.Key, new(panel.Brightness, writers[0], panel.Connection)); result.Add(new(panel.Key, BrightnessPanelSupport.Supported));
             }
             return result;
         }

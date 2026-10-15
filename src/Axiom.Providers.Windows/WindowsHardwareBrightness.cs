@@ -14,13 +14,18 @@ public static partial class WindowsHardwareBrightness
     public static Task<(bool Success, string Reason)> SetAsync(string target, int percent, string sid, CancellationToken token)
     {
         if (target is not ("primary" or "all") || percent is < 0 or > 100) throw new ArgumentException("硬件亮度参数无效。");
-        return RunSingleAsync(cancellation => HardwareBrightnessOperation.Apply(new Api(sid, cancellation), target, percent, cancellation), token);
+        return RunSingleAsync(cancellation => SetOwned(target, percent, sid, cancellation), token);
     }
     public static Task<(bool Success, string Reason)> AdjustAsync(string target, string operation, int step, string sid, CancellationToken token)
     {
         if (target is not ("primary" or "all") || operation is not ("increase" or "decrease") || step is < 1 or > 100) throw new ArgumentException("相对亮度参数无效。");
-        return RunSingleAsync(cancellation => HardwareBrightnessOperation.Adjust(new Api(sid, cancellation), target, operation, step, cancellation), token);
+        return RunSingleAsync(cancellation => AdjustOwned(target, operation, step, sid, cancellation), token);
     }
+    // The caller already holds BrightnessNativeOwnership and its command admission.
+    internal static (bool Success, string Reason) SetOwned(string target, int percent, string sid, CancellationToken token) =>
+        HardwareBrightnessOperation.Apply(new Api(sid, token), target, percent, token);
+    internal static (bool Success, string Reason) AdjustOwned(string target, string operation, int step, string sid, CancellationToken token) =>
+        HardwareBrightnessOperation.Adjust(new Api(sid, token), target, operation, step, token);
     private static Task<(bool Success, string Reason)> RunSingleAsync(Func<CancellationToken, (bool Success, string Reason)> action, CancellationToken token) =>
         Commands.RunAsync(cancellation =>
         {

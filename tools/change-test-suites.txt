@@ -1,0 +1,5 @@
+Axiom.Engine.Tests.BuiltInBrightnessTests
+Axiom.Engine.Tests.HardwareBrightnessTests
+Axiom.Engine.Tests.BrightnessAdjustmentTests
+Axiom.Engine.Tests.BrightnessRestoreTests
+Axiom.Engine.Tests.UsageObservationTests.FullProductionCatalogAndMaximumObjectDictionaryFitExportWithoutDeviceIdentityOrLostParameters

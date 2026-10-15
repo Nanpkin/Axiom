@@ -18,6 +18,9 @@ jobs:
   source:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
     outputs:
       version: ${{ steps.source.outputs.version }}
       tag: ${{ steps.source.outputs.tag }}
@@ -35,13 +38,20 @@ jobs:
           AXIOM_RELEASE_TAG: ${{ github.ref_name }}
           AXIOM_RELEASE_VERSION: ${{ inputs.version }}
         run: ./tools/resolve-release.ps1
-  checks:
-    needs: source
-    uses: ./.github/workflows/check.yml
-    with:
-      source_ref: ${{ needs.source.outputs.sha }}
+      - name: Require successful main checks for the exact source commit
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AXIOM_SOURCE_COMMIT: ${{ steps.source.outputs.sha }}
+        run: |
+          $response = gh api "repos/$env:GITHUB_REPOSITORY/actions/workflows/check.yml/runs?branch=main&head_sha=$env:AXIOM_SOURCE_COMMIT&status=success&per_page=100"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not verify the main source checks.' }
+          $runs = ($response | ConvertFrom-Json).workflow_runs
+          $verified = $runs | Where-Object { $_.head_sha -eq $env:AXIOM_SOURCE_COMMIT -and $_.head_branch -eq 'main' -and $_.event -in @('push', 'workflow_dispatch') -and $_.conclusion -eq 'success' } | Select-Object -First 1
+          if (!$verified) { throw 'The exact release commit has no successful main source check run. Complete its related checks before publishing.' }
+          Write-Host "Reusing successful main source check run $($verified.id) for $env:AXIOM_SOURCE_COMMIT."
   packages:
-    needs: [source, checks]
+    needs: source
     uses: ./.github/workflows/build-release.yml
     with:
       version: ${{ needs.source.outputs.version }}

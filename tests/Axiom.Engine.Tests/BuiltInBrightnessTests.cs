@@ -7,6 +7,7 @@ using Axiom.Providers.Windows;
 namespace Axiom.Engine.Tests;
 
 // Pure fake operations only. No WindowsBuiltInBrightness.SetAsync or real WMI brightness mutation in tests.
+[Collection("Brightness native ownership")]
 public sealed class BuiltInBrightnessTests
 {
     private static TaskInvocation Invocation(string percent = "30", string delay = "0") => new(BuiltInBrightnessCapabilities.Set, 1,
@@ -23,7 +24,8 @@ public sealed class BuiltInBrightnessTests
             DailyTimeCapabilities.Due, WifiProfileCapabilities.Connected, UsbDeviceCapabilities.Present })
             Assert.Contains(plugin.Combinations, c => c.DetectionId == detection && c.ActionId == BuiltInBrightnessCapabilities.Set);
         Assert.Equal(RetryCategory.Never, Assert.Single(plugin.Bindings, b => b.Descriptor.Id == BuiltInBrightnessCapabilities.Set).Descriptor.Retry);
-        Assert.Contains("所有活动内置面板", action.Descriptor.Description); Assert.Contains("外接DDC/CI", action.Descriptor.EditWarning);
+        Assert.Contains("所有活动内置面板", action.Descriptor.Description); Assert.Contains("主屏硬件路径需要DDC/CI", action.Descriptor.EditWarning);
+        Assert.Contains("自动选择", action.Descriptor.Name); Assert.Equal(2, action.Descriptor.Fields.Length);
     }
     [Theory]
     [InlineData("percent", "-1")]
@@ -80,6 +82,94 @@ public sealed class BuiltInBrightnessTests
         var unavailable = new FakeBrightnessApi([]) { DiscoveryError = new UnauthorizedAccessException() };
         var result = BuiltInBrightnessOperation.Apply(unavailable, 30, default);
         Assert.False(result.Success); Assert.Contains("接口不可用", result.Reason); Assert.Empty(unavailable.Calls);
+    }
+    [Fact]
+    public void AutomaticAbsoluteAndRelativeChooseHardwareOnlyForKnownAbsentOrExternalOnlyPanels()
+    {
+        foreach (var panels in new BrightnessPanel[][] { [], [new("external", BrightnessPanelSupport.Ignore)] })
+        foreach (var relative in new[] { false, true })
+        {
+            var api = new FakeBrightnessApi(panels); var hardware = 0;
+            (bool, string) Hardware() { hardware++; return (true, "synthetic primary hardware result"); }
+            var result = relative ? BuiltInBrightnessOperation.Adjust(api, "decrease", 5, default, Hardware) : BuiltInBrightnessOperation.Apply(api, 30, default, Hardware);
+            Assert.True(result.Success); Assert.Contains("已自动选择主屏硬件亮度", result.Reason); Assert.Equal(1, hardware); Assert.Empty(api.Calls);
+        }
+        foreach (var relative in new[] { false, true })
+        {
+            var api = new FakeBrightnessApi([new("inner", BrightnessPanelSupport.Supported)]); api.Levels["inner"] = 80;
+            (bool, string) Hardware() => throw new InvalidOperationException("An existing inner panel must not choose hardware.");
+            var result = relative ? BuiltInBrightnessOperation.Adjust(api, "decrease", 5, default, Hardware) : BuiltInBrightnessOperation.Apply(api, 30, default, Hardware);
+            Assert.True(result.Success); Assert.Equal(relative ? 75 : 30, api.Levels["inner"]); Assert.Single(api.Calls, call => call == "set:inner");
+        }
+    }
+    [Fact]
+    public void UnknownDiscoveryIdentityMissingWriterAndFailedInnerWritesNeverFallBackToAnotherScreen()
+    {
+        var hardware = 0;
+        (bool, string) Hardware() { hardware++; return (true, "unexpected hardware fallback"); }
+        foreach (var support in new[] { BrightnessPanelSupport.Unknown, BrightnessPanelSupport.Unsupported })
+        {
+            var api = new FakeBrightnessApi([new("unconfirmed", support), new("external", BrightnessPanelSupport.Ignore)]);
+            Assert.False(BuiltInBrightnessOperation.Apply(api, 30, default, Hardware).Success); Assert.Empty(api.Calls);
+        }
+        foreach (var error in new Exception[] { new UnauthorizedAccessException(), new IOException("unknown WMI discovery") })
+        {
+            var api = new FakeBrightnessApi([]) { DiscoveryError = error };
+            Assert.False(BuiltInBrightnessOperation.Apply(api, 30, default, Hardware).Success); Assert.Empty(api.Calls);
+        }
+        foreach (var failure in new[] { "identity", "write", "readback" })
+        {
+            var api = new FakeBrightnessApi([new("inner", BrightnessPanelSupport.Supported)]);
+            if (failure == "identity") api.FailedVerification.Add("inner");
+            else if (failure == "write") api.SetErrors["inner"] = 5;
+            else api.Readbacks["inner"] = null;
+            Assert.False(BuiltInBrightnessOperation.Apply(api, 30, default, Hardware).Success);
+        }
+        Assert.Equal(0, hardware);
+    }
+    [Fact(Timeout = 10000)]
+    public async Task AutomaticRestoreSelectsOnceWithinSharedOwnershipAndKeepsTheFirstBackendBaselineUntilCleanup()
+    {
+        static Dictionary<string, string> Parameters(int percent) => new() { ["percent"] = percent.ToString(System.Globalization.CultureInfo.InvariantCulture), ["delaySeconds"] = "0" };
+        foreach (var fallback in new[] { false, true })
+        {
+            var api = new FakeBrightnessApi(fallback ? [] : [new("inner", BrightnessPanelSupport.Supported)]); api.Levels["inner"] = 80;
+            var hardwareCaptures = 0; var wmiClosed = 0; var hardwareClosed = 0; uint hardwareCurrent = 80; var hardwareWrites = new List<uint>();
+            var session = await BrightnessRestoreSession.CreateAsync(token => BuiltInBrightnessOperation.Capture(api, () => true, () => true, _ => { }, () => wmiClosed++, () =>
+            {
+                Assert.Equal(1, wmiClosed); Assert.Null(BrightnessNativeOwnership.TryAcquire()); hardwareCaptures++;
+                return new([new(80, p => (uint)p, () => hardwareCurrent, value => { hardwareCurrent = value; hardwareWrites.Add(value); return true; })], 0, 0, _ => { }, () => hardwareClosed++);
+            }, token), null, TimeSpan.FromSeconds(10), default);
+            try
+            {
+                Assert.True((await session.ApplyAsync(Parameters(30), default)).Owned);
+                api.Panels = fallback ? [new("new-inner", BrightnessPanelSupport.Supported)] : [];
+                Assert.True((await session.ApplyAsync(Parameters(50), default)).Owned);
+                Assert.True((await session.ReleaseAsync(default)).Success);
+            }
+            finally { await session.DisposeAsync(); }
+            Assert.Equal(1, api.Discoveries); Assert.Equal(1, wmiClosed); Assert.Equal(fallback ? 1 : 0, hardwareCaptures); Assert.Equal(hardwareCaptures, hardwareClosed);
+            if (fallback) { Assert.Equal(new uint[] { 30, 50, 80 }, hardwareWrites); Assert.Empty(api.Calls); }
+            else { Assert.Equal(80, api.Levels["inner"]); Assert.Equal(3, api.Calls.Count(call => call == "set:inner")); Assert.Empty(hardwareWrites); }
+        }
+    }
+    [Fact]
+    public void AutomaticRestoreUnknownCaptureCleanupFailureOrCancellationDoesNotCreateHardwareCapture()
+    {
+        var hardware = 0;
+        BrightnessRestoreCapture Hardware() { hardware++; return new([], 0, 0, _ => { }, () => { }); }
+        foreach (var support in new[] { BrightnessPanelSupport.Unknown, BrightnessPanelSupport.Unsupported })
+        {
+            var api = new FakeBrightnessApi([new("unconfirmed", support)]); var closed = 0;
+            using (var capture = BuiltInBrightnessOperation.Capture(api, () => true, () => true, _ => { }, () => closed++, Hardware, default)) Assert.Empty(capture.Targets);
+            Assert.Equal(1, closed);
+        }
+        var absent = new FakeBrightnessApi([]); var failedClose = 0;
+        Assert.Throws<IOException>(() => BuiltInBrightnessOperation.Capture(absent, () => true, () => true, _ => { }, () => { failedClose++; throw new IOException("synthetic cleanup failure"); }, Hardware, default));
+        Assert.Equal(1, failedClose);
+        using var stop = new CancellationTokenSource();
+        Assert.ThrowsAny<OperationCanceledException>(() => BuiltInBrightnessOperation.Capture(absent, () => true, () => true, _ => { }, stop.Cancel, Hardware, stop.Token));
+        Assert.Equal(0, hardware);
     }
     [Fact]
     public void UnknownUnsupportedAndAmbiguousIdentitiesAreSkippedAndReportedWithoutGuessingTargets()
@@ -151,13 +241,14 @@ public sealed class BuiltInBrightnessTests
     }
     private sealed class FakeBrightnessApi(BrightnessPanel[] panels) : IBuiltInBrightnessApi
     {
+        internal BrightnessPanel[] Panels = panels;
         internal readonly List<string> Calls = [];
         internal readonly Dictionary<string, int> Levels = new(StringComparer.OrdinalIgnoreCase);
         internal readonly Dictionary<string, uint> SetErrors = new(StringComparer.OrdinalIgnoreCase);
         internal readonly Dictionary<string, int?> Readbacks = new(StringComparer.OrdinalIgnoreCase);
         internal readonly HashSet<string> FailedVerification = new(StringComparer.OrdinalIgnoreCase);
         internal int Discoveries; internal Exception? DiscoveryError; internal Action? AfterVerify, AfterSet;
-        public IReadOnlyList<BrightnessPanel> FindPanels() { Discoveries++; if (DiscoveryError is not null) throw DiscoveryError; return panels; }
+        public IReadOnlyList<BrightnessPanel> FindPanels() { Discoveries++; if (DiscoveryError is not null) throw DiscoveryError; return Panels; }
         public bool Verify(string key) { Calls.Add("verify:" + key); AfterVerify?.Invoke(); return !FailedVerification.Contains(key); }
         public uint Set(string key, byte value) { Calls.Add("set:" + key); if (SetErrors.TryGetValue(key, out var error)) return error; Levels[key] = value; AfterSet?.Invoke(); return 0; }
         public int? Read(string key) { Calls.Add("read:" + key); return Readbacks.TryGetValue(key, out var value) ? value : Levels[key]; }

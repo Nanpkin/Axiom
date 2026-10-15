@@ -8,7 +8,7 @@
 
 仓库为私有，main 是当前可用阶段的新起点。提交只包含源码、构建脚本、必要技术规范和合成测试数据；原机器的历史现场记录、个人配置、日志、截图及旧 Git 历史不上传。提交作者采用通用项目身份。
 
-Codex Cloud 选择本仓库和 main 创建环境，安装命令为 `bash tools/cloud-setup.sh`，验证命令为 `bash tools/test-core.sh`。脚本使用 `$HOME/.dotnet`；Windows/PowerShell 可用 `pwsh -File tools/test-core.ps1`，两入口共用核心测试名单。Linux 不运行 WinUI 或原生 Windows 集成，不能把平台缺失当测试成功。
+Codex Cloud选择本仓库和main创建环境，安装命令为 `bash tools/cloud-setup.sh`，相关验证命令为 `bash tools/test-core.sh`。脚本使用 `$HOME/.dotnet`；Windows/PowerShell可用 `pwsh -File tools/test-core.ps1`。2026-10-15所有者要求最多只做本轮相关测试，两入口使用本批显式测试清单，禁止默认全套；每批提交时更新清单并说明直接关联。Linux不运行WinUI或原生Windows集成，不能把平台缺失当测试成功。
 
 首次在设置 → Codex Cloud → Environments 创建私有环境，选择本仓库。可将以下内容交给环境设置对话：
 
@@ -16,7 +16,7 @@ Codex Cloud 选择本仓库和 main 创建环境，安装命令为 `bash tools/c
 
 环境必须 Publish 后再开始开发任务。GitHub CLI 授权只用于 GitHub，不能代替 Codex 侧的仓库访问授权。若仓库没有出现在选择器中，在 GitHub 连接设置中授予此私有仓库访问权限。现有 Codex CLI 支持提交/查看云端任务，但没有创建环境命令。
 
-GitHub Actions 的 Check source 在 Ubuntu/Windows 运行明确的核心套件和发布来源合成检查，Windows 额外运行原生回归并完整构建应用。Build Windows packages 提供便携和安装包；Publish preview release 只在明确版本标签或重试既有版本标签时运行，重跑该 SHA 的检查再构建、校验和发布。自动检查不启动用户后台、不使用个人规则。
+GitHub Actions的Check source运行本批显式相关套件及实际Windows应用构建，不再默认全核心、全部原生/媒体或无关发布回归；纯文档提交不运行功能测试。Build Windows packages提供便携和安装包；Publish preview release仅在明确标签或重试既有标签时运行，要求准确SHA已有成功main检查后重新构建、校验与发布，不对同一SHA机械重跑功能检查。自动检查不启动用户后台、不使用个人规则。
 
 ## 已确认方向与候选能力
 
@@ -63,6 +63,6 @@ GitHub Actions 的 Check source 在 Ubuntu/Windows 运行明确的核心套件�
 
 公开流程依据：[Codex Cloud 环境](https://learn.chatgpt.com/docs/environments/cloud-environments)、[长期目标](https://learn.chatgpt.com/docs/long-running-work)。环境必须在账户侧实际创建并验证，仓库包含脚本不等于已经连入云端。
 
-私有 CI 在 main 推送及 PR 更新时执行完整检查；功能分支请保持草稿 PR。避免同一 codex 分支推送与 PR 同时创建两套 Windows 作业。Windows 原生回归紧接核心检查运行，随后完整应用构建与私有打包；检查集合不减少，失败更早反馈。
+私有CI在相关main推送及PR更新时执行本批显式相关检查；功能分支可用草稿PR持续同步。避免同一codex分支推送与PR同时创建两套Windows作业。2026-10-15最新测试范围要求取代旧“检查集合不减少”：必要原生测试也须显式属于本轮直接风险，不因历史固定名单而全部执行。
 
 同一PR的检查队列不取消正在运行的一轮，让已通过检查的里程碑完成私有打包。GitHub并发组仅保留一轮运行及最新一轮等待，持续推送会替换中间待运行提交；不是每个中间提交都会产出包。最新提交可能需要等待前一轮完成，应核对当前head对应检查与产物，不把旧里程碑包当最终包。

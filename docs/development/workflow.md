@@ -16,12 +16,12 @@
 
 ## 验证与提交
 
-只执行当前里程碑需要的构建和测试。SDK 固定 10.0.401，优先使用系统匹配版本，无系统 SDK 时可回退仓库本地 SDK；依赖 lock files 已提交。实际入口：
+只执行当前改动功能及直接受影响边界的相关测试；2026-10-15所有者明确禁止每轮重跑全套，适用于本机和CI。相关验证通过即交付，不为无关失败扩大本轮；文档收尾只检查内容/链接/隐私。SDK固定10.0.401，优先使用系统匹配版本；依赖lock files已提交。构建入口及相关测试示例：
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/dotnet.ps1 restore Axiom.slnx --locked-mode
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/dotnet.ps1 build Axiom.slnx -c Release --no-restore
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/dotnet.ps1 test Axiom.slnx -c Release --no-build --no-restore
+dotnet test tests/Axiom.Engine.Tests/Axiom.Engine.Tests.csproj -c Release --filter "FullyQualifiedName~Axiom.Engine.Tests.BuiltInBrightnessTests.|FullyQualifiedName~Axiom.Engine.Tests.HardwareBrightnessTests.|FullyQualifiedName~Axiom.Engine.Tests.BrightnessAdjustmentTests.|FullyQualifiedName~Axiom.Engine.Tests.BrightnessRestoreTests."
 ```
 
 NuGet 复用 `%USERPROFILE%\.nuget\packages`，CLI 状态在 `artifacts/tooling/cli`；全新环境需要 NuGet 网络访问。便携/安装打包和安全清理入口见 [分发说明](distribution.md)，临时夹具不重复发布 self-contained runtime。此前沙箱内 MSBuild 曾无诊断失败，获准在沙箱外运行后成功；不要将工具失败误报为通过。性能入口见 [benchmarks](../../benchmarks/README.md)。
@@ -29,6 +29,8 @@ NuGet 复用 `%USERPROFILE%\.nuget\packages`，CLI 状态在 `artifacts/tooling/
 行为变更必须配有意义的正反例。涉及后台工作时审查通知源、订阅范围、无工作等待、去重/合并、队列与重试是否有界；不要求每次性能相关改动都测 CPU。明显异常或方案成本难以判断时做针对性诊断；数值测量按 [性能政策](performance.md) 安排，混合负载读数不能作为达标或回归结论。提交前检查 diff、临时文件、敏感数据及文档链接。仅提交当前任务文件；不要 git add 全部后无视既有改动。计划完成才移入 completed 并修复入口链接。
 
 本地提交应为可复核的小步；远程 push/PR 在已配置远程且任务授权时进行，不擅自创建公开仓库。共享历史回滚默认新建 revert 提交；不用 reset --hard/clean 丢弃工作。回滚数据库/系统副作用需独立恢复流程。
+
+默认相关入口为 `pwsh -File tools/test-core.ps1` 或 `bash tools/test-core.sh`，运行前按本轮diff维护 `tools/change-test-suites.txt` 的完整类名/精确方法名。清单是本批范围，不能将上一批亮度清单沿用于无关任务；TRX须证明每个声明项实际有执行，空/未知/全跳过不算成功。文档提交不自动跑功能检查，发布要求准确SHA已成功main检查而不重复功能回归。
 
 ## 完成报告
 

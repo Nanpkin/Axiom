@@ -6,7 +6,7 @@ using Axiom.Providers.Windows;
 namespace Axiom.SessionAgent;
 
 [SupportedOSPlatform("windows")]
-internal sealed class BuiltInBrightnessCapabilityProvider : ISessionCapabilityProvider
+internal sealed class BuiltInBrightnessCapabilityProvider(string sid) : ISessionCapabilityProvider
 {
     public IReadOnlyCollection<string> Capabilities => [BuiltInBrightnessCapabilities.Set, BuiltInBrightnessAdjustCapabilities.Adjust];
     public Task ObserveAsync(ProviderResource[] resources, Action<ProviderUpdate> publish, CancellationToken token) => throw new ArgumentException("亮度设置只能作为动作。");
@@ -15,11 +15,11 @@ internal sealed class BuiltInBrightnessCapabilityProvider : ISessionCapabilityPr
         if (invocation.CapabilityId == BuiltInBrightnessAdjustCapabilities.Adjust)
         {
             var adjustment = BuiltInBrightnessAdjustCapabilities.Validate(invocation);
-            var adjusted = await WindowsBuiltInBrightness.AdjustAsync(adjustment.Operation, adjustment.Step, token);
+            var adjusted = await WindowsBuiltInBrightness.AdjustAsync(adjustment.Operation, adjustment.Step, sid, token);
             return (adjusted.Success ? OutcomeStatus.Succeeded : OutcomeStatus.Failed, adjusted.Reason);
         }
         var settings = BuiltInBrightnessCapabilities.Validate(invocation);
-        var result = await WindowsBuiltInBrightness.SetAsync(settings.Percent, token);
+        var result = await WindowsBuiltInBrightness.SetAsync(settings.Percent, sid, token);
         return (result.Success ? OutcomeStatus.Succeeded : OutcomeStatus.Failed, result.Reason);
     }
 }
