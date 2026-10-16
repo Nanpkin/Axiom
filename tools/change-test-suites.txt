@@ -1,5 +1,4 @@
-Axiom.Engine.Tests.BuiltInBrightnessTests
-Axiom.Engine.Tests.HardwareBrightnessTests
-Axiom.Engine.Tests.BrightnessAdjustmentTests
-Axiom.Engine.Tests.BrightnessRestoreTests
+Axiom.Engine.Tests.WindowOnceCatalogTests
+Axiom.Engine.Tests.WindowOnceRuntimeTests
+Axiom.Engine.Tests.AxiomStartupTests.BootClaimIsAtomicSurvivesReopenAndMigratesExistingTasksWithoutReset
 Axiom.Engine.Tests.UsageObservationTests.FullProductionCatalogAndMaximumObjectDictionaryFitExportWithoutDeviceIdentityOrLostParameters
