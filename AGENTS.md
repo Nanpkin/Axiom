@@ -29,6 +29,7 @@ Axiom是持续变化的小型Windows自动化工具：用户配置“何时、�
 - Windows 11 x64、C#/.NET 10、本地优先；确定性规则，AI不参与运行时。远程/Web默认不启动，禁止任意PowerShell/CMD执行能力。
 - Service / Session Agent / WinUI、Named Pipes、SQLite；Domain/Engine不依赖UI、Win32、SQLite或具体Provider，UI不绕过Engine。
 - 声明驱动检测/动作/字段与组合；通用任务UI不写死HDR。支持多对象的场景优先多选，批量输入用独立应用内弹窗；程序动作匹配完整路径。
+- 规则编辑与工具箱并列：固定场景可直接选对象、模式并启用，不强迫用户拼检测→动作。按真实需求逐个增加工具，底层复用授权/Engine；不提前铺工具框架，持续模式以系统事件驱动而非定时轮询。
 - Command与Desired State分离，Unknown不当false；冲突、手动接管、时序、轻量模式遵守对应contract。不静默违反ADR，不删断言、放宽阈值或跳过失败掩盖问题。
 - CPU-first：系统通知、按需共享订阅、合并去重、相关规则索引和最近必要deadline。无理由轮询禁止；例外需API不适用证据、启停/间隔/成本及ADR。数值验收只按 [性能政策](docs/development/performance.md)，未测不称达标。
 - 用户配置原地更新，不自动备份、不启用EFS；开发和正式启动共用同一用户数据，不能用打包AppData私有副本。测试用合成数据，不上传配置、日志、截图、设备标识、本机用户名/路径或凭据。
