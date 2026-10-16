@@ -14,7 +14,9 @@ public sealed record AutomationMessage(int Version, string Type, string RequestI
     ProcessGroup? Group = null, ProcessGroup[]? Groups = null, bool? RefreshSteam = null,
     int? SteamOffset = null, string? SteamScanId = null, SteamCatalogPage? Steam = null,
     SteamToolSettings? SteamSettings = null, SteamToolSnapshot? SteamTool = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TrayCatalog? Tray = null, UsageRequest? Usage = null, UsageSnapshot? UsageSnapshot = null, string? ExportText = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TrayCatalog? Tray = null, UsageRequest? Usage = null, UsageSnapshot? UsageSnapshot = null, string? ExportText = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TrayToolSettings? TraySettings = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TrayToolSnapshot? TrayTool = null);
 
 public sealed record LoginStartupStatus(bool Registered, bool CurrentLocation, bool LauncherAvailable, string? Error = null);
 
@@ -27,12 +29,13 @@ public static class AutomationProtocol
     {
         if (request.Version != 1 || string.IsNullOrWhiteSpace(request.RequestId) || request.RequestId.Length > 64 ||
             request.DeadlineUtc is not { } deadline || deadline <= now || deadline > now.AddSeconds(15) ||
-            request.Snapshot is not null || request.Error is not null || request.Startup is not null || request.Shortcuts is not null ||
+            request.TrayTool is not null || request.Snapshot is not null || request.Error is not null || request.Startup is not null || request.Shortcuts is not null ||
             request.Activity is not null || request.ActivityCleanup is not null || request.Groups is not null || request.Steam is not null || request.SteamTool is not null || request.Tray is not null || request.UsageSnapshot is not null || request.ExportText is not null ||
             request.ActivityBeforeId is <= 0 || request.ActivityPageSize is < 1 or > 64) throw new InvalidDataException("请求格式无效。");
+        if (request.TraySettings is not null && request.Type != "save-tray-tool") throw new InvalidDataException("托盘工具字段不属于此操作。");
         if (request.Type == "usage" && !shortcutAgent)
         {
-            if (request.Usage is null || request.Task is not null || request.Id is not null || request.ExpectedVersion is not null || request.StartupEnabled is not null || request.Shortcut is not null || request.Bindings is not null || request.Group is not null || request.SteamSettings is not null || request.RefreshSteam is not null || request.SteamOffset is not null || request.SteamScanId is not null || request.ActivityBeforeId is not null || request.ActivityPageSize is not null)
+            if (request.TraySettings is not null || request.Usage is null || request.Task is not null || request.Id is not null || request.ExpectedVersion is not null || request.StartupEnabled is not null || request.Shortcut is not null || request.Bindings is not null || request.Group is not null || request.SteamSettings is not null || request.RefreshSteam is not null || request.SteamOffset is not null || request.SteamScanId is not null || request.ActivityBeforeId is not null || request.ActivityPageSize is not null)
                 throw new InvalidDataException("观察请求字段无效。");
             UsageValidation.Request(request.Usage); return;
         }
@@ -46,7 +49,7 @@ public static class AutomationProtocol
             throw new InvalidDataException("组或工具箱请求字段无效。");
         if (shortcutAgent)
         {
-            if (request.SteamSettings is not null || request.Group is not null || request.RefreshSteam is not null || request.SteamOffset is not null || request.SteamScanId is not null ||
+            if (request.TraySettings is not null || request.SteamSettings is not null || request.Group is not null || request.RefreshSteam is not null || request.SteamOffset is not null || request.SteamScanId is not null ||
                 request.ActivityBeforeId is not null || request.ActivityPageSize is not null || request.Task is not null || request.Id is not null || request.ExpectedVersion is not null || request.StartupEnabled is not null || request.Shortcut is not null ||
                 !(request.Type == "read-shortcuts" && request.Bindings is null || request.Type is "apply-shortcuts" or "restore-shortcuts" && request.Bindings is not null))
                 throw new InvalidDataException("快捷键请求操作或字段无效。");
@@ -58,6 +61,9 @@ public static class AutomationProtocol
             throw new InvalidDataException("请求字段无效。");
         var valid = request.Type switch
         {
+            "read-tray-tool" => request.Task is null && request.Id is null && request.ExpectedVersion is null && request.StartupEnabled is null && request.Shortcut is null && request.SteamSettings is null && request.Group is null && request.RefreshSteam is null && request.SteamOffset is null && request.SteamScanId is null && request.ActivityBeforeId is null && request.ActivityPageSize is null,
+            "save-tray-tool" => request.TraySettings is not null && request.Task is null && request.Id is null && request.ExpectedVersion is null && request.StartupEnabled is null && request.Shortcut is null && request.SteamSettings is null && request.Group is null && request.RefreshSteam is null && request.SteamOffset is null && request.SteamScanId is null && request.ActivityBeforeId is null && request.ActivityPageSize is null,
+            "run-tray-tool" => request.ExpectedVersion > 0 && request.Task is null && request.Id is null && request.StartupEnabled is null && request.Shortcut is null && request.SteamSettings is null && request.Group is null && request.RefreshSteam is null && request.SteamOffset is null && request.SteamScanId is null && request.ActivityBeforeId is null && request.ActivityPageSize is null,
             "read-tray" or "read-steam-tool" or "refresh-steam-tool" => request.Task is null && request.Id is null && request.ExpectedVersion is null && request.StartupEnabled is null && request.Shortcut is null,
             "save-steam-settings" => request.SteamSettings is not null && request.Task is null && request.Id is null && request.ExpectedVersion is null && request.StartupEnabled is null && request.Shortcut is null,
             "read-groups" or "scan-steam" => request.Task is null && request.Id is null && request.ExpectedVersion is null && request.StartupEnabled is null,
@@ -75,6 +81,10 @@ public static class AutomationProtocol
             _ => false
         };
         if (!valid) throw new InvalidDataException("请求操作或字段无效。");
+        if (request.Type == "save" && (request.Task!.Id == Axiom.Contracts.TrayTool.TaskId || request.Task.Detection.CapabilityId == Axiom.Contracts.TrayTool.Trigger) ||
+            request.Type == "delete" && request.Id == Axiom.Contracts.TrayTool.TaskId)
+            throw new InvalidDataException("请在工具箱中管理托盘工具。");
+        if (request.Type == "save-tray-tool") Axiom.Contracts.TrayTool.Validate(request.TraySettings!);
         if (request.Type == "save") TaskDetectionExpressions.ValidateTask(request.Task!);
     }
     public static async Task WriteAsync(Stream stream, AutomationMessage message, CancellationToken token)

@@ -42,6 +42,12 @@ internal sealed class CapabilityProviderServer(string sid, IEnumerable<ISessionC
                 if (caller != sid) throw new UnauthorizedAccessException("Provider 用户不匹配。");
                 GameHdrPipePeer.RequireHost(pipe);
                 ProviderProtocol.Validate(request, DateTimeOffset.UtcNow);
+                if (request.Type == "observe-tray")
+                {
+                    if (!registry.ContainsKey(TrayCapabilities.Hide)) throw new ArgumentException("会话程序缺少托盘能力。");
+                    lifetime.CancelAfter(Timeout.InfiniteTimeSpan);
+                    await TrayToolObservationStream.RunAsync(pipe, request, lifetime.Token); return;
+                }
                 if (request.Type == "observe-usage")
                 {
                     lifetime.CancelAfter(TimeSpan.FromMinutes(request.UsageOptions!.Minutes));

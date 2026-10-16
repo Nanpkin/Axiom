@@ -85,6 +85,13 @@ internal sealed class AutomationPipeServer(ImmutableArray<IAutomationTaskBackend
                     else await AutomationProtocol.WriteAsync(pipe, result, deadline.Token);
                     return;
                 }
+                if (request.Type is "read-tray-tool" or "save-tray-tool" or "run-tray-tool")
+                {
+                    var runtime = backends.OfType<PluginTaskRuntime>().Single();
+                    var tool = request.Type == "save-tray-tool" ? await runtime.SaveTrayToolAsync(request.TraySettings!, deadline.Token) :
+                        request.Type == "run-tray-tool" ? await runtime.RunTrayToolAsync(request.ExpectedVersion!.Value, deadline.Token) : runtime.ReadTrayTool();
+                    await AutomationProtocol.WriteAsync(pipe, new(1, "tray-tool", request.RequestId, TrayTool: tool), deadline.Token); return;
+                }
                 if (request.Type == "read-tray")
                 {
                     var catalog = await TrayCatalogClient.ReadAsync(sid, deadline.Token);
@@ -155,7 +162,7 @@ internal sealed class AutomationPipeServer(ImmutableArray<IAutomationTaskBackend
             }
             catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
             {
-                if (authorized && request?.Type is "save" or "delete" or "save-shortcut" or "delete-shortcut" or "set-startup" or "shutdown" or "save-group" or "delete-group" or "save-steam-settings" or "refresh-steam-tool")
+                if (authorized && request?.Type is "save" or "delete" or "save-shortcut" or "delete-shortcut" or "set-startup" or "shutdown" or "save-group" or "delete-group" or "save-steam-settings" or "refresh-steam-tool" or "save-tray-tool" or "run-tray-tool")
                     engine.RecordActivity(new(DateTimeOffset.UtcNow, "操作", "操作未完成", error.Message, ActivityLevel.Error,
                         request.Task?.Title));
                 using var errorTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));

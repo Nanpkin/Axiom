@@ -12,6 +12,7 @@
 | 精准每日、单次日期、时段间隔 | [Contracts](../../src/Axiom.Contracts)、[Agent](../../src/Axiom.SessionAgent)；检索DailyTime / OnceTime / WindowedInterval | 同名Tests，仅受影响项 |
 | 普通/硬件亮度与恢复 | [普通接口](../../src/Axiom.Providers.Windows/WindowsBuiltInBrightness.cs)、[硬件接口](../../src/Axiom.Providers.Windows/WindowsHardwareBrightness.cs)；检索BrightnessRestore | BuiltInBrightness / HardwareBrightness / BrightnessAdjustment / BrightnessRestore Tests |
 | 程序、窗口、前台、快捷键、托盘 | [Infrastructure](../../src/Axiom.Infrastructure)、[Agent](../../src/Axiom.SessionAgent)、[Windows](../../src/Axiom.Providers.Windows)；检索Program / Window / Foreground / Keyboard / Tray | 对应能力名Tests |
+| 工具箱任务栏托盘管理 | [UI](../../src/Axiom.WinUI/WorkbenchWindow.TrayTool.cs)、[工具配置](../../src/Axiom.Contracts/TrayTool.cs)、[Host](../../src/Axiom.ServiceHost/PluginTaskRuntime.TrayTool.cs)、[观察流](../../src/Axiom.SessionAgent/TrayToolObservationStream.cs)；WindowsTrayEvents / WatchTargetsAsync | TrayToolTests及本轮精确托盘原生用例 |
 | 音频、电源、会话、网络、USB、文件 | 同上三目录；检索Audio / Microphone / Power / Session / Network / Wifi / Usb / FileArrival | 对应能力名Tests |
 | 主动观察、摘要与严格导入 | [UsageAnalysis](../../src/Axiom.Infrastructure/UsageAnalysis.cs)、[UsageJournal](../../src/Axiom.Infrastructure/UsageJournal.cs)；检索UsageObservation | UsageObservationTests的直接方法；目录变化才选完整目录预算Fact |
 | 打包、清理、CI与发布 | [tools](../../tools)、[workflows](../../.github/workflows)、[分发说明](distribution.md) | 只选本轮发布/来源/布局边界 |

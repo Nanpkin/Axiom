@@ -67,7 +67,7 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
             try { RequireSupportedTask(task); engine.SetRule(compiler.Compile(task, sid, scope)); }
             catch (ArgumentException error) { Record("任务暂不可用", task.Title + "：" + error.Message, ActivityLevel.Warning); }
         }
-        startupTasks = tasks.Where(t => !t.Paused && t.Detection.CapabilityId == AxiomStartupPlugin.CapabilityId).ToImmutableDictionary(t => t.Id, t => t.Version);
+        startupTasks = tasks.Where(t => !t.Paused && t.Detection.CapabilityId is AxiomStartupPlugin.CapabilityId or TrayTool.Trigger).ToImmutableDictionary(t => t.Id, t => t.Version);
         if (bindings.ContainsKey(AxiomStartupPlugin.CapabilityId))
         {
             try { firstBoot = await database.ClaimBootStartAsync((bootIdentity ?? WindowsBootIdentity.Read)()); }
@@ -79,6 +79,7 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
         engine.StartExecution(new(concurrency: AutomationTaskLimits.MaximumTasks, maximumAttempts: 1));
         startupDispatched = engine.GetObservationPlan().References.Count == 0;
         await RefreshObservationAsync();
+        await RefreshTrayMonitorAsync(tasks.SingleOrDefault(IsTrayToolTask), default);
     }
     public AuthorizationDecision Authorize(string principal, ResourceKey key, CapabilityOperation operation) => new(
         principal == sid && key.Scope == scope && bindings.TryGetValue(key.CapabilityId, out var b) &&
@@ -117,7 +118,7 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
             await CompleteWindowAttemptsAsync(attempts, response.Status.Value);
             Record(response.Status == OutcomeStatus.Succeeded ? "自动化动作已完成" : "自动化动作未完成", response.Reason,
                 response.Status == OutcomeStatus.Succeeded ? ActivityLevel.Success : ActivityLevel.Error);
-            return new(response.Status.Value, response.Reason, command.CommandId);
+            return TrayOutcome(command, new(response.Status.Value, response.Reason, command.CommandId));
         }
         catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
         {
@@ -133,7 +134,7 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
             var message = sendStarted ? error is OperationCanceledException ? "动作已取消或通信超时；无法确认程序是否已执行，不会自动重试。" : error.Message
                 : error is OperationCanceledException ? "动作尚未发出，已取消；未消耗本时段的执行或重试次数。" : "动作尚未发出：" + error.Message + " 将按任务的失败重试设置处理。";
             Record("自动化动作未确认", message, ActivityLevel.Warning);
-            return new(sendStarted ? OutcomeStatus.Unknown : OutcomeStatus.Rejected, message, command.CommandId);
+            return TrayOutcome(command, new(sendStarted ? OutcomeStatus.Unknown : OutcomeStatus.Rejected, message, command.CommandId));
         }
     }
     private bool IsSupportedTask(AutomationTask task)
@@ -149,7 +150,12 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
     {
         if (!IsSupportedTask(task)) throw new ArgumentException("插件不支持所有条件与同一动作的组合。");
     }
-    public async Task<AutomationTask> SaveAsync(AutomationTask task, CancellationToken token)
+    public Task<AutomationTask> SaveAsync(AutomationTask task, CancellationToken token)
+    {
+        if (task.Id == TrayTool.TaskId || task.Detection.CapabilityId == TrayTool.Trigger) throw new InvalidOperationException("请在工具箱中管理托盘工具。");
+        return SaveTaskAsync(task, token);
+    }
+    private async Task<AutomationTask> SaveTaskAsync(AutomationTask task, CancellationToken token)
     {
         RequireSupportedTask(task);
         _ = compiler.Compile(task, sid, scope);
@@ -172,6 +178,7 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
     }
     public async Task DeleteAsync(string id, long expectedVersion, CancellationToken token)
     {
+        if (id == TrayTool.TaskId) throw new InvalidOperationException("请在工具箱中管理托盘工具。");
         await gate.WaitAsync(token);
         try
         {
@@ -186,7 +193,7 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
         await gate.WaitAsync(token);
         try
         {
-            lock (statusGate) return new([.. tasks], compiler.Catalog, Combinations, watching.Length == 0 || connected &&
+            lock (statusGate) return new([.. tasks.Where(t => !IsTrayToolTask(t))], [.. compiler.Catalog.Where(c => c.Id != TrayTool.Trigger)], [.. Combinations.Where(c => c.DetectionId != TrayTool.Trigger)], watching.Length == 0 || connected &&
                 (firstBoot is not null || !tasks.Any(t => !t.Paused && t.Detection.CapabilityId == AxiomStartupPlugin.CapabilityId && t.Detection.Parameters["frequency"] == "firstBoot")), state, reason, at,
                 [.. engine.ReadSnapshot().States.Where(p => watching.Contains(p.Key)).Select(p => new TaskObservation(
                     p.Key.CapabilityId == KeepAwakeCapabilities.Hold ? p.Key.ResourceId == "display" ? "系统及屏幕保持唤醒" : "系统保持唤醒" : p.Key.CapabilityId == AxiomStartupPlugin.CapabilityId ? tasks.SingleOrDefault(t => t.Id == p.Key.ResourceId)?.Title ?? "Axiom 启动" : p.Key.CapabilityId == SystemEventCapabilities.Event ? SystemEventName(p.Key.ResourceId) : p.Key.CapabilityId == AudioCapabilities.Changed ? p.Key.ResourceId == "output" ? "默认播放设备变化" : "默认通信麦克风变化" : p.Key.CapabilityId == OnceTimeCapabilities.Due ? OnceTimeCapabilities.Label(p.Key.ResourceId) : p.Key.CapabilityId == FileArrivalCapabilities.Arrived ? FileArrivalCapabilities.Label(p.Key.ResourceId) : p.Key.CapabilityId == WindowOnceCapabilities.Due ? WindowOnceCapabilities.Label(p.Key.ResourceId) : p.Key.CapabilityId == WindowedIntervalCapabilities.Due ? WindowedIntervalCapabilities.Label(p.Key.ResourceId) : p.Key.CapabilityId == DailyTimeCapabilities.Due ? DailyTimeCapabilities.Label(p.Key.ResourceId) : p.Key.CapabilityId == IntervalCapabilities.Elapsed ? "每隔 " + p.Key.ResourceId + " 分钟" : p.Key.ResourceId,
@@ -231,11 +238,12 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
             var source = keys.Length == 0 ? null : engine.RegisterSource("session-plugin-observation", keys);
             var startupSource = local.Length == 0 ? null : engine.RegisterSource("host-startup", local);
             var currentWatch = BeginWindowWatch(source, keys, token);
-            long startupSequence = 0, expected = 0;
+            var input = startupSource is null ? null : new StartupInput(startupSource, local);
+            long expected = 0;
             try
             {
                 if (startupSource is not null)
-                    lock (statusGate) engine.ApplySnapshot(startupSource, startupSequence++, local.Select(StartupBaseline).ToArray());
+                    lock (statusGate) { startupInput = input; engine.ApplySnapshot(startupSource, input!.Sequence++, local.Select(StartupBaseline).ToArray()); }
                 using var pipe = Client(); await pipe.ConnectForUserAsync(2000, token);
                 var id = Guid.NewGuid().ToString("N");
                 await ProviderProtocol.WriteAsync(pipe, new(1, "observe", id, DateTimeOffset.UtcNow.AddSeconds(5), Resources: wire,
@@ -280,6 +288,7 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
                             token.ThrowIfCancellationRequested();
                             lock (statusGate)
                             {
+                                if (input is not null) input.Ready = true;
                                 if (!startupDispatched)
                                 {
                                     startupDispatched = true;
@@ -292,12 +301,15 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
                                             if (firstBoot == false) Record("首次启动已跳过", task.Title + "：本次开机已启动过 Axiom 后台，等待下次开机。", ActivityLevel.Information);
                                             continue;
                                         }
+                                        BeginTrayRun(task);
                                         firedStartupTasks.Add(task.Id);
-                                        engine.Update(startupSource!, startupSequence++, new(key, StateQuality.Known, StateValue.From(new("axiom.bool", 1), true), DateTimeOffset.UtcNow));
+                                        engine.Update(startupSource!, input!.Sequence++, new(key, StateQuality.Known, StateValue.From(new("axiom.bool", 1), true), DateTimeOffset.UtcNow));
+                                        CheckTrayDecision(task);
                                         Record("启动条件已触发", task.Title + "：" + (task.Detection.Parameters["frequency"] == "firstBoot" ? "本次开机首次启动" : "Axiom 后台启动") + "，按已保存参数执行动作。", ActivityLevel.Information);
                                     }
                                 }
                             }
+                            lock (statusGate) FlushTrayTrigger();
                             await RefreshKnownWindowTasksAsync(currentWatch, token);
                         }
                     }
@@ -335,7 +347,7 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
                 if (!token.IsCancellationRequested && (connected || lastWatchError != error.Message))
                 { lastWatchError = error.Message; Record("自动化检测中断", error.Message + " 尚未执行的动作已取消，后台会尝试重新连接。", ActivityLevel.Warning); }
             }
-            finally { connected = false; EndWindowWatch(currentWatch); if (source is not null) engine.ReleaseSource(source); if (startupSource is not null) engine.ReleaseSource(startupSource); }
+            finally { lock (statusGate) { if (ReferenceEquals(startupInput, input)) startupInput = null; } connected = false; EndWindowWatch(currentWatch); if (source is not null) engine.ReleaseSource(source); if (startupSource is not null) engine.ReleaseSource(startupSource); }
             try { await Task.Delay(TimeSpan.FromSeconds(5), token); } catch (OperationCanceledException) { break; }
         }
     }
@@ -358,6 +370,8 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
         try
         {
             stopping = true;
+            trayLifetime.Cancel();
+            await RefreshTrayMonitorAsync(null, token);
             foreach (var task in tasks) engine.RemoveRule(task.Id);
             watchCancel?.Cancel(); if (watcher is not null) await watcher.WaitAsync(token);
             await engine.WaitForIdleAsync(token);
@@ -369,12 +383,14 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
     }
     public async ValueTask DisposeAsync()
     {
+        trayLifetime.Cancel(); await RefreshTrayMonitorAsync(null, default);
         watchCancel?.Cancel(); if (watcher is not null) await watcher;
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5)); await engine.StopAndWaitAsync(deadline.Token);
         await DrainPowerLeasesAsync(deadline.Token);
         await DrainRestorableSettingsAsync(deadline.Token);
         await DrainWindowRetriesAsync(deadline.Token);
-        engine.Dispose(); scheduler.Dispose(); watchCancel?.Dispose(); gate.Dispose();
+        if (trayFlush is not null) try { await trayFlush; } catch (OperationCanceledException) { }
+        engine.Dispose(); scheduler.Dispose(); watchCancel?.Dispose(); gate.Dispose(); trayToolGate.Dispose(); trayLifetime.Dispose();
     }
 }
 
