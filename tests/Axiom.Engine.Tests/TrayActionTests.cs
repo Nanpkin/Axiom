@@ -110,6 +110,44 @@ public sealed class TrayActionTests
         one.Dispose();
         using var recreated=new WindowsTrayEvents();target.Remove(false);using var end=new CancellationTokenSource(TimeSpan.FromSeconds(3));Assert.True(await recreated.Events.Reader.ReadAsync(end.Token));
     }
+    [Fact(Timeout = 15000)]
+    public async Task ContinuousTargetNotificationsHideSameIdentityAgainAndCancelLeavesNewIconVisible()
+    {
+        using var target = new IconWindow(false, true);
+        using var lifetime = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+        var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var opportunities = System.Threading.Channels.Channel.CreateBounded<long>(1);
+        var completions = System.Threading.Channels.Channel.CreateUnbounded<ProgramControlResult>();
+        var watcher = WindowsTrayActions.WatchTargetsAsync([Environment.ProcessPath!], (snapshot, counter, active) =>
+        {
+            if (snapshot) ready.TrySetResult(); else if (active) opportunities.Writer.TryWrite(counter);
+        }, lifetime.Token);
+        var worker = Task.Run(async () =>
+        {
+            while (!lifetime.IsCancellationRequested)
+            {
+                await opportunities.Reader.ReadAsync(lifetime.Token);
+                var result = await WindowsTrayActions.HideAsync(Environment.ProcessPath!, TimeSpan.FromSeconds(2), lifetime.Token);
+                completions.Writer.TryWrite(result);
+            }
+        }, lifetime.Token);
+        try
+        {
+            await ready.Task.WaitAsync(TimeSpan.FromSeconds(3));
+            target.Add(false);
+            var first = await completions.Reader.ReadAsync(lifetime.Token); Assert.True(first.Success, first.Reason); Assert.False(target.Exists(false));
+            // NIM_ADD reuses the same HWND/UID, including when removal and creation notifications merge.
+            target.Add(false);
+            var second = await completions.Reader.ReadAsync(lifetime.Token); Assert.True(second.Success, second.Reason); Assert.False(target.Exists(false));
+        }
+        finally
+        {
+            lifetime.Cancel();
+            try { await watcher; } catch (OperationCanceledException) { }
+            try { await worker; } catch (OperationCanceledException) { }
+        }
+        target.Add(false); Assert.True(target.Exists(false)); Assert.True(target.Alive);
+    }
     private sealed class IconWindow : IDisposable
     {
         private static int serial;
