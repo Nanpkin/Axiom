@@ -128,6 +128,7 @@
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsWindowEvents.cs" Link="WindowsWindowEvents.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsWindowActions.cs" Link="WindowsWindowActions.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsProgramControl.cs" Link="WindowsProgramControl.cs" />
+    <Compile Include="../../src/Axiom.ServiceHost/PluginTaskRuntime.TrayTool.cs" Link="PluginTaskRuntime.TrayTool.cs" />
     <Compile Include="../../src/Axiom.ServiceHost/PluginTaskRuntime.cs" Link="PluginTaskRuntime.cs" />
     <Compile Include="../../src/Axiom.ServiceHost/WindowsBootIdentity.cs" Link="WindowsBootIdentity.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/ShortcutActionRegistry.cs" Link="ShortcutActionRegistry.cs" />

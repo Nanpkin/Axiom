@@ -6,7 +6,7 @@
 
 - 本机入口：artifacts/Axiom-preview/Axiom.exe；版本0.2.0-preview.local.20261016.1，干净源码ad84ce3。路径/实际版本/后台连接、原规则指纹与登录启动保持已核验。
 - [最新预览v0.2.0-preview.20261016.1](https://github.com/Starvan/Axiom/releases/tag/v0.2.0-preview.20261016.1)，固定源码b45ea70，与上述本机产品源码一致。准确PR/main检查及发布成功；详细来源、资产与失败修复记录见 [时段功能验收](../exec-plans/completed/window-once.md)。
-- 本轮仅精简开发文档与成本约束；应用产物沿用上述版本。没有新增功能或自动启动下一批的指令。
+- 当前开发：工具箱新增任务栏托盘管理，支持仅Axiom启动时隐藏/系统事件持续隐藏。沿用上述已交付产物，新功能尚未验收；范围与未决项见 [本轮计划](../exec-plans/active/tray-toolbox.md)。
 
 ## 已可用与最近变化
 

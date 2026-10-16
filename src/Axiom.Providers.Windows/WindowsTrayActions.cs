@@ -12,6 +12,59 @@ public sealed record WindowsTrayCatalog(WindowsTrayEntry[] Entries, string? Noti
 [SupportedOSPlatform("windows")]
 public static class WindowsTrayActions
 {
+    private static event Action<string, (nint Window, uint Id, Guid Guid)>? IconRemoved;
+
+    // A subscription belongs only to an enabled continuous tool. Identity reads are confined to its configured paths.
+    public static async Task WatchTargetsAsync(string[] paths, Action<bool, long, bool> publish, CancellationToken token)
+    {
+        if (paths.Length is < 1 or > 32) throw new ArgumentException("请选择 1–32 个目标程序。");
+        using var notifications = new WindowsTrayEvents();
+        var gate = new object();
+        var previous = paths.Distinct(StringComparer.OrdinalIgnoreCase).ToDictionary(p => p,
+            _ => new HashSet<(nint Window, uint Id, Guid Guid)>(), StringComparer.OrdinalIgnoreCase);
+        long counter = 0;
+        void Removed(string path, (nint Window, uint Id, Guid Guid) identity)
+        {
+            lock (gate) if (previous.TryGetValue(path, out var identities)) identities.Remove(identity);
+        }
+        IconRemoved += Removed;
+        try
+        {
+            bool Read()
+            {
+                var appeared = false;
+                lock (gate)
+                {
+                    var registrations = ReadRegistrations();
+                    foreach (var path in previous.Keys.ToArray())
+                    {
+                        token.ThrowIfCancellationRequested();
+                        var matches = WindowsProgramControl.Matching(path);
+                        try
+                        {
+                            var active = matches.Count == 0 ? [] : FindActive(path, registrations, matches, token).ToHashSet();
+                            appeared |= active.Except(previous[path]).Any();
+                            previous[path] = active;
+                        }
+                        finally { foreach (var process in matches) process.Dispose(); }
+                    }
+                }
+                return appeared;
+            }
+            bool HasActive() { lock (gate) return previous.Values.Any(v => v.Count > 0); }
+            Read(); var present = HasActive(); publish(true, counter, present);
+            while (true)
+            {
+                await notifications.Events.Reader.ReadAsync(token);
+                // Bounded channel merges native bursts. Removal alone never emits an execution opportunity.
+                var appeared = Read(); var active = HasActive();
+                if (appeared) counter = checked(counter + 1);
+                if (appeared || present != active) publish(false, counter, active);
+                present = active;
+            }
+        }
+        finally { IconRemoved -= Removed; }
+    }
     // Read on demand only. Historical settings are candidates, never proof that an icon is active.
     public static WindowsTrayCatalog ReadCatalog(CancellationToken token)
     {
@@ -140,7 +193,13 @@ public static class WindowsTrayActions
                 token.ThrowIfCancellationRequested();
                 var data = new IconData { Size=(uint)Marshal.SizeOf<IconData>(),Window=candidate.Window,Id=candidate.Id,Guid=candidate.Guid,
                     Flags=candidate.Guid == Guid.Empty ? 0u : 32u,Tip="",Info="",Title="" };
-                if (Shell_NotifyIcon(2,ref data) && Shell_NotifyIconGetRect(ref identity,out _) < 0) hidden++; else failed++;
+                if (Shell_NotifyIcon(2,ref data) && Shell_NotifyIconGetRect(ref identity,out _) < 0)
+                {
+                    hidden++;
+                    IconRemoved?.Invoke(path, candidate);
+                    WindowsTrayEvents.Invalidate();
+                }
+                else failed++;
             }
             if (hidden == 0 && failed == 0) return null;
             return new(failed == 0, $"{Path.GetFileName(path)}：已隐藏 {hidden} 个托盘图标" + (failed > 0 ? $"，{failed} 个未确认移除。" : "；保留后台进程，未关闭程序。") + " 软件重新创建图标后可能再出现。");
