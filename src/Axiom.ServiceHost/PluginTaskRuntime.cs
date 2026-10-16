@@ -41,9 +41,9 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
     private DateTimeOffset at = DateTimeOffset.MinValue;
     public ImmutableArray<TaskCombination> Combinations { get; }
     public bool SupportsCompositeDetection => true;
-    public PluginTaskRuntime(IEnumerable<IAutomationPlugin> plugins, SqliteAutomationTaskStore database, string sid, EngineHost activity, Func<uint>? bootIdentity = null)
+    public PluginTaskRuntime(IEnumerable<IAutomationPlugin> plugins, SqliteAutomationTaskStore database, string sid, EngineHost activity, Func<uint>? bootIdentity = null, TimeProvider? windowTime = null)
     {
-        this.database = database; this.sid = sid; this.activity = activity; this.bootIdentity = bootIdentity;
+        this.database = database; this.sid = sid; this.activity = activity; this.bootIdentity = bootIdentity; this.windowTime = windowTime ?? TimeProvider.System;
         scope = ResourceScope.Session(sid, Process.GetCurrentProcess().SessionId);
         var modules = plugins.ToArray();
         if (modules.Select(p => p.Id).Distinct().Count() != modules.Length) throw new ArgumentException("插件重复注册。");
@@ -90,6 +90,7 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
         RestorableSettingInvocations.IsRestorable(desired.Key.CapabilityId) ? ApplyRestorableAsync(desired, token) : ApplyKeepAwakeAsync(desired, token);
     public async ValueTask<Outcome> ExecuteCommandAsync(Command command, CancellationToken token)
     {
+        var attempts = new List<WindowAttempt>(); var sendStarted = false;
         try
         {
             if (stopping || !Authorize(command.Principal, command.Key, CapabilityOperation.ExecuteCommand).Allowed || command.Arguments.Text is null)
@@ -99,22 +100,40 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
             AutomationTaskCompiler.ValidateInvocation(invocation, compiled);
             if (invocation.CapabilityId != command.Key.CapabilityId) throw new InvalidDataException("能力参数与命令不匹配。");
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token); timeout.CancelAfter(command.Deadline - DateTimeOffset.UtcNow);
+            if (!await BeginWindowAttemptsAsync(command, attempts, timeout.Token))
+                return new(OutcomeStatus.Rejected, "此时段已完成、结果未确认或尚不满足重试条件；没有再次执行动作。", command.CommandId);
+            ValidateWindowAttemptsBeforeSend(attempts, timeout.Token);
             using var pipe = Client(); await pipe.ConnectForUserAsync(2000, timeout.Token);
+            ValidateWindowAttemptsBeforeSend(attempts, timeout.Token);
+            // The durable attempt exists before the first possible side effect. Any failure
+            // from beginning this write onward is uncertain unless a valid final receipt arrives.
             var id = Guid.NewGuid().ToString("N");
+            sendStarted = true;
             await ProviderProtocol.WriteAsync(pipe, new(1, "invoke", id, command.Deadline, Invocation: invocation, CommandId: command.CommandId), timeout.Token);
             var response = await ProviderProtocol.ReadAsync(pipe, timeout.Token);
             if (response.Version != 1 || response.Type != "result" || response.RequestId != id || response.CommandId != command.CommandId ||
                 response.Status is not (OutcomeStatus.Succeeded or OutcomeStatus.Failed or OutcomeStatus.Rejected) || string.IsNullOrWhiteSpace(response.Reason))
                 throw new InvalidDataException("Provider 回执无效。");
+            await CompleteWindowAttemptsAsync(attempts, response.Status.Value);
             Record(response.Status == OutcomeStatus.Succeeded ? "自动化动作已完成" : "自动化动作未完成", response.Reason,
                 response.Status == OutcomeStatus.Succeeded ? ActivityLevel.Success : ActivityLevel.Error);
             return new(response.Status.Value, response.Reason, command.CommandId);
         }
         catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
         {
-            var message = error is OperationCanceledException ? "动作已取消或通信超时；无法确认程序是否已执行，不会自动重试。" : error.Message;
+            try
+            {
+                if (!sendStarted && error is OperationCanceledException)
+                    foreach (var attempt in attempts)
+                        await database.AbandonUnsentWindowOnceAttemptAsync(attempt.TaskId, attempt.Date, attempt.AttemptId, windowTime.GetUtcNow());
+                else await CompleteWindowAttemptsAsync(attempts, sendStarted ? OutcomeStatus.Unknown : OutcomeStatus.Rejected);
+            }
+            catch (Exception persistence) when (persistence is not (OutOfMemoryException or StackOverflowException))
+            { Record("时段执行记录未确认", persistence.Message + " 为避免重复操作，不会自动重发。", ActivityLevel.Warning); }
+            var message = sendStarted ? error is OperationCanceledException ? "动作已取消或通信超时；无法确认程序是否已执行，不会自动重试。" : error.Message
+                : error is OperationCanceledException ? "动作尚未发出，已取消；未消耗本时段的执行或重试次数。" : "动作尚未发出：" + error.Message + " 将按任务的失败重试设置处理。";
             Record("自动化动作未确认", message, ActivityLevel.Warning);
-            return new(OutcomeStatus.Unknown, message, command.CommandId);
+            return new(sendStarted ? OutcomeStatus.Unknown : OutcomeStatus.Rejected, message, command.CommandId);
         }
     }
     private bool IsSupportedTask(AutomationTask task)
@@ -145,6 +164,7 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
             lock (statusGate)
             { engine.SetRule(compiler.Compile(saved, sid, scope)); tasks = tasks.Where(t => t.Id != saved.Id).Append(saved).ToArray(); }
             await RefreshObservationAsync();
+            await RefreshWindowTaskAsync(saved, token);
             Record(saved.Paused ? "任务已暂停" : "任务已保存", saved.Title + (saved.Paused ? "：尚未执行的动作已取消。" : "：等待下一次条件成立。"), ActivityLevel.Success);
             return saved;
         }
@@ -169,8 +189,8 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
             lock (statusGate) return new([.. tasks], compiler.Catalog, Combinations, watching.Length == 0 || connected &&
                 (firstBoot is not null || !tasks.Any(t => !t.Paused && t.Detection.CapabilityId == AxiomStartupPlugin.CapabilityId && t.Detection.Parameters["frequency"] == "firstBoot")), state, reason, at,
                 [.. engine.ReadSnapshot().States.Where(p => watching.Contains(p.Key)).Select(p => new TaskObservation(
-                    p.Key.CapabilityId == KeepAwakeCapabilities.Hold ? p.Key.ResourceId == "display" ? "系统及屏幕保持唤醒" : "系统保持唤醒" : p.Key.CapabilityId == AxiomStartupPlugin.CapabilityId ? tasks.SingleOrDefault(t => t.Id == p.Key.ResourceId)?.Title ?? "Axiom 启动" : p.Key.CapabilityId == SystemEventCapabilities.Event ? SystemEventName(p.Key.ResourceId) : p.Key.CapabilityId == AudioCapabilities.Changed ? p.Key.ResourceId == "output" ? "默认播放设备变化" : "默认通信麦克风变化" : p.Key.CapabilityId == OnceTimeCapabilities.Due ? OnceTimeCapabilities.Label(p.Key.ResourceId) : p.Key.CapabilityId == FileArrivalCapabilities.Arrived ? FileArrivalCapabilities.Label(p.Key.ResourceId) : p.Key.CapabilityId == WindowedIntervalCapabilities.Due ? WindowedIntervalCapabilities.Label(p.Key.ResourceId) : p.Key.CapabilityId == DailyTimeCapabilities.Due ? DailyTimeCapabilities.Label(p.Key.ResourceId) : p.Key.CapabilityId == IntervalCapabilities.Elapsed ? "每隔 " + p.Key.ResourceId + " 分钟" : p.Key.ResourceId,
-                    p.Value.Observation.Quality != StateQuality.Known ? observationReasons.GetValueOrDefault(p.Key, "状态未知") : p.Key.CapabilityId == OnceTimeCapabilities.Due ? observationReasons.GetValueOrDefault(p.Key, "等待指定日期和时刻") : p.Key.CapabilityId == HotkeyCapabilities.Pressed
+                    p.Key.CapabilityId == KeepAwakeCapabilities.Hold ? p.Key.ResourceId == "display" ? "系统及屏幕保持唤醒" : "系统保持唤醒" : p.Key.CapabilityId == AxiomStartupPlugin.CapabilityId ? tasks.SingleOrDefault(t => t.Id == p.Key.ResourceId)?.Title ?? "Axiom 启动" : p.Key.CapabilityId == SystemEventCapabilities.Event ? SystemEventName(p.Key.ResourceId) : p.Key.CapabilityId == AudioCapabilities.Changed ? p.Key.ResourceId == "output" ? "默认播放设备变化" : "默认通信麦克风变化" : p.Key.CapabilityId == OnceTimeCapabilities.Due ? OnceTimeCapabilities.Label(p.Key.ResourceId) : p.Key.CapabilityId == FileArrivalCapabilities.Arrived ? FileArrivalCapabilities.Label(p.Key.ResourceId) : p.Key.CapabilityId == WindowOnceCapabilities.Due ? WindowOnceCapabilities.Label(p.Key.ResourceId) : p.Key.CapabilityId == WindowedIntervalCapabilities.Due ? WindowedIntervalCapabilities.Label(p.Key.ResourceId) : p.Key.CapabilityId == DailyTimeCapabilities.Due ? DailyTimeCapabilities.Label(p.Key.ResourceId) : p.Key.CapabilityId == IntervalCapabilities.Elapsed ? "每隔 " + p.Key.ResourceId + " 分钟" : p.Key.ResourceId,
+                    p.Value.Observation.Quality != StateQuality.Known ? observationReasons.GetValueOrDefault(p.Key, "状态未知") : p.Key.CapabilityId == WindowOnceCapabilities.Due ? observationReasons.GetValueOrDefault(p.Key, "等待选定时段，成功后本时段不再重复。") : p.Key.CapabilityId == OnceTimeCapabilities.Due ? observationReasons.GetValueOrDefault(p.Key, "等待指定日期和时刻") : p.Key.CapabilityId == HotkeyCapabilities.Pressed
                         ? "等待快捷键" : p.Value.Observation.Value?.Number is not null ? "等待下一次事件" : p.Key.CapabilityId == AxiomStartupPlugin.CapabilityId
                         ? p.Value.Observation.Value?.Boolean == true ? "已触发启动条件" : "等待下次启动"
                         : p.Key.CapabilityId == KeepAwakeCapabilities.Hold ? p.Value.Observation.Value?.Boolean == true ? "Axiom 正持有唤醒请求" : "未持有唤醒请求" : p.Key.CapabilityId == WindowPresenceCapabilities.Visible ? p.Value.Observation.Value?.Boolean == true ? "窗口已显示" : "没有可见主窗口" : p.Key.CapabilityId == SessionLockStateCapabilities.State ? p.Value.Observation.Value?.Boolean == true ? "已锁定" : "未锁定" : p.Key.CapabilityId == ForegroundCapabilities.Active ? p.Value.Observation.Value?.Boolean == true ? "正在前台" : "不在前台" : p.Value.Observation.Value?.Boolean == true ? "正在运行" : "未运行")),
@@ -210,6 +230,7 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
         {
             var source = keys.Length == 0 ? null : engine.RegisterSource("session-plugin-observation", keys);
             var startupSource = local.Length == 0 ? null : engine.RegisterSource("host-startup", local);
+            var currentWatch = BeginWindowWatch(source, keys, token);
             long startupSequence = 0, expected = 0;
             try
             {
@@ -247,7 +268,8 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
                     if (response.Type == "snapshot")
                     {
                         if (observations.Length != keys.Length) throw new InvalidDataException("Provider 快照不完整。");
-                        if (source is not null) engine.ApplySnapshot(source, response.Sequence, observations);
+                        if (source is not null)
+                            lock (statusGate) engine.ApplySnapshot(source, currentWatch!.Sequence++, WindowSnapshot(currentWatch, observations));
                         // A live subscription can legitimately contain an unavailable individual resource.
                         // Keep unrelated rules working; Engine retains Unknown for that resource.
                         connected = true;
@@ -276,12 +298,31 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
                                     }
                                 }
                             }
+                            await RefreshKnownWindowTasksAsync(currentWatch, token);
                         }
                     }
                     else
                     {
                         if (!connected || observations.Length != 1) throw new InvalidDataException("检测事件无效。");
-                        engine.Update(source!, response.Sequence, observations[0]);
+                        lock (statusGate)
+                        {
+                            if (observations[0].Key.CapabilityId == WindowOnceCapabilities.Due && observations[0].Quality == StateQuality.Known)
+                            {
+                                var key = observations[0].Key;
+                                var wasKnown = currentWatch!.ProviderKnown.Contains(key);
+                                SetWindowProviderQuality(currentWatch, key, true);
+                                if (!wasKnown)
+                                    engine.Update(source!, currentWatch.Sequence++, new(key, StateQuality.Known,
+                                        StateValue.From(new("axiom.event-count", 1), currentWatch.Counters[key]), clock.UtcNow));
+                                OfferWindowOpportunity(currentWatch, key);
+                            }
+                            else
+                            {
+                                if (observations[0].Key.CapabilityId == WindowOnceCapabilities.Due)
+                                    SetWindowProviderQuality(currentWatch!, observations[0].Key, false);
+                                engine.Update(source!, currentWatch!.Sequence++, observations[0]);
+                            }
+                        }
                         if (observations[0].Key.CapabilityId == HotkeyCapabilities.Pressed && observations[0].Quality == StateQuality.Known)
                             Record("快捷键已按下", (samples[0].Reason ?? observations[0].Key.ResourceId) + "：已交给规则判断。", ActivityLevel.Information);
                         if (observations[0].Key.CapabilityId == SystemEventCapabilities.Event && observations[0].Quality == StateQuality.Known)
@@ -294,7 +335,7 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
                 if (!token.IsCancellationRequested && (connected || lastWatchError != error.Message))
                 { lastWatchError = error.Message; Record("自动化检测中断", error.Message + " 尚未执行的动作已取消，后台会尝试重新连接。", ActivityLevel.Warning); }
             }
-            finally { connected = false; if (source is not null) engine.ReleaseSource(source); if (startupSource is not null) engine.ReleaseSource(startupSource); }
+            finally { connected = false; EndWindowWatch(currentWatch); if (source is not null) engine.ReleaseSource(source); if (startupSource is not null) engine.ReleaseSource(startupSource); }
             try { await Task.Delay(TimeSpan.FromSeconds(5), token); } catch (OperationCanceledException) { break; }
         }
     }
@@ -322,6 +363,7 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
             await engine.WaitForIdleAsync(token);
             await DrainPowerLeasesAsync(token);
             await DrainRestorableSettingsAsync(token);
+            await DrainWindowRetriesAsync(token);
         }
         finally { gate.Release(); }
     }
@@ -331,6 +373,7 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5)); await engine.StopAndWaitAsync(deadline.Token);
         await DrainPowerLeasesAsync(deadline.Token);
         await DrainRestorableSettingsAsync(deadline.Token);
+        await DrainWindowRetriesAsync(deadline.Token);
         engine.Dispose(); scheduler.Dispose(); watchCancel?.Dispose(); gate.Dispose();
     }
 }
