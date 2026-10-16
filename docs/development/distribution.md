@@ -1,64 +1,35 @@
-# 构建、清理与 Windows 分发
+# 构建、本机更新与发布
 
-2026-10-09。同一份 payload 同时提供便携 ZIP 和 Windows 安装 EXE。所有者已授权按功能批次自动发布私有 GitHub 预览版；仓库保持私有，不代表正式第一版，也不自动替换所有者本机版本。
+本页是当前操作入口；历史安装/发布记录见 [旧验收快照](../history/distribution-through-20261016.md)，不作为重跑清单。
 
-## 本机打包
+## 入口与产物
 
-开发机器安装 global.json 指定的 .NET SDK（10.0.401）和 Visual Studio Build Tools 的“使用 C++ 的桌面开发”（启动器 Native AOT 编译用）。最终用户无需安装 SDK、.NET 或 Windows App Runtime。
+- 开发依赖：global.json固定SDK，Windows启动器Native AOT需Visual Studio C++构建工具；依赖复用缓存。
+- 分发：pwsh -NoProfile -File tools/publish-package.ps1 -Version <版本>。只输出artifacts/release下便携ZIP、安装EXE、BUILD-INFO.json和SHA256SUMS.txt。
+- 本机预览：pwsh -NoProfile -File tools/publish-preview.ps1 -Version <本轮明确版本>，固定artifacts/Axiom-preview/Axiom.exe，不建每轮版本夹/备份。
+- 一个package-stage和逐项目package-build，运行库在app共享；相同路径依赖须hash一致，不危险裁剪Host/Agent/UI。最终用户无需开发SDK。
+- 临时夹具优先framework-dependent。tools/clean-artifacts.ps1清可再生临时产物，保留现预览、最新分发、配置与有效证据；-Deep才清增量bin/obj。构建/清理互斥，先正常结束占用夹具的进程。
 
-```powershell
-pwsh -NoProfile -File tools/publish-package.ps1 -Version 0.1.0-preview.1
-```
+## 安全更新本机
 
-输出仅在 `artifacts/release`：`Axiom-<版本>-win-x64-portable.zip`、`Axiom-<版本>-win-x64-setup.exe` 、`BUILD-INFO.json` 和 `SHA256SUMS.txt`。每次替换本地工作输出，不累积所有历史包；要保留正式历史版本，上传相应 GitHub Release。`-SkipInstaller` 仅用于单独检查 ZIP，不是完整分发。
+功能批次验证后已预授权正常停止→替换→重启，不因Axiom在运行重复询问；纯文档不更新二进制。
 
-启动器 Native AOT 独立 EXE；Host、Agent、WinUI 在 `app` 共享一份 .NET/WinUI 依赖。合并时相同路径必须 hash 相等，不覆盖不同版本依赖；不启用 Host/Agent/UI 的危险裁剪。WinUI 只引用实际需要的组件包，移除 umbrella 引入的 AI/ML/Widgets 等未使用组件。系统注册、快捷键重开、后台路径通过 AxiomInstallLayout 解析，保留旧预览布局兼容。
+1. 核对实际运行来源与活动控制，经应用正常停止流程等待设置恢复和旧UI/后台确实退出。
+2. 受控游戏、停止拒绝或恢复不明时保留现场，报告未应用；不强杀绕过保护，也不运行会影响现场的安装/卸载/模拟输入。
+3. 用统一publish-preview构建替换，启动后核对路径、ProductVersion/BUILD-INFO、后台连接与原配置保持。
+4. 共用原用户数据，不备份/EFS/迁移到打包AppData。原有登录启动保持启用状态并核对指向固定入口；仅必要时用既有更新位置流程。
+5. 云端不替换所有者本机。构建成功但未安全替换时明确区分已构建/尚未更新。
 
-打包只有一个 `package-stage` 和一个逐项目 `package-build`；每个项目完成后复用暂存，最终删除。失败时保留 stage 供诊断，下一次重建替换；运行中的正式包不会被覆盖。发布目录不含用户库、PDB、SDK、缓存或测试夹具。Native AOT 所需编译器仅是开发依赖；Inno Setup 6.7.3 从官方已验证签名的下载安装为便携编译工具，不注册到系统。
+## 按有意义功能批次发布
 
-更新开发预览仍用 `tools/publish-preview.ps1`，相同 payload 移动到唯一 `artifacts/Axiom-preview`；必须先安全停止 Axiom。此命令不自动启用登录启动。
+1. codex/分支相关验证后及时commit/push；PR精确head检查与对应包成功，再合入main。
+2. 准确main Check source成功后推不可变新标签v<版本>。普通提交、文档收尾不单独发版；同日新功能批次用新末尾序号，不移动旧标签。
+3. Publish preview release确认标签属于main并复用该SHA成功检查；实际重新构建四项资产，不拿旧PR/旧版本包发布，不重复功能测试。
+4. 核对四文件集合、SHA256、版本、干净源码SHA及ZIP内外来源。仅最终job有contents:write；draft上传核验后转private-repo pre-release。
+5. 失败只修/重试失败步骤，版本标签不重写；来源、hash或停止保护失败不能降级为成功。发布工具自身变更才按需运行其相关回归。
 
-2026-10-14 所有者已授权本机开发默认交付到上述固定预览目录：每批完成相关验证后直接构建、更新并核对启动，不再要求所有者从 GitHub 下载。入口为仓库下 `artifacts/Axiom-preview/Axiom.exe`；构建时显式传入本轮 `-Version`，避免沿用脚本旧默认版本号，交付时给出本机完整入口、实际版本与 `BUILD-INFO.json` 来源。本机预览可先于云端 Release 供测试，未通过的检查必须说明，不能冒充正式发布包。云端只同步源码和发布资产，本机接续再按此流程更新本机。
+## 安装边界
 
-所有者同日明确预先授权本机自动执行“停止当前 Axiom 进程 → 替换最新产物 → 重新启动”，无需因已有运行进程再逐次确认。核对当前运行包和活动控制后，优先通过应用正常安全停止流程退出旧后台与 UI，等待在途操作及恢复清理；确认实际退出才能替换和启动新预览，重启后核对运行路径、实际版本与后台连接。正在受控游戏中、停止被拒绝或无法确认恢复清理时保留现场，报告更新尚未应用，不强杀绕过保护。预览脚本在任何 Axiom 进程仍运行时会保留构建到 `artifacts/package-stage` 的产物并拒绝替换；这只代表构建就绪，不代表已更新。继续使用同一用户数据，不迁移配置、不自动备份、不复制整套运行库到每轮版本目录。已登记登录启动仍须核对指向实际使用的固定入口，通过现有“更新启动位置”处理，不静默声称旧登记已切换。
+当前用户安装，有开始菜单/可选桌面入口和卸载登记；应用按当前账户最高权限运行，Host尚非注册Windows Service。卸载保留用户数据，只移除所属文件和对应登录任务；安装/升级/卸载不强制结束运行实例。切换位置通过既有更新启动位置处理，尚无自动更新。
 
-## 安装与卸载
-
-安装版为当前用户安装，默认 `%LOCALAPPDATA%\Programs\Axiom`，允许选位置；创建开始菜单入口，桌面快捷方式可选，系统“已安装的应用”有卸载项。应用运行仍要求同账户管理员令牌；安装不注册 Windows Service、不自动开机运行。升级使用相同 AppId 和既有安装位置。
-
-安装/升级先检查本会话 Axiom 是否已经停止；不强杀后台，不用 Restart Manager 自动结束进程。卸载再次检查，只有停止后才删除指向本安装目录且参数严格为 `--background` 的当前用户登录任务；其他位置登记保留。登录任务读取/移除失败阻止卸载，不假报完成。用户配置/日志始终在 `%USERPROFILE%\.axiom`，卸载默认保留，安装程序不打包或复制开发者配置。便携版表示无需安装，尚非随 U 盘保存配置的模式。
-
-切换安装位置或从便携改用安装版，应先停止旧后台，再在新版本设置中“更新启动位置”。当前未接入自动更新。
-
-## 保持项目小
-
-```powershell
-pwsh -NoProfile -File tools/clean-artifacts.ps1
-pwsh -NoProfile -File tools/clean-artifacts.ps1 -Deep
-```
-
-普通清理移除旧候选、临时发布和 smoke 的可再生成二进制，保留夹具源码/脚本、结果文本/JSON/TRX、截图、当前预览和最新分发包。Deep 再清 src/tests/benchmarks 的 bin/obj；系统有精确匹配 SDK 才清仓库重复 SDK，旧 NuGet 空目录才清。先结束正在从 bin 或测试夹具运行的进程，不在构建期间清理；打包与清理用同一文件锁互斥。每个开发项目只保留正常增量输出，不为每个验收发布整套 self-contained runtime；临时夹具优先 framework-dependent 或共用已发布依赖，用完清理二进制、保留有效证据。
-
-tools/dotnet.ps1 优先系统 SDK，NuGet 使用标准 `%USERPROFILE%\.nuget\packages` 共用缓存，项目不再携带另一套。首次迁移旧缓存是复用依赖而非备份用户配置。
-
-## 按功能批次发布 GitHub 预览版
-
-1. 每批功能在 `codex/` 分支完成并 push；核对 PR 精确 head SHA 的全部检查和对应包，再由负责人合并 main。`artifacts`、bin/obj、数据库和所有者私人手册仍不提交；许可证尚未选择，公开源码另由所有者决定。
-2. 等 main 对应提交的 Check source 成功，再为这个提交创建明确标签并推送，例如 `v0.2.0-preview.20261009.1`。版本来自标签去掉 `v`，不按每个小提交自动递增或发布；同日下一批使用新的末尾序号。
-3. **Publish preview release**自动确认标签commit属于main，并要求该精确SHA已有成功的main Check source相关检查；没有检查不能绕过。2026-10-15所有者要求减少测试，发布不再对同一SHA重复功能回归，不重跑无关套件。随后复用publish-package.ps1新构建ZIP、安装EXE、BUILD-INFO.json和SHA256SUMS.txt，不下载旧PR或旧版本包来发布；实际构建及来源/文件校验保留。
-4. 发布前核对四文件集合、全部 SHA256、版本、源码 SHA、干净源码标志，以及 ZIP 内外来源一致。只在最终发布 job 授予 contents:write；先创建 draft，上传全部四项并核对集合和大小，再标为 GitHub pre-release。说明链接到该固定提交的功能与限制；GitHub 自动附带的 Source code ZIP 是源码，不能当作运行包。
-5. 已发布标签不能覆盖或移动；修复后换新版本。失败只留下本机制标记的draft时，可在 **Actions → Publish preview release → Run workflow** 输入已存在标签版本号（不含v）重试；必须仍为同一SHA，并确认其成功main检查，重新构建和校验所有包后才能续传发布，不重复无关功能测试。其他draft不自动修改；普通Build Windows packages手动入口仍只产出14天保留的私有Actions artifact。
-
-```powershell
-# 在对应 main CI 成功后，使用已核对的提交创建标签；不移动现有标签。
-git tag v0.2.0-preview.20261009.1 <已验证的main提交SHA>
-git push origin v0.2.0-preview.20261009.1
-```
-
-GitHub预览发布由明确标签触发，与普通push/PR检查分开。`tools/test-release.ps1`保留发布工具自身的相关合成回归入口，仅修改该边界时按需执行，不再每轮CI默认运行。真实发布仍必须校验版本输入、标签/main来源、hash、干净源码及ZIP内外来源；减少无关回归不取消这些交付校验。首个旧`.1`标签曾在resolver入口失败，未创建Release或资产，历史标签没有移动；详细历史不作为本轮重跑命令。参考[GitHub Releases](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository)。
-
-此预览未购买/配置代码签名证书，安装包和启动器为未签名应用；正式对外发布时再决定签名。自带运行依赖已核对发布内容，10-09 新布局后台/UI 实际启动，进程模块核对为包内 coreclr 和 WinUI。全新 Windows/未安装任何运行时、所有 DPI、电脑重启、完整性能预算仍属于第一版发布前验收，不能用本机已装开发环境替代。部署依据：[.NET Native AOT](https://learn.microsoft.com/en-us/dotnet/core/deploying/native-aot/)、[Windows App SDK 组件](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/release-notes/windows-app-sdk-1-8)。
-
-两个包实际构建成功、SHA256 和内容核对通过，25 项布局/登录/协议/持久化/插件相关测试通过。10-09 用户退出游戏后，实际当前用户安装、同版本覆盖升级、开始菜单/系统卸载登记、后台/UI 启动、登录位置、快捷键重开/关闭、原生编辑与零 UI 动作通过；卸载删除本安装登录任务、文件、菜单与系统登记。精简预览已替换启动，原规则指纹与登录偏好保留。首次菜单检查使用了错误的 /GROUP 假设，实际安装组名为 Axiom；已按登记组名及快捷方式真实目标核对，产品正常。不同版本升级、可选桌面入口、下次实际 Windows 登录和干净系统另待专项验收。
-
-包内与产物旁的 `BUILD-INFO.json` 记录版本、源码提交、工作区是否有未提交源码改动、目标平台和 UTC 构建时间；不含用户名、路径或配置。PR 打包检出准确的 head SHA，CI 校验源码提交且拒绝脏工作区。`SHA256SUMS.txt` 覆盖 ZIP、安装 EXE 和来源说明。源代码归档没有 Git 信息时提交号标 unknown，不伪造来源。
+包未配置代码签名；干净Windows、不同版本升级、广泛DPI/设备及完整性能不是每轮默认检查。BUILD-INFO只含版本/源码/dirty/平台/时间，不含个人数据；未做的验证明确记录，不能用开发机结果外推。
