@@ -16,6 +16,8 @@ WinUI（可退出） ── Named Pipes ── Service 角色
 
 托盘动作由 `TrayPlugin → TrayCapabilityProvider → WindowsTrayActions` 接入已有 Engine 命令链路；完整路径多选、只读系统身份记录、按需共享通知，一次性移除图标而非持续 Desired State。未公开记录格式和恢复限制见 [ADR 0010](docs/adr/0010-tray-icon-discovery.md)，不增加注入或轮询。
 
+任务栏托盘管理是工具箱的直接交互入口：Host持有专属内部任务作为唯一配置，普通规则接口不展示或修改它；启动一次与持续模式共用Engine命令链路。持续模式仅在启用时订阅Agent的目标托盘变化，原生观察只报告经完整路径核对的活动身份，Host合并通知再执行；关闭释放订阅，不承诺恢复已移除图标。UI不直调Provider，不使用周期扫描；本轮状态与实测边界见当前交接。
+
 后台自身生命周期检测由 Host 提供输入（`AxiomStartupPlugin` / `PluginTaskRuntime`），不要求 Agent 反向检测 Host 进程。开机去重在现有任务库原地持久化；Agent 就绪后经 Engine 的命令路径执行，UI 仅渲染声明字段。系统观察及程序操作仍位于 Agent。
 
 | 改动 | 只读相关规范 |

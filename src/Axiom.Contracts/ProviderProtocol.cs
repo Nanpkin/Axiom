@@ -28,6 +28,7 @@ public static class ProviderProtocol
             throw new InvalidDataException("Provider 请求无效。");
         if (message.Type == "observe-usage" && message.UsageOptions is not null && message.Invocation is null && message.CommandId is null && message.Resources is null && message.RequiredCapabilities is null) { UsageValidation.Options(message.UsageOptions); return; }
         if (message.UsageOptions is not null) throw new InvalidDataException("Unexpected observation options.");
+        if (message.Type == "observe-tray" && message.Invocation is not null && message.CommandId is null && message.Resources is null && message.RequiredCapabilities is null) { TrayCapabilities.ValidateTargets(message.Invocation); return; }
         if (message.Type == "read-tray" && message.Invocation is null && message.CommandId is null && message.Resources is null && message.RequiredCapabilities is null) return;
         if (message.Type == "observe" && message.Invocation is null && message.CommandId is null && message.Resources is { Length: <= 128 } resources &&
             message.RequiredCapabilities is { Length: > 0 and <= 128 } capabilities && capabilities.All(c => !string.IsNullOrWhiteSpace(c) && c.Length <= 128) &&

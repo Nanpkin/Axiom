@@ -89,6 +89,19 @@ public sealed partial class EngineHost
     {
         lock (gate) return idleSignal.Task.WaitAsync(cancellationToken);
     }
+    public async Task WaitForResourceIdleAsync(ResourceKey key, CancellationToken cancellationToken = default)
+    {
+        while (true)
+        {
+            Task changed;
+            lock (gate)
+            {
+                if (!flights.ContainsKey(key) && !pendingByKey.ContainsKey(key)) return;
+                changed = workSignal.Task;
+            }
+            await changed.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
     public async Task StopAndWaitAsync(CancellationToken cancellationToken)
     {
         Task[] workers;
