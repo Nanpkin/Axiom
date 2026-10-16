@@ -1,47 +1,33 @@
-# 开发与上下文工作流
+# 开发与投入控制
 
-## 开始任务
+AGENTS是操作约束入口；本页只补充执行方法，不重复历史授权。
 
-读取 AGENTS → [当前交接](../product/current-state.md) → [代码定位表](code-map.md) 的本轮相关行 → 必要代码/测试与 contract。改 UI 读 UI 架构，改变产品/技术边界才查对应范围/架构/ADR；不默认读旧计划。先检查一次 Git 状态、所在分支、工作目录和已有未提交变更，保护其他工作；不要为确认进度重复扫描全库。优先复用当前合适的 checkout，不机械拆出大量 branch/worktree/PR。
+## 最小任务流程
 
-复杂任务按 Plan → Implement → Review：写目标/边界/验收和里程碑，再做最小闭环，最后针对实际 diff 验证。已获得授权的范围内继续推进，不为每个常规小步骤反复索要批准；新增架构、扩大范围或不可逆操作另行说明。
+1. 核对Git/远端，读当前交接与本轮定位行；确定用户结果、改动文件、验收方式。
+2. 默认一个实现代理，给简短目标/接口/文件/约束。负责人维护文档与Git；可独立并行且确实省时才加分工，不复制完整聊天/历史。
+3. 复用现有扩展点。小改动不建计划；跨层任务只记未决项和验收，不预建框架。
+4. 完成后审查实际diff及直接风险；有具体问题才修复/复查，没有新证据即交付。
+5. 及时commit/push。功能按有意义批次合并/发布，文档或小收尾不再走整套发版。
 
-## 执行与记录
+## 限定验证
 
-- Domain/Engine 行为用 fake adapters 和可控时钟验证；真实 Windows 输入与动作在当前场景中尽早接入验证，不再把全部真实能力机械后置到完整底层框架之后。
-- 每次修改必须能归因当前目标；发现顺手重构机会写入后续事项，不夹带实施。
-- 聊天得出的稳定行为写 architecture/product；架构取舍写 ADR；操作状态写 exec-plan；可执行保证写 tests；数字/环境写性能报告。避免复制同一规范形成多个权威版本。
-- 新会话通过当前交接、相关文件和实际 diff 恢复；旧计划已退出执行路线，不要求读完整旧聊天或重审全项目。交付后更新已做、实测边界、未解决和当前任务；易变的分支/工作区状态当场核对，不把历史 PID 或提交当当前运行状态。
-- reviewer 对基线到当前提交的 diff 独立审查，报告触发场景、文件位置、影响和验证；不能把未经验证猜测当确定缺陷。
+- 功能改动先按diff维护tools/change-test-suites.txt，列完整测试类或精确方法。运行pwsh -File tools/test-core.ps1；Linux入口bash tools/test-core.sh只选平台支持项。
+- 修复只复查受影响项，保留其他有效结果；不机械重跑全套/全UI/全原生/媒体。CI范围与本机一致，发布复用准确main检查。
+- 构建受影响项目即可；需要交付应用时才用统一打包入口。临时实机夹具优先现有工具/framework-dependent，证据明确区分合成、真实API、UI草稿与真实配置链路。
+- 文档轮只检查diff、内容、链接、隐私；不改测试清单、不构建/启停应用、不新发版。性能只按 [政策](performance.md) 的触发条件测量。
+- SDK按global.json、依赖按lock files，复用系统SDK/NuGet缓存。工具/环境失败不能记为通过。
 
-## 验证与提交
+## 2026-10-16反思与停止条件
 
-只执行当前改动功能及直接受影响边界的相关测试；2026-10-15所有者明确禁止每轮重跑全套，适用于本机和CI。相关验证通过即交付，不为无关失败扩大本轮；文档收尾只检查内容/链接/隐私。SDK固定10.0.401，优先使用系统匹配版本；依赖lock files已提交。构建入口及相关测试示例：
+时段功能一轮中，长交接混入历史、多代理重复加载上下文、验收/发布往返及目录导出耦合放大了耗时和额度。责任包括执行方式，不能只归咎文档。
 
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/dotnet.ps1 restore Axiom.slnx --locked-mode
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/dotnet.ps1 build Axiom.slnx -c Release --no-restore
-dotnet test tests/Axiom.Engine.Tests/Axiom.Engine.Tests.csproj -c Release --filter "FullyQualifiedName~Axiom.Engine.Tests.BuiltInBrightnessTests.|FullyQualifiedName~Axiom.Engine.Tests.HardwareBrightnessTests.|FullyQualifiedName~Axiom.Engine.Tests.BrightnessAdjustmentTests.|FullyQualifiedName~Axiom.Engine.Tests.BrightnessRestoreTests."
-```
+- 阅读超出当前问题时，回到定位行；技术细节按需查，不要求接手重新审查全项目。
+- 新接口/跨模块修改必须说明当前消费者；耦合只修阻塞本轮的最小边界，其余进入候选。
+- 验证通过后只处理有证据的直接缺陷。通用增强、更多场景和额外复审不能自动成为本轮任务。
+- 当前交接目标不超过60行/2000字符；详细验收放对应计划，历史移出默认入口。新增内容先替换旧摘要，避免累积流水账。
+- 报告用户新增行为、必要验证/限制和同步结果。测试数量不代替可用性，不承诺未经测量的额度节省。
 
-NuGet 复用 `%USERPROFILE%\.nuget\packages`，CLI 状态在 `artifacts/tooling/cli`；全新环境需要 NuGet 网络访问。便携/安装打包和安全清理入口见 [分发说明](distribution.md)，临时夹具不重复发布 self-contained runtime。此前沙箱内 MSBuild 曾无诊断失败，获准在沙箱外运行后成功；不要将工具失败误报为通过。性能入口见 [benchmarks](../../benchmarks/README.md)。
+## 文档归属
 
-行为变更必须配有意义的正反例。涉及后台工作时审查通知源、订阅范围、无工作等待、去重/合并、队列与重试是否有界；不要求每次性能相关改动都测 CPU。明显异常或方案成本难以判断时做针对性诊断；数值测量按 [性能政策](performance.md) 安排，混合负载读数不能作为达标或回归结论。提交前检查 diff、临时文件、敏感数据及文档链接。仅提交当前任务文件；不要 git add 全部后无视既有改动。计划完成才移入 completed 并修复入口链接。
-
-本地提交应为可复核的小步；远程 push/PR 在已配置远程且任务授权时进行，不擅自创建公开仓库。共享历史回滚默认新建 revert 提交；不用 reset --hard/clean 丢弃工作。回滚数据库/系统副作用需独立恢复流程。
-
-默认相关入口为 `pwsh -File tools/test-core.ps1` 或 `bash tools/test-core.sh`，运行前按本轮diff维护 `tools/change-test-suites.txt` 的完整类名/精确方法名。清单是本批范围，不能将上一批亮度清单沿用于无关任务；TRX须证明每个声明项实际有执行，空/未知/全跳过不算成功。文档提交不自动跑功能检查，发布要求准确SHA已成功main检查而不重复功能回归。
-
-## 完成报告
-
-先用日常语言说明新增什么可用功能、如何操作、还有什么不能用，再给必要的验证结果、风险/后续和提交/工作区状态。局部里程碑完成不能描述为整个产品完成，测试数量不能代替用户验收。性能按实际情况写“采用何种低开销策略；数值未测/本次无需测”，不用每轮重复完整实验欠账。没有运行的测试明确写未运行；文档奠基不等于代码或性能完成。
-
-审查聚焦当前改动及直接影响：修复有触发场景和证据的问题，完成相关回归后继续交付。额外轮次需有新缺陷证据、实际变更或未解决的直接风险，不因能继续想象边界情况而无限扩展复审。
-
-## 文档与投入控制
-
-默认阅读顺序以 AGENTS 为准，不扩展成全量检查清单。开始时写用户新增能完成什么以及实际验收路径；纯内部子任务写明消费者。当前状态只更新 current-state，入口/职责变化更新 code-map，稳定交互只更新 workbench-ui，有本轮计划才记录其证据。小修复和文档维护无需为了编号新建计划；文档整理检查内容和链接即可，不启动应用或重跑功能测试。不要把所有历史进度复制进 README/AGENTS/ARCHITECTURE。
-
-UI 变更必须检查真实窗口与核心操作，不以编译成功或测试数量代替体验验证。开发者术语、能力展板和未来规划不放产品主流程。规则启用只表示允许检测，不表示动作正在执行。
-
-旧维护脚本 tools/run-status.ps1 用于服务观察实验，MainWindow/RuleDraftWindow 代码仅供维护；App 默认已打开产品工作台，不能照历史 0005/0006 的路径声称当前主入口仍提供文字草稿。维护实验前先确认对应入口，不恢复成用户默认页面。
+当前事实→current-state；文件入口→code-map；未来候选→functional-roadmap；稳定交互/语义→UI架构/contract/ADR；本次证据→已有计划。只更新受影响位置，纯文档整理不为自己再建计划。分发与本机安全更新见 [分发说明](distribution.md)。
