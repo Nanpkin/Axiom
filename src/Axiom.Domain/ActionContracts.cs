@@ -1,3 +1,5 @@
+using System.Collections.Immutable;
+
 namespace Axiom.Domain;
 
 public sealed record DesiredState
@@ -22,6 +24,8 @@ public sealed record DesiredState
     }
 }
 
+public sealed record CommandOrigin(string RuleId, long RuleVersion, StateValue? EventStamp = null, ResourceKey? EventSource = null);
+
 public sealed record Command
 {
     public Guid CommandId { get; }
@@ -30,7 +34,9 @@ public sealed record Command
     public string Principal { get; }
     public DateTimeOffset Deadline { get; }
     public bool IsIdempotent { get; }
-    public Command(Guid commandId, ResourceKey key, StateValue arguments, string principal, DateTimeOffset deadline, bool isIdempotent)
+    public ImmutableArray<CommandOrigin> Origins { get; }
+    public Command(Guid commandId, ResourceKey key, StateValue arguments, string principal, DateTimeOffset deadline, bool isIdempotent,
+        ImmutableArray<CommandOrigin> origins = default)
     {
         if (commandId == Guid.Empty) throw new ArgumentException("Command id is required.", nameof(commandId));
         CommandId = commandId;
@@ -39,6 +45,7 @@ public sealed record Command
         Principal = Contract.Text(principal, nameof(principal));
         Deadline = deadline;
         IsIdempotent = isIdempotent;
+        Origins = origins.IsDefault ? [] : origins;
     }
 }
 

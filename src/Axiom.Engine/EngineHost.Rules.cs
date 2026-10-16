@@ -20,6 +20,7 @@ public sealed partial class EngineHost
         internal TimeSpan? LastTriggered = null;
         internal decimal? EventCursor;
         internal bool EventLatched;
+        internal StateValue? EventStamp;
     }
     private readonly Dictionary<string, RuntimeRule> rules = new(StringComparer.Ordinal);
     private readonly Dictionary<string, long> ruleVersions = new(StringComparer.Ordinal);
@@ -234,9 +235,9 @@ public sealed partial class EngineHost
         if (rule.Definition.Condition.Kind == ConditionKind.Event)
         {
             var counter = states.GetValueOrDefault(rule.Definition.Condition.Key!)?.Observation.Value?.Number;
-            if (value == TruthValue.Unknown) rule.EventLatched = false;
+            if (value == TruthValue.Unknown) { rule.EventLatched = false; rule.EventStamp = null; }
             else if (baseline || rule.EventCursor is null)
-            { rule.EventCursor = counter; rule.EventLatched = false; }
+            { rule.EventCursor = counter; rule.EventLatched = false; rule.EventStamp = null; }
             else if (!fromDeadline && counter > rule.EventCursor)
             {
                 rule.EventCursor = counter;
@@ -244,6 +245,7 @@ public sealed partial class EngineHost
                     rule.TrueSince.HasValue && rule.Value != TruthValue.True)
                 { rule.CommandEdge = false; rule.Reason = "Busy; event discarded"; return; }
                 rule.EventLatched = true; rule.Armed = true; rule.Value = TruthValue.False; previous = TruthValue.False;
+                rule.EventStamp = states.GetValueOrDefault(rule.Definition.Condition.Key!)?.Observation.Value;
                 rule.TrueSince = null; rule.DebounceUntil = null;
             }
             if (value != TruthValue.Unknown) value = rule.EventLatched ? TruthValue.True : TruthValue.False;
