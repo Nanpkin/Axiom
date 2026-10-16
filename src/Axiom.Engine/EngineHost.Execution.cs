@@ -25,7 +25,7 @@ public sealed partial class EngineHost
 {
     private sealed record Work(ResourceKey Key, long Generation, RuleAction Action, string Principal, Guid Id,
         CapabilityDescriptor Capability, ImmutableArray<string> Winners, bool Manual = false, DateTimeOffset? Deadline = null,
-        ImmutableArray<ResourceKey> RequiredResources = default, int Priority = 0);
+        ImmutableArray<ResourceKey> RequiredResources = default, int Priority = 0, ImmutableArray<CommandOrigin> Origins = default);
     private sealed class Flight(Work work, long observedVersion)
     {
         internal Work Work = work;
@@ -206,7 +206,9 @@ public sealed partial class EngineHost
         if (requestId == Guid.Empty) { SetExecutionStatus(key, DecisionStatus.Blocked, "CommandIdSourceReturnedEmpty"); return; }
         var work = new Work(key, decision.Generation, decision.Action, winner.Principal, requestId, descriptorForWork, decision.Winners,
             Deadline: decision.Action.Kind == RuleActionKind.Command ? clock.UtcNow + descriptorForWork.Timeout : null,
-            RequiredResources: ExpandResources(decision.Winners.SelectMany(id => rules[id].Definition.Condition.Dependencies).Append(key)).ToImmutableArray(), Priority: winner.Priority);
+            RequiredResources: ExpandResources(decision.Winners.SelectMany(id => rules[id].Definition.Condition.Dependencies).Append(key)).ToImmutableArray(), Priority: winner.Priority,
+            Origins: [.. decision.Winners.Select(id => new CommandOrigin(id, rules[id].Definition.Version, rules[id].EventStamp,
+                rules[id].Definition.Condition.Kind == ConditionKind.Event ? rules[id].Definition.Condition.Key : null))]);
         if (!Enqueue(work)) return;
         if (work.Action.Kind == RuleActionKind.Command)
             foreach (var id in work.Winners) rules[id].LastTriggered = clock.MonotonicNow;
@@ -311,7 +313,7 @@ public sealed partial class EngineHost
                 flight.Cancellation.Token.ThrowIfCancellationRequested();
                 outcome = work.Action.Kind == RuleActionKind.Command
                     ? await Executor.ExecuteCommandAsync(new(work.Id, work.Key, work.Action.Value, work.Principal,
-                        flight.UtcDeadline, work.Action.IsIdempotent), flight.Cancellation.Token).ConfigureAwait(false)
+                        flight.UtcDeadline, work.Action.IsIdempotent, work.Origins), flight.Cancellation.Token).ConfigureAwait(false)
                     : await Executor.ApplyDesiredAsync(new(work.Key, work.Action.Value, work.Manual ? work.Principal : string.Join("+", work.Winners),
                         work.Priority, work.Generation, "while current generation remains authorized"), flight.Cancellation.Token).ConfigureAwait(false);
                 if (work.Action.Kind == RuleActionKind.Command && outcome.CorrelationId != work.Id)

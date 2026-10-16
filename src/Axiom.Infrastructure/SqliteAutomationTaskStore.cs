@@ -5,7 +5,7 @@ using Microsoft.Data.Sqlite;
 namespace Axiom.Infrastructure;
 
 // Capability parameters are versioned JSON, independent of plugin-specific columns.
-public sealed class SqliteAutomationTaskStore : IDisposable
+public sealed partial class SqliteAutomationTaskStore : IDisposable
 {
     private readonly SqliteConnection connection;
     private readonly SemaphoreSlim gate = new(1, 1);
@@ -20,6 +20,7 @@ public sealed class SqliteAutomationTaskStore : IDisposable
         if (storedVersion > 3) throw new InvalidDataException("任务数据库版本较新，请更新 Axiom。");
         cmd.CommandText = "PRAGMA busy_timeout=2000; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS automation_tasks(id TEXT PRIMARY KEY, version INTEGER NOT NULL, configuration TEXT NOT NULL); CREATE TABLE IF NOT EXISTS host_startup(id INTEGER PRIMARY KEY CHECK(id=1), boot_id INTEGER NOT NULL); PRAGMA user_version=" + Math.Max(2, storedVersion) + ";";
         cmd.ExecuteNonQuery();
+        CreateWindowOnceAttempts();
     }
     public async Task<AutomationTask[]> ListAsync(CancellationToken token = default)
     {

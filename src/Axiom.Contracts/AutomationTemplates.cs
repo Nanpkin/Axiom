@@ -76,6 +76,8 @@ public static class AutomationTemplates
         new("keep-transfer-awake", "传输或会议程序运行期间保持系统唤醒", "选择需要持续运行的程序；任意一个运行时持有Axiom自己的电源请求，全部退出或状态未知后释放。默认允许屏幕关闭，不改变电源计划、不阻止手动睡眠。", "process.running", KeepAwakeCapabilities.Hold, [], [("target", "system")]),
         new("once-meeting", "指定日期打开会议页面", "填写日期、本地时刻和http/https会议网址；只等待未来时刻，不补发已错过的会议，不自动加入或操作会议。", OnceTimeCapabilities.Due, OpenTargetCapabilities.Open, [], [("kind", "url")]),
         new("daily-document", "工作日定时打开计划文档", "手工填写本机文档完整路径；默认工作日9点交给默认关联应用打开，不读取内容、不保证加载完成，暂停不关闭已打开文档。", DailyTimeCapabilities.Due, OpenTargetCapabilities.Open, [], [("kind", "document")]),
+        new("window-once-tool", "每天时段内启动一次工具", "选择工具；默认每天6–18点，8点开机也能执行。本规则该时段成功后不再重复，重启仍保留记录；结束后不补执行，也不关闭已启动程序。请审阅后启用。", WindowOnceCapabilities.Due, "program.start", [], []),
+        new("window-once-reminder", "每天时段内提醒一次", "填写提醒内容；默认每天6–18点，晚开机但仍在时段内也能提醒。本规则该时段成功后不重复，不唤醒电脑；Windows勿扰可能隐藏已受理通知。请审阅后启用。", WindowOnceCapabilities.Due, NotificationCapabilities.Show, [], []),
         new("daily-work-folder", "工作日定时打开目录", "填写工作目录，选择本地时刻和星期；默认周一至周五9点。只等未来时刻，错过不补发，也不唤醒电脑。", DailyTimeCapabilities.Due, OpenTargetCapabilities.Open, [], [("kind", "folder")]),
         new("regular-reminder", "定期打开提醒页", "填写提醒页的 http/https 网址和间隔；首次也需等待完整间隔，每次到期会请求打开一次，请避免过短间隔造成重复标签页。", IntervalCapabilities.Elapsed, OpenTargetCapabilities.Open, [], [("kind", "url")]),
         new("pin-shortcut", "按快捷键置顶工具窗口", "选择全局快捷键与目标程序；一次置顶。可把窗口状态改为取消置顶建立另一条规则。", HotkeyCapabilities.Pressed, WindowCapabilities.State, [], [("state", "topmost")])
