@@ -372,6 +372,9 @@ public sealed class UsageObservationTests
         Assert.True(System.Text.Encoding.UTF8.GetByteCount(UsageAnalysis.Prompt + summary.Replace("\r\n", "\n").Replace("\n", "\r\n")) <= UsageValidation.MaximumExportBytes);
         Assert.DoesNotContain("synthetic-private", summary); Assert.DoesNotContain(App("Synthetic0"), summary);
         using var document = JsonDocument.Parse(summary);
+        Assert.Equal(recorder.Session.Objects.Select(o => o.Id), document.RootElement.GetProperty("objects").EnumerateArray().Select(o => o.GetProperty("id").GetString()));
+        if (document.RootElement.GetProperty("objects").EnumerateArray().Any(o => !o.TryGetProperty("kind", out _)))
+            Assert.Contains("类型均application", document.RootElement.GetProperty("omissions").GetString());
         Assert.Equal(nameof(TaskFieldKind.DirectoryPath), document.RootElement.GetProperty("fieldKinds").GetProperty(((int)TaskFieldKind.DirectoryPath).ToString()).GetString());
         var capabilities = document.RootElement.GetProperty("capabilities").EnumerateArray().ToDictionary(c => c.GetProperty("Id").GetString()!);
         Assert.Equal(catalog.Capabilities.Length, capabilities.Count);
