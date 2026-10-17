@@ -13,6 +13,7 @@ internal sealed unsafe class PrimaryColorEvents : IDisposable
     private readonly DispatcherQueueController controller = DispatcherQueueController.CreateOnDedicatedThread();
     private readonly Action changed;
     private readonly Action<Exception> failed;
+    private readonly ScreenContentColorModeFilter modes = new();
     private DisplayInformation? info;
     private int disposed;
     internal PrimaryColorEvents(Action changed, Action<Exception> failed)
@@ -39,7 +40,15 @@ internal sealed unsafe class PrimaryColorEvents : IDisposable
             try { Bind(); changed(); } catch (Exception error) { failed(error); }
         })) failed(new IOException("主屏颜色事件队列已停止。"));
     }
-    private void Changed(DisplayInformation sender, object args) => changed();
+    private void Changed(DisplayInformation sender, object args)
+    {
+        if (Volatile.Read(ref disposed) != 0 || info is null) return;
+        try
+        {
+            if (modes.Update((int)info.GetAdvancedColorInfo().CurrentAdvancedColorKind)) changed();
+        }
+        catch (Exception error) { failed(error); }
+    }
     private void Bind()
     {
         ReleaseInfo();
@@ -55,6 +64,9 @@ internal sealed unsafe class PrimaryColorEvents : IDisposable
             Marshal.ThrowExceptionForHR(((delegate* unmanaged[Stdcall]<nint,nint,Guid*,nint*,int>)method)(factory, MonitorFromPoint(default, 1), &displayIid, &created));
             info = MarshalInspectable<DisplayInformation>.FromAbi(created);
             info.AdvancedColorInfoChanged += Changed;
+            // Read after subscribing so a mode transition cannot fall between
+            // the initial read and registration. Reading failures abort setup.
+            modes.Baseline((int)info.GetAdvancedColorInfo().CurrentAdvancedColorKind);
         }
         finally { if (created != 0) Marshal.Release(created); if (factory != 0) Marshal.Release(factory); WindowsDeleteString(name); }
     }

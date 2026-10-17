@@ -15,6 +15,20 @@ public interface IScreenContentEnvironment : IDisposable
 }
 public sealed record ScreenContentStateSample(bool? Bright, bool Baseline, string Reason);
 
+// AdvancedColorInfoChanged also reports brightness/white-level metadata. Only
+// an actual SDR/WCG/HDR mode transition should invalidate screen capture.
+public sealed class ScreenContentColorModeFilter
+{
+    private int? mode;
+    public void Baseline(int current) => mode = current;
+    public bool Update(int current)
+    {
+        var changed = mode.HasValue && mode.Value != current;
+        mode = current;
+        return changed;
+    }
+}
+
 // Monotonic elapsed time is supplied by the Agent; unchanged desktops need only
 // one stability deadline, not repeated captures or a health timer.
 public sealed class ScreenContentState(int enterPercent, int exitPercent, TimeSpan stableFor)
