@@ -37,6 +37,9 @@ public sealed class WindowsSessionEvents : IDisposable
         lock (Gate)
         {
             shared ??= new Hub(); owner = shared; owner.Clients.Add(this);
+            // Registration's initial OS report may predate this lease. Replay
+            // only the last real report/reset, atomically with joining Clients.
+            if (screenPowerOnly && owner.LastScreenState is { } screenState) queue.Writer.TryWrite(screenState);
         }
         // Do not block the gate while native subscription setup may deliver a callback.
         try
@@ -75,6 +78,7 @@ public sealed class WindowsSessionEvents : IDisposable
         internal nint Window;
         internal bool PowerNotificationsAvailable;
         internal bool ScreenNotificationsAvailable;
+        internal string? LastScreenState;
         internal bool SchemeNotificationsAvailable;
         internal bool SaverNotificationsAvailable;
         internal bool PresenceNotificationsAvailable;
@@ -298,9 +302,13 @@ public sealed class WindowsSessionEvents : IDisposable
         private void ScreenStateChanged(uint? state)
         {
             var kind = state switch { 0 => "screen-off", 1 => "screen-on", 2 => "screen-dim", _ => "screen-reset" };
-            lock (Gate) foreach (var client in Clients)
+            lock (Gate)
+            {
+                LastScreenState = kind;
+                foreach (var client in Clients)
                 if (!client.lockStateOnly && !client.presenceOnly && client.screenPowerOnly && !client.schemeOnly && !client.saverOnly && !client.clockOnly && !client.usbOnly && !client.powerOnly && !client.displayOnly && !client.queue.Writer.TryWrite(kind))
                 { client.failed = true; client.queue.Writer.TryComplete(new IOException("屏幕电源通知队列已满，状态未知。")); }
+            }
         }
     }
     [StructLayout(LayoutKind.Sequential)] private struct DeviceInterface { public uint Size, DeviceType, Reserved; public Guid ClassGuid; public ushort Name; }

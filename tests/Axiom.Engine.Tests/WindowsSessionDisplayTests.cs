@@ -10,6 +10,25 @@ namespace Axiom.Engine.Tests;
 public sealed class WindowsSessionDisplayTests
 {
     [Fact(Timeout = 15000)]
+    public async Task LateScreenLeaseReplaysRealPowerReportAndResetAfterTheSharedWindowAlreadyExists()
+    {
+        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var general = new WindowsSessionEvents();
+        using (var initial = new WindowsSessionEvents(screenPowerOnly: true))
+            Assert.StartsWith("screen-", await Next(initial, null, stop.Token));
+        // The OS notification window remains alive without a screen consumer.
+        SendReport(general.NotificationWindow, 0);
+        using var late = new WindowsSessionEvents(screenPowerOnly: true);
+        Assert.Equal("screen-off", await Next(late, null, stop.Token));
+        SendMessage(general.NotificationWindow, 0x0218, 0x04, 0);
+        Assert.Equal("screen-reset", await Next(late, null, stop.Token));
+        using var afterReset = new WindowsSessionEvents(screenPowerOnly: true);
+        Assert.Equal("screen-reset", await Next(afterReset, null, stop.Token));
+        SendReport(general.NotificationWindow, 1);
+        Assert.Equal("screen-on", await Next(late, null, stop.Token));
+        Assert.Equal("screen-on", await Next(afterReset, null, stop.Token));
+    }
+    [Fact(Timeout = 15000)]
     public async Task CurrentSessionDisplayRegistrationSharesTheWindowAndDoesNotLeakReportsToOtherConsumers()
     {
         using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(5));
