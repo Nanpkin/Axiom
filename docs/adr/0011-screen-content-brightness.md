@@ -7,6 +7,7 @@
 - 检测主屏画面中明亮采样点的面积比例，不只数纯白，不代表环境照度、背光百分比或真实nits。采用固定网格、相对亮度阈值、进入/退出面积滞回和稳定时间，复用已有亮度恢复Desired动作，不逐帧写亮度。
 - 画面留在GPU，GPU归约后CPU只读小统计；不把整屏复制到托管内存、不编码/保存/上传画面，日志和管道只传布尔与解释性比例。无依赖时释放，多个消费者共享必要采集。
 - 自动检测HDR；开启、未知、锁屏、屏幕关或设备失效时暂停采集并给Unknown，释放亮度租约遵守原保护。关闭HDR/恢复后靠系统事件重建，不要求手工重启规则。可选HH:mm时段在Agent最近边界启停采集，时段外Known false；不能只用Command执行门禁冒充停采。
+- AdvancedColorInfoChanged也可能由亮度/white-level元数据变化引起，仅SDR/WCG/HDR模式实际变化才使采集失效，避免自身亮度动作形成释放/恢复反馈；拓扑刷新仍强制重绑。依据见 [DisplayInformation互操作说明](https://learn.microsoft.com/en-us/windows/win32/api/windows.graphics.display.interop/nf-windows-graphics-display-interop-idisplayinformationstaticsinterop-getforwindow)。
 
 ## API选择与必要例外
 
