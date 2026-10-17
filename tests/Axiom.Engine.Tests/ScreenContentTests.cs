@@ -11,6 +11,18 @@ namespace Axiom.Engine.Tests;
 
 public sealed class ScreenContentTests
 {
+    [Fact]
+    public void AdvancedColorMetadataWithinSameModeDoesNotInvalidateCaptureButModeTransitionsDo()
+    {
+        var mode = new ScreenContentColorModeFilter();
+        mode.Baseline(0); // SDR initial subscription
+        Assert.False(mode.Update(0)); Assert.False(mode.Update(0)); // brightness/white-level changes
+        Assert.True(mode.Update(2)); Assert.False(mode.Update(2)); // HDR transition, then metadata only
+        Assert.True(mode.Update(1)); Assert.False(mode.Update(1)); // WCG transition, then metadata only
+        Assert.True(mode.Update(0)); Assert.False(mode.Update(0)); // back to SDR
+        mode.Baseline(2); // topology rebind establishes a new initial mode
+        Assert.False(mode.Update(2)); Assert.True(mode.Update(0));
+    }
     private static TaskInvocation Detection(string start = "", string end = "") => new(ScreenContentCapabilities.Bright, 1,
         new Dictionary<string, string> { ["enterPercent"] = "65", ["exitPercent"] = "45", ["stableSeconds"] = "3", ["start"] = start, ["end"] = end }.ToImmutableDictionary());
     private static DateTimeOffset At(int hour, int minute = 0) => new(2026, 10, 17, hour, minute, 0, TimeSpan.Zero);
