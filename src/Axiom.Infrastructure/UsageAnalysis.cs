@@ -327,6 +327,10 @@ public static class UsageAnalysis
             compact.Remove("combinations");
             compact["combinationIndex"] = JsonSerializer.SerializeToNode(index, CompactCatalogJson);
             compact["omissions"] = "无本机身份/完整原始事件；最多6模式/3证据/12已处理。缺省说明/提示空、默认值/上下限/分组null、标记默认false；其余参数约束不变。combinationIndex:DetectionIds/ActionIds为完整ID，Pairs为零基索引对；全部组合保留。";
+            // All observed objects are applications; keep every ID while stating
+            // that repeated default once, only in the existing tightest tier.
+            foreach (var item in compact["objects"]!.AsArray()) item!.AsObject().Remove("kind");
+            compact["omissions"] = compact["omissions"]!.GetValue<string>() + "objects仅列id，类型均application。";
             result = compact.ToJsonString(CompactCatalogJson);
         }
         if (Encoding.UTF8.GetByteCount(result) > budget) throw new InvalidOperationException($"必要能力参数超出 64 KiB（本次UTF-8含Prompt为{Encoding.UTF8.GetByteCount(Prompt + result)}字节），无法安全生成本版摘要；未复制或上传。");
@@ -416,6 +420,7 @@ public static class UsageAnalysis
             if (resolved.CapabilityId == MediaPlaybackCapabilities.State) MediaPlaybackCapabilities.Validate(resolved);
             if (resolved.CapabilityId == SessionPresenceCapabilities.State) SessionPresenceCapabilities.Validate(resolved);
             if (resolved.CapabilityId == ForegroundScreenCoverCapabilities.Covers) ForegroundScreenCoverCapabilities.Validate(resolved);
+            if (resolved.CapabilityId == ScreenContentCapabilities.Bright) ScreenContentCapabilities.Validate(resolved);
             if (resolved.CapabilityId == SessionDisplayCapabilities.State) SessionDisplayCapabilities.Validate(resolved);
             if (resolved.CapabilityId == DisplayCountCapabilities.Count) DisplayCountCapabilities.Validate(resolved);
             if (resolved.CapabilityId == PowerSaverStateCapabilities.State) PowerSaverStateCapabilities.Validate(resolved);

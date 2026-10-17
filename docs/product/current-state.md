@@ -1,8 +1,10 @@
 # 当前交接
 
-更新：2026-10-16。本页只保留接手必需事实；先按AGENTS控制范围与成本。
+更新：2026-10-17。本页只保留接手必需事实；先按AGENTS控制范围与成本。
 
 ## 当前交付
+
+- 当前任务：新增画面明亮面积检测，优先验证低频GPU统计成本，可限定夜间停采；尚未交付。范围和捕获/HDR未决项见 [本轮计划](../exec-plans/active/screen-content-brightness.md)。
 
 - 本机入口：artifacts/Axiom-preview/Axiom.exe；版本0.2.0-preview.local.20261016.2，干净源码0044f57。正常停止更新后，运行路径/实际版本/后台连接、原8条规则指纹与登录启动位置保持已核验。
 - 本轮托盘工具已合入main：[PR22](https://github.com/Starvan/Axiom/pull/22)，准确PR/main检查与打包通过；[预览v0.2.0-preview.20261016.2](https://github.com/Starvan/Axiom/releases/tag/v0.2.0-preview.20261016.2)已发布，固定源码71bd9b3，产品源码与本机一致。详细证据见 [验收记录](../exec-plans/completed/tray-toolbox.md)。
@@ -28,4 +30,4 @@
 - 用户数据统一在USERPROFILE下的.axiom；正式与开发共用，不自动备份或EFS。Host当前为Service角色，尚未注册Windows Service。
 - 配置/授权/执行走Host/Engine，WinUI不直接操作系统；正常停止须等待恢复，受控游戏现场不能强杀替换。详见AGENTS和 [分发](../development/distribution.md)。
 - 下一批目标见 [功能清单](functional-roadmap.md)，候选未确认不启动。
-- 历史功能细节与旧验收完整保留在 [精简前快照](../history/state-through-20261016.md)，仅追查具体问题时检索，不作为默认阅读或执行路线。
+- 历史功能见 [旧快照](../history/state-through-20261016.md)，只按需追查，不作为执行路线。

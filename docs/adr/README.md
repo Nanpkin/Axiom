@@ -14,5 +14,6 @@ ADR 记录背景、决策、替代方案、后果和验证。Accepted 表示架�
 | [0008](0008-task-capability-composition.md) | 通用任务、独立检测与动作编译 | Accepted |
 | [0009](0009-native-process-events-elevation.md) | 管理员会话的原生进程通知 | Accepted |
 | [0010](0010-tray-icon-discovery.md) | 托盘系统身份发现与一次性隐藏 | Accepted |
+| [0011](0011-screen-content-brightness.md) | 低频画面明亮面积、GPU统计与可选时段停采 | Accepted，实际API路径及短测见本轮计划 |
 
 早期工程默认值的决策来源见 decision-status（本机历史记录），其中旧待决项不代表当前进度；现状与未解决事项统一见 [当前状态](../product/current-state.md)。停止沿用旧执行计划不撤销本索引的有效 ADR。
