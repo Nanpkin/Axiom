@@ -120,6 +120,14 @@ public static class WindowsBrightnessWheelGesture
                     var at = time.GetElapsedTime(start);
                     if (tx.HasPendingFadeWrite && (at - state.BurstStarted >= TimeSpan.FromSeconds(1) ||
                         !closing && at - state.BurstStarted >= TimeSpan.FromMilliseconds(800))) continue;
+                    // Finish the previous segment before the last Set. Some monitors acknowledge
+                    // closely spaced writes while keeping only the first value until a read fence.
+                    if (tx.HasPendingFadeWrite && (value == state.End || closing))
+                    {
+                        if (!tx.ConfirmHardwareBurst(token, time, (delay, _) => Wait(delay))) return new(false, consumed, "终点前亮度段未确认；不重试。");
+                        state.Verified = true; state.Closing = false;
+                        continue;
+                    }
                     var pending = tx.HasPendingFadeWrite;
                     if (!tx.WriteHardwareBurst(value, token)) return new(false, consumed, "亮度写入未接受或已取消；不重试。");
                     if (!pending) state.BurstStarted = at;

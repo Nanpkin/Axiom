@@ -84,6 +84,39 @@ public sealed class BrightnessWheelTests
     }
 
     [Fact]
+    public void EndpointConfirmsPriorSegmentBeforeSetAndRechecksInputAfterSlowRead()
+    {
+        foreach (var retarget in new[] { false, true })
+        {
+            var time = new ManualTimeProvider(); uint current = 97; long latest = -2;
+            var unconfirmed = false; var reads = 0; var writes = new List<uint>();
+            var target = new BrightnessRestoreTarget(97, p => (uint)p, () =>
+            {
+                reads++; unconfirmed = false;
+                if (reads == 2)
+                {
+                    time.Advance(TimeSpan.FromMilliseconds(250));
+                    if (retarget) latest = 2;
+                }
+                return current;
+            }, value =>
+            {
+                if (value is 93 or 100) Assert.False(unconfirmed);
+                writes.Add(value); current = value; unconfirmed = true;
+                time.Advance(TimeSpan.FromMilliseconds(55)); return true;
+            }, hardwareBurst: true);
+            using var capture = new BrightnessRestoreCapture([target], 0, 0, _ => { }, () => { });
+            var result = WindowsBrightnessWheelGesture.RunCaptured(capture, 2, 150, 18, 0, () => latest, default, time,
+                (delay, _) => time.Advance(delay));
+            Assert.True(result.Success); Assert.Equal(retarget ? 100u : 93u, current);
+            Assert.Equal(latest, result.ConsumedSteps); Assert.False(target.Transaction.HasPendingFadeWrite);
+            if (retarget) Assert.DoesNotContain(93u, writes);
+            Assert.Single(writes, value => value == current);
+            Assert.True(reads >= 3);
+        }
+    }
+
+    [Fact]
     public void ContinuousInputRetargetsOneCaptureClampsBoundsAndConfirmsLatestEndpoint()
     {
         var time = new ManualTimeProvider(); uint current = 73; long latest = -1;
