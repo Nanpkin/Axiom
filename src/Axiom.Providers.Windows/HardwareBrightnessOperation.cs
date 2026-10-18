@@ -66,7 +66,7 @@ internal static class HardwareBrightnessOperation
                 if (!valid() || !api.IsAuthorized()) return null;
                 var read = api.Read(monitor);
                 return read is not null && read.Minimum == baseline.Minimum && read.Maximum == baseline.Maximum && Map(read, 0).HasValue ? read.Current : null;
-            }, value => valid() && api.IsAuthorized() && api.Set(monitor, value));
+            }, value => valid() && api.IsAuthorized() && api.Set(monitor, value), settleAfterWrite: true);
     }
     internal static uint? Map(HardwareBrightnessRange? range, int percent)
     {
@@ -155,7 +155,7 @@ internal static class HardwareBrightnessOperation
                             if (!api.IsAuthorized()) return null;
                             var actual = api.Read(monitor);
                             return actual is not null && actual.Minimum == range.Minimum && actual.Maximum == range.Maximum && Map(actual, 0).HasValue ? actual.Current : null;
-                        }, value => api.IsAuthorized() && api.Set(monitor, value));
+                        }, value => api.IsAuthorized() && api.Set(monitor, value), settleAfterWrite: true);
                         transitions.Add((captured, requested)); continue;
                     }
                     var accepted = api.Set(monitor, requested); token.ThrowIfCancellationRequested();

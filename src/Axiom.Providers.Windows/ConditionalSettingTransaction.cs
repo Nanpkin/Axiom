@@ -18,7 +18,7 @@ internal sealed class ConditionalSettingTransaction<T>(T baseline, Func<T> read,
         if (!Owned || !equality.Equals(confirmed, original)) return false;
         released = true; Relinquish(); return true;
     }
-    public RestorableSettingResult Apply(T target, CancellationToken token)
+    public RestorableSettingResult Apply(T target, CancellationToken token, Action<CancellationToken>? afterWrite = null)
     {
         if (!Owned) return new(false, name + "本次控制已让出；不会重新抓取基线或重试。", false);
         try
@@ -28,7 +28,12 @@ internal sealed class ConditionalSettingTransaction<T>(T baseline, Func<T> read,
             if (!equality.Equals(current, confirmed))
             { Relinquish(); return new(false, name + "已被其他来源改变，本次让出，不证明是人为操作。", false); }
             token.ThrowIfCancellationRequested();
-            if (!equality.Equals(current, target)) write(target);
+            if (!equality.Equals(current, target))
+            {
+                write(target);
+                token.ThrowIfCancellationRequested();
+                afterWrite?.Invoke(token);
+            }
             token.ThrowIfCancellationRequested();
             var actual = read();
             if (!(acceptsTarget?.Invoke(actual, target) ?? equality.Equals(actual, target)) || !Owned)

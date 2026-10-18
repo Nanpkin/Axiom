@@ -59,7 +59,57 @@ public sealed class BrightnessFadeTests
         Assert.Equal(api.Writes.Order(), api.Writes); Assert.Equal(90u, api.Writes[^1]);
         Assert.All(api.WriteTimes.Zip(api.WriteTimes.Skip(1)), pair => Assert.True(pair.Second - pair.First >= TimeSpan.FromMilliseconds(250)));
         Assert.Equal(1, hardware ? api.Acquisitions : api.Discoveries); Assert.Equal(hardware ? 1 : 0, api.Closes);
-        Assert.Equal(TimeSpan.FromSeconds(3), clock.GetElapsedTime(0));
+        Assert.Equal(TimeSpan.FromMilliseconds(hardware ? 3750 : 3000), clock.GetElapsedTime(0));
+    }
+
+    [Fact]
+    public void HardwareFadeWaitsAfterEachAcceptedWriteBeforeItsFirstConfirmationAndLegacyDoesNotWait()
+    {
+        foreach (var captured in new[] { false, true }) foreach (var enabled in new[] { false, true })
+        {
+            var clock = new ManualTimeProvider(); var api = new Display(clock); var settings = new BrightnessFadeOptions(enabled, 3);
+            void Wait(TimeSpan delay, CancellationToken token)
+            { api.Calls.Add("wait:" + delay.TotalMilliseconds); clock.Advance(delay); token.ThrowIfCancellationRequested(); }
+            if (captured)
+            {
+                var target = HardwareBrightnessOperation.CaptureTarget(api, 11, () => true, default, out _)!;
+                BrightnessFade.Apply([(target, 95)], settings, default, clock, Wait);
+                Assert.True(target.Transaction.Owned); Assert.Equal(95u, api.Current);
+            }
+            else Assert.True(HardwareBrightnessOperation.Apply(api, "primary", 95, default, settings, clock, Wait).Success);
+            for (var i = 0; i < api.Calls.Count; i++)
+            {
+                if (api.Calls[i] != "write") continue;
+                Assert.Equal(enabled ? "wait:500" : "read", api.Calls[i + 1]);
+                if (enabled) Assert.Equal("read", api.Calls[i + 2]);
+            }
+            Assert.Equal(enabled ? api.Writes.Count : 0, api.Calls.Count(c => c == "wait:500"));
+            if (!enabled) Assert.DoesNotContain(api.Calls, c => c.StartsWith("wait:", StringComparison.Ordinal));
+        }
+    }
+
+    [Fact]
+    public void CancellationDuringHardwareFadeSettleDoesNotConfirmOrIssueAnotherWrite()
+    {
+        foreach (var captured in new[] { false, true })
+        {
+            var clock = new ManualTimeProvider(); var api = new Display(clock); using var stop = new CancellationTokenSource();
+            void Wait(TimeSpan delay, CancellationToken token)
+            {
+                api.Calls.Add("wait:" + delay.TotalMilliseconds); clock.Advance(delay);
+                if (delay == TimeSpan.FromMilliseconds(500)) stop.Cancel();
+                token.ThrowIfCancellationRequested();
+            }
+            if (captured)
+            {
+                var target = HardwareBrightnessOperation.CaptureTarget(api, 11, () => true, default, out _)!;
+                Assert.ThrowsAny<OperationCanceledException>(() => BrightnessFade.Apply([(target, 95)], new(true, 3), stop.Token, clock, Wait));
+                Assert.False(target.Transaction.Owned); Assert.True(target.Transaction.Release(default).Success);
+            }
+            else Assert.ThrowsAny<OperationCanceledException>(() => HardwareBrightnessOperation.Apply(api, "primary", 95, stop.Token, new(true, 3), clock, Wait));
+            Assert.Single(api.Writes); Assert.Equal("wait:500", api.Calls[^1]);
+            Assert.DoesNotContain(api.Calls.Skip(api.Calls.IndexOf("write") + 1), c => c == "read");
+        }
     }
 
     [Fact]
@@ -198,6 +248,7 @@ public sealed class BrightnessFadeTests
     {
         internal uint Current = 50; internal bool RefuseReadback; internal int Discoveries, Acquisitions, Closes;
         internal readonly List<uint> Writes = []; internal readonly List<TimeSpan> WriteTimes = [];
+        internal readonly List<string> Calls = [];
         public IReadOnlyList<BrightnessPanel> FindPanels() { Discoveries++; return [new("synthetic", BrightnessPanelSupport.Supported)]; }
         public bool Verify(string key) => true;
         public uint Set(string key, byte value) => Write(value) ? 0u : 1u;
@@ -206,9 +257,9 @@ public sealed class BrightnessFadeTests
         public IReadOnlyList<HardwareLogicalMonitor> ReadLogicalMonitors() => [new(1, true)];
         public IHardwareMonitorLease Acquire(nint logicalMonitor, int remainingCapacity) { Acquisitions++; return this; }
         public uint? Capabilities(nint monitor) => 2;
-        public HardwareBrightnessRange? Read(nint monitor) => new(0, Current, 100);
+        public HardwareBrightnessRange? Read(nint monitor) { Calls.Add("read"); return new(0, Current, 100); }
         public bool Set(nint monitor, uint value) => Write(value);
-        internal bool Write(uint value) { Writes.Add(value); WriteTimes.Add(clock.GetElapsedTime(0)); Current = RefuseReadback ? value + 1 : value; return true; }
+        internal bool Write(uint value) { Calls.Add("write"); Writes.Add(value); WriteTimes.Add(clock.GetElapsedTime(0)); Current = RefuseReadback ? value + 1 : value; return true; }
         public IReadOnlyList<nint> Handles => [11];
         public void Dispose() => Closes++;
     }
