@@ -19,6 +19,19 @@ internal interface IHardwareBrightnessApi
 
 internal sealed class HardwareBrightnessLimitException : Exception { }
 
+// Bind the read/write pair once, before discovery or baseline capture. Failure never switches interfaces.
+internal sealed class HardwareBrightnessIo(bool directVcp,
+    Func<nint, (HardwareBrightnessRange? Range, int Error)> readHighLevel,
+    Func<nint, (HardwareBrightnessRange? Range, int Error)> readVcp,
+    Func<nint, uint, bool> writeHighLevel, Func<nint, uint, bool> writeVcp)
+{
+    private readonly Func<nint, (HardwareBrightnessRange? Range, int Error)> read = directVcp ? readVcp : readHighLevel;
+    private readonly Func<nint, uint, bool> write = directVcp ? writeVcp : writeHighLevel;
+    internal HardwareBrightnessRange? Read(nint monitor, CancellationToken token, Action<TimeSpan, CancellationToken>? wait = null) =>
+        HardwareBrightnessReadPolicy.Read(() => read(monitor), token, wait);
+    internal bool Write(nint monitor, uint value) => write(monitor, value);
+}
+
 internal static class HardwareBrightnessReadPolicy
 {
     // A framing error observed on supported hardware can clear after the device settles.
@@ -41,6 +54,8 @@ internal static class HardwareBrightnessReadPolicy
 
 internal static class HardwareBrightnessOperation
 {
+    internal static HardwareBrightnessRange? VcpRange(int type, uint current, uint maximum) =>
+        type == 1 && maximum > 0 && current <= maximum ? new(0, current, maximum) : null; // MC_SET_PARAMETER
     internal static HardwareBrightnessRange? ReadKnown(IHardwareBrightnessApi api, nint monitor, CancellationToken token, out bool unsupported)
     {
         unsupported = false;
@@ -66,7 +81,7 @@ internal static class HardwareBrightnessOperation
                 if (!valid() || !api.IsAuthorized()) return null;
                 var read = api.Read(monitor);
                 return read is not null && read.Minimum == baseline.Minimum && read.Maximum == baseline.Maximum && Map(read, 0).HasValue ? read.Current : null;
-            }, value => valid() && api.IsAuthorized() && api.Set(monitor, value));
+            }, value => valid() && api.IsAuthorized() && api.Set(monitor, value), settleAfterWrite: true);
     }
     internal static uint? Map(HardwareBrightnessRange? range, int percent)
     {
@@ -155,7 +170,7 @@ internal static class HardwareBrightnessOperation
                             if (!api.IsAuthorized()) return null;
                             var actual = api.Read(monitor);
                             return actual is not null && actual.Minimum == range.Minimum && actual.Maximum == range.Maximum && Map(actual, 0).HasValue ? actual.Current : null;
-                        }, value => api.IsAuthorized() && api.Set(monitor, value));
+                        }, value => api.IsAuthorized() && api.Set(monitor, value), settleAfterWrite: true);
                         transitions.Add((captured, requested)); continue;
                     }
                     var accepted = api.Set(monitor, requested); token.ThrowIfCancellationRequested();

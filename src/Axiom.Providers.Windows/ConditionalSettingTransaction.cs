@@ -13,7 +13,12 @@ internal sealed class ConditionalSettingTransaction<T>(T baseline, Func<T> read,
     internal T Confirmed => confirmed;
     internal bool UnconfirmedFailure { get; private set; }
     public void Relinquish() => Interlocked.Exchange(ref relinquished, 1);
-    public RestorableSettingResult Apply(T target, CancellationToken token)
+    internal bool TryCompleteConfirmedRelease()
+    {
+        if (!Owned || !equality.Equals(confirmed, original)) return false;
+        released = true; Relinquish(); return true;
+    }
+    public RestorableSettingResult Apply(T target, CancellationToken token, Action<CancellationToken>? afterWrite = null, bool confirmUnchangedOnce = false)
     {
         if (!Owned) return new(false, name + "本次控制已让出；不会重新抓取基线或重试。", false);
         try
@@ -23,7 +28,14 @@ internal sealed class ConditionalSettingTransaction<T>(T baseline, Func<T> read,
             if (!equality.Equals(current, confirmed))
             { Relinquish(); return new(false, name + "已被其他来源改变，本次让出，不证明是人为操作。", false); }
             token.ThrowIfCancellationRequested();
-            if (!equality.Equals(current, target)) write(target);
+            if (confirmUnchangedOnce && equality.Equals(current, target) && Owned)
+                return new(true, name + "当前值已读回确认，本步无须写入。", true);
+            if (!equality.Equals(current, target))
+            {
+                write(target);
+                token.ThrowIfCancellationRequested();
+                afterWrite?.Invoke(token);
+            }
             token.ThrowIfCancellationRequested();
             var actual = read();
             if (!(acceptsTarget?.Invoke(actual, target) ?? equality.Equals(actual, target)) || !Owned)

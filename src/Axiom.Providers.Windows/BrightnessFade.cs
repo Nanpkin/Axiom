@@ -28,6 +28,13 @@ internal static class BrightnessFade
     {
         settings.Validate();
         var time = clock ?? TimeProvider.System;
+        void Wait(TimeSpan delay, CancellationToken cancellation)
+        {
+            if (wait is not null) wait(delay, cancellation);
+            else Task.Delay(delay, time, cancellation).GetAwaiter().GetResult();
+            cancellation.ThrowIfCancellationRequested();
+        }
+        Action<CancellationToken> settle = cancellation => Wait(TimeSpan.FromMilliseconds(500), cancellation);
         try
         {
             var moving = new List<(BrightnessRestoreTarget Target, uint Value, uint Start)>();
@@ -38,7 +45,7 @@ internal static class BrightnessFade
                 if (settings.Enabled && initial == end)
                 {
                     // Confirm the live value once before excluding a zero-distance target.
-                    target.Transaction.Apply(end, token);
+                    target.Transaction.Apply(end, token, confirmUnchangedOnce: target.SettleAfterWrite);
                     token.ThrowIfCancellationRequested();
                 }
                 else moving.Add((target, end, initial));
@@ -51,9 +58,7 @@ internal static class BrightnessFade
                 if (settings.Enabled)
                 {
                     // Wait after the preceding batch has finished: slow native calls never cause catch-up writes.
-                    var interval = TimeSpan.FromMilliseconds(250);
-                    if (wait is not null) wait(interval, token);
-                    else Task.Delay(interval, time, token).GetAwaiter().GetResult();
+                    Wait(TimeSpan.FromMilliseconds(250), token);
                 }
                 token.ThrowIfCancellationRequested();
                 var progress = settings.Enabled ? Math.Clamp(time.GetElapsedTime(start).TotalSeconds / settings.DurationSeconds, 0, 1) : 1;
@@ -64,7 +69,8 @@ internal static class BrightnessFade
                     if (!target.Transaction.Owned) continue;
                     var value = progress >= 1 ? end : (uint)Math.Round(initial + ((double)end - initial) * eased, MidpointRounding.AwayFromZero);
                     // Apply also checks ownership when rounding produces the same value; it does not write it again.
-                    target.Transaction.Apply(value, token);
+                    var hardwareFade = settings.Enabled && target.SettleAfterWrite;
+                    target.Transaction.Apply(value, token, hardwareFade ? settle : null, confirmUnchangedOnce: hardwareFade);
                     token.ThrowIfCancellationRequested();
                 }
                 if (progress >= 1) return;

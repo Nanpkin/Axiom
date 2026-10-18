@@ -24,10 +24,11 @@ internal sealed class BrightnessRestoreTarget
     internal readonly uint Baseline;
     internal readonly Func<int, uint?> Map;
     internal readonly ConditionalSettingTransaction<uint> Transaction;
+    internal readonly bool SettleAfterWrite;
     internal uint? LastRead;
-    internal BrightnessRestoreTarget(uint baseline, Func<int, uint?> map, Func<uint?> read, Func<uint, bool> write)
+    internal BrightnessRestoreTarget(uint baseline, Func<int, uint?> map, Func<uint?> read, Func<uint, bool> write, bool settleAfterWrite = false)
     {
-        Baseline = baseline; Map = map;
+        Baseline = baseline; Map = map; SettleAfterWrite = settleAfterWrite;
         Transaction = new(baseline, () =>
         {
             LastRead = read(); return LastRead ?? throw new IOException("原亮度目标未知。");
@@ -198,7 +199,11 @@ internal sealed class BrightnessRestoreSession : IRestorableSettingSession
         foreach (var target in capture.Targets)
         {
             token.ThrowIfCancellationRequested(); var previouslyOwned = target.Transaction.Owned;
-            var receipt = target.Transaction.Release(token); token.ThrowIfCancellationRequested();
+            // The fade's final Apply has already checked ownership and read back the exact baseline.
+            var receipt = settings.Enabled && target.Transaction.TryCompleteConfirmedRelease()
+                ? new RestorableSettingResult(true, "渐变已读回确认原基线，租约已释放。", false)
+                : target.Transaction.Release(token);
+            token.ThrowIfCancellationRequested();
             if (settings.Enabled && target.Transaction.UnconfirmedFailure) failed++;
             else if (!previouslyOwned || receipt.Success && target.LastRead != target.Baseline) skipped++;
             else if (receipt.Success) restored++;
