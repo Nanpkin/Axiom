@@ -23,17 +23,28 @@ public static partial class WindowsHardwareBrightness
     }
     // The caller already holds BrightnessNativeOwnership and its command admission.
     internal static (bool Success, string Reason) SetOwned(string target, int percent, string sid, CancellationToken token, BrightnessFadeOptions fade = default) =>
-        HardwareBrightnessOperation.Apply(new Api(sid, token), target, percent, token, fade);
+        HardwareBrightnessOperation.Apply(new Api(sid, token, fade.Enabled), target, percent, token, fade);
     internal static (bool Success, string Reason) AdjustOwned(string target, string operation, int step, string sid, CancellationToken token, BrightnessFadeOptions fade = default) =>
-        HardwareBrightnessOperation.Adjust(new Api(sid, token), target, operation, step, token, fade);
+        HardwareBrightnessOperation.Adjust(new Api(sid, token, fade.Enabled), target, operation, step, token, fade);
     private static Task<(bool Success, string Reason)> RunSingleAsync(Func<CancellationToken, (bool Success, string Reason)> action, CancellationToken token, BrightnessFadeOptions fade) =>
         Commands.RunAsync(cancellation =>
         {
             using var ownership = BrightnessNativeOwnership.TryAcquire();
             return ownership is null ? (false, "Axiom已有亮度恢复租约或原生操作；请先暂停已有亮度恢复任务并等待释放完成，再执行其他亮度动作。本次未执行，不排队。") : action(cancellation);
         }, token, operationTimeout: fade.OperationTimeout);
-    private sealed class Api(string sid, CancellationToken token) : IHardwareBrightnessApi
+    private sealed class Api(string sid, CancellationToken token, bool directVcp = false) : IHardwareBrightnessApi
     {
+        private readonly HardwareBrightnessIo io = new(directVcp, monitor =>
+        {
+            var accepted = GetMonitorBrightness(monitor, out var minimum, out var current, out var maximum);
+            var error = accepted ? 0 : Marshal.GetLastPInvokeError();
+            return (accepted ? new HardwareBrightnessRange(minimum, current, maximum) : null, error);
+        }, monitor =>
+        {
+            var accepted = GetVCPFeatureAndVCPFeatureReply(monitor, 0x10, out var type, out var current, out var maximum);
+            var error = accepted ? 0 : Marshal.GetLastPInvokeError();
+            return (accepted ? HardwareBrightnessOperation.VcpRange(type, current, maximum) : null, error);
+        }, SetMonitorBrightness, (monitor, value) => SetVCPFeature(monitor, 0x10, value));
         internal void UseToken(CancellationToken value) => token = value;
         public bool IsAuthorized()
         {
@@ -78,18 +89,10 @@ public static partial class WindowsHardwareBrightness
             token.ThrowIfCancellationRequested();
             return GetMonitorCapabilities(monitor, out var capabilities, out _) ? capabilities : null;
         }
-        public HardwareBrightnessRange? Read(nint monitor)
-        {
-            return HardwareBrightnessReadPolicy.Read(() =>
-            {
-                var accepted = GetMonitorBrightness(monitor, out var minimum, out var current, out var maximum);
-                var error = accepted ? 0 : Marshal.GetLastPInvokeError();
-                return (accepted ? new HardwareBrightnessRange(minimum, current, maximum) : null, error);
-            }, token);
-        }
+        public HardwareBrightnessRange? Read(nint monitor) => io.Read(monitor, token);
         public bool Set(nint monitor, uint brightness)
         {
-            token.ThrowIfCancellationRequested(); return SetMonitorBrightness(monitor, brightness);
+            token.ThrowIfCancellationRequested(); return io.Write(monitor, brightness);
         }
     }
     private sealed class Lease(PhysicalMonitor[] monitors) : IHardwareMonitorLease
@@ -117,6 +120,8 @@ public static partial class WindowsHardwareBrightness
     [DllImport("dxva2.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool GetMonitorCapabilities(nint monitor, out uint capabilities, out uint temperatures);
     [DllImport("dxva2.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool GetMonitorBrightness(nint monitor, out uint minimum, out uint current, out uint maximum);
     [DllImport("dxva2.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool SetMonitorBrightness(nint monitor, uint brightness);
+    [DllImport("dxva2.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool GetVCPFeatureAndVCPFeatureReply(nint monitor, byte code, out int type, out uint current, out uint maximum);
+    [DllImport("dxva2.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool SetVCPFeature(nint monitor, byte code, uint value);
     [DllImport("wtsapi32.dll", EntryPoint = "WTSQuerySessionInformationW", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool WTSQuerySessionInformation(nint server, int session, int information, out nint allocation, out int size);
     [DllImport("wtsapi32.dll")] private static extern void WTSFreeMemory(nint allocation);
 }

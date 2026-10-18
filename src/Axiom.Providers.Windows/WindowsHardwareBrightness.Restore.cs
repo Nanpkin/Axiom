@@ -5,15 +5,15 @@ namespace Axiom.Providers.Windows;
 [SupportedOSPlatform("windows")]
 public static partial class WindowsHardwareBrightness
 {
-    public static Task<IRestorableSettingSession> CreateRestorableSessionAsync(string target, string sid, CancellationToken token)
+    public static Task<IRestorableSettingSession> CreateRestorableSessionAsync(string target, string sid, CancellationToken token, BrightnessFadeOptions fade = default)
     {
         if (target is not ("primary" or "all")) throw new ArgumentException("亮度恢复屏幕范围无效。");
-        return BrightnessRestoreSession.CreateAsync(cancellation => Capture(target, sid, cancellation), target, TimeSpan.FromSeconds(10), token);
+        return BrightnessRestoreSession.CreateAsync(cancellation => Capture(target, sid, cancellation, fade.Enabled), target, TimeSpan.FromSeconds(10), token);
     }
     internal static bool AuthorizedUser(string sid, CancellationToken token) => new Api(sid, token).IsAuthorized();
-    internal static BrightnessRestoreCapture Capture(string selection, string sid, CancellationToken token)
+    internal static BrightnessRestoreCapture Capture(string selection, string sid, CancellationToken token, bool directVcp = false)
     {
-        var topology = new BrightnessRestoreTopology(); var api = new Api(sid, token);
+        var topology = new BrightnessRestoreTopology(); var api = new Api(sid, token, directVcp);
         var leases = new List<IHardwareMonitorLease>(); var handedOff = false;
         try
         {
