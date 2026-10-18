@@ -77,7 +77,7 @@ public sealed partial class WorkbenchWindow : Window
         new() { Text = value, FontSize = size, Foreground = brush ?? Ink, FontWeight = new Windows.UI.Text.FontWeight { Weight = (ushort)(bold ? 600 : 400) }, TextWrapping = TextWrapping.Wrap };
     private static StackPanel Column(int spacing = 10) => new() { Spacing = spacing };
     private static StackPanel Row(int spacing = 10) => new() { Orientation = Orientation.Horizontal, Spacing = spacing };
-    private static Border Card(UIElement child, SolidColorBrush? background = null, int padding = 24) => new()
+    private static Border Card(UIElement child, SolidColorBrush? background = null, int padding = 20) => new()
     {
         Child = child, Background = background ?? Surface, BorderBrush = Line, BorderThickness = new Thickness(1),
         CornerRadius = new CornerRadius(12), Padding = new Thickness(padding)
@@ -88,6 +88,25 @@ public sealed partial class WorkbenchWindow : Window
         Background = primary ? Primary : Surface, Foreground = primary ? OnPrimary : Ink,
         HorizontalAlignment = HorizontalAlignment.Left
     };
+    private static Button Help(string message, string label = "了解更多")
+    {
+        var button = new Button { Content = new FontIcon { Glyph = "\uE946", FontSize = 14, Foreground = Muted },
+            Padding = new Thickness(6), MinWidth = 28, MinHeight = 28,
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), BorderThickness = new Thickness(0),
+            HorizontalAlignment = HorizontalAlignment.Left };
+        AutomationProperties.SetName(button, label);
+        ToolTipService.SetToolTip(button, message);
+        button.Flyout = new Flyout { Content = new ScrollViewer { MaxHeight = 300,
+            Content = new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap, MaxWidth = 360, IsTextSelectionEnabled = true } } };
+        return button;
+    }
+    private static Expander Details(string label, UIElement child) => new() { Header = label, Content = child,
+        HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch };
+    private static TextBlock Preview(string value, int size = 13, SolidColorBrush? brush = null, bool bold = false)
+    {
+        var text = Text(value, size, brush, bold); text.MaxLines = 1; text.TextTrimming = TextTrimming.CharacterEllipsis;
+        ToolTipService.SetToolTip(text, value); return text;
+    }
     private static Border Badge(string label, bool paused = false) => new()
     {
         Background = paused ? Canvas : Soft, CornerRadius = new CornerRadius(5), Padding = new Thickness(9, 4, 9, 4),
@@ -103,7 +122,7 @@ public sealed partial class WorkbenchWindow : Window
         side.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         var nav = Column(8);
         AddNavigation(nav, Page.Rules, "自动化", "\uE8A5");
-        AddNavigation(nav, Page.Groups, "组", "\uE8F1");
+        AddNavigation(nav, Page.Groups, "程序组", "\uE8F1");
         AddNavigation(nav, Page.Toolbox, "工具箱", "\uE90F");
         AddNavigation(nav, Page.Usage, "使用观察", "\uE9D9");
         AddNavigation(nav, Page.Activity, "活动记录", "\uE81C");
@@ -117,7 +136,7 @@ public sealed partial class WorkbenchWindow : Window
         var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         pageScroll = scroll;
         pageScroll.SizeChanged += (_, _) => QueueActivityViewportRefresh();
-        var body = Column(24);
+        var body = Column(18);
         body.Padding = new Thickness(36, 34, 36, 32);
         var heading = Column(7); heading.Children.Add(pageTitle); heading.Children.Add(pageSubtitle);
         body.Children.Add(heading); body.Children.Add(contentHost);
@@ -187,20 +206,20 @@ public sealed partial class WorkbenchWindow : Window
             Page.Rules => ("我的自动化", "设定一次，日常交给 Axiom。"),
             Page.Groups when groupEditing => (groupDraft?.Version == 0 ? "新建进程组" : "编辑进程组", "整理一次，配置任务时随手选择。"),
             Page.Groups when viewingProcessGroups => ("进程组", "整理程序名单，在不同任务中重复使用。"),
-            Page.Groups => ("组", "把常用选择放在一起。"),
+            Page.Groups => ("程序组", "把常用选择放在一起。"),
             Page.Toolbox => ("工具箱", "省去重复整理的时间。"),
             Page.Usage => ("使用观察", "主动记录一段过程，发现值得自动化的环节。"),
-            Page.Activity => ("活动记录", "发生了什么，为什么。每一次活动都可回看。"),
+            Page.Activity => ("活动记录", "查看执行结果与需要留意的事。"),
             _ => ("设置", "按你的习惯使用 Axiom。")
         };
         connection.Text = reachable ? "●  后台已连接" : "○  后台状态未确认";
         // Build a detached page and replace it once. Clearing the live child vector
         // can invalidate WinUI accessibility peers while an edit invocation is returning.
-        content = new StackPanel { Spacing = 20, HorizontalAlignment = HorizontalAlignment.Stretch };
+        content = new StackPanel { Spacing = 14, HorizontalAlignment = HorizontalAlignment.Stretch };
         footer = Row(10);
         footer.IsHitTestVisible = !busy;
         footer.Visibility = editing && page == Page.Rules || groupEditing && page == Page.Groups ? Visibility.Visible : Visibility.Collapsed;
-        content.MaxWidth = editing && page == Page.Rules ? 780 : 940;
+        content.MaxWidth = editing && page == Page.Rules ? 780 : double.PositiveInfinity;
         switch (page) { case Page.Rules: if (editing) BuildEditor(); else BuildRules(); break; case Page.Groups: BuildGroups(); break;
             case Page.Toolbox: BuildToolbox(); break; case Page.Usage: BuildUsage(); break; case Page.Activity: BuildActivity(); break; default: BuildSettings(); break; }
         contentHost.Content = content;
@@ -286,7 +305,9 @@ public sealed partial class WorkbenchWindow : Window
     private async Task ToggleRuleAsync(AutomationTask rule)
     {
         if (busy || closed) return;
-        if (!rule.Paused && !await ConfirmAsync("暂停这个任务？", ActionWarning(rule.Action) + " 暂停后不再检测。", "暂停")) return;
+        var warning = ActionWarning(rule.Action);
+        if (!rule.Paused && !string.IsNullOrWhiteSpace(warning) &&
+            !await ConfirmAsync("暂停这个任务？", warning, "暂停")) return;
         await MutateAsync(new(1, "save", Guid.NewGuid().ToString("N"), Task: rule with { Paused = !rule.Paused }), "saved", rule.Paused ? "已启用，等待检测条件。" : "已暂停。设置已保留。", false);
     }
     private async Task DeleteAsync()

@@ -181,7 +181,7 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
             WakeRunConditions();
             await RefreshObservationAsync();
             await RefreshWindowTaskAsync(saved, token);
-            Record(saved.Paused ? "任务已暂停" : "任务已保存", saved.Title + (saved.Paused ? "：尚未执行的动作已取消。" : "：等待下一次条件成立。"), ActivityLevel.Success);
+            Record(saved.Paused ? "任务已暂停" : "任务已保存", saved.Title, ActivityLevel.Success);
             return saved;
         }
         finally { gate.Release(); }
@@ -316,7 +316,7 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
                                         firedStartupTasks.Add(task.Id);
                                         engine.Update(startupSource!, input!.Sequence++, new(key, StateQuality.Known, StateValue.From(new("axiom.bool", 1), true), DateTimeOffset.UtcNow));
                                         CheckTrayDecision(task);
-                                        Record("启动条件已触发", task.Title + "：" + (task.Detection.Parameters["frequency"] == "firstBoot" ? "本次开机首次启动" : "Axiom 后台启动") + "，按已保存参数执行动作。", ActivityLevel.Information);
+                                        Record("启动条件已触发", task.Title + "：" + (task.Detection.Parameters["frequency"] == "firstBoot" ? "本次开机首次启动" : "Axiom 后台启动"), ActivityLevel.Information);
                                     }
                                 }
                             }
@@ -347,9 +347,9 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
                             }
                         }
                         if (observations[0].Key.CapabilityId == HotkeyCapabilities.Pressed && observations[0].Quality == StateQuality.Known)
-                            Record("快捷键已按下", (samples[0].Reason ?? observations[0].Key.ResourceId) + "：已交给规则判断。", ActivityLevel.Information);
+                            Record("快捷键已按下", (samples[0].Reason ?? observations[0].Key.ResourceId), ActivityLevel.Information);
                         if (observations[0].Key.CapabilityId == SystemEventCapabilities.Event && observations[0].Quality == StateQuality.Known)
-                            Record("系统通知已到达", SystemEventName(observations[0].Key.ResourceId) + "：已交给规则判断。", ActivityLevel.Information);
+                            Record("系统通知已到达", SystemEventName(observations[0].Key.ResourceId), ActivityLevel.Information);
                     }
                 }
             }

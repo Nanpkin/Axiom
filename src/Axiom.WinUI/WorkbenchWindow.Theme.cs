@@ -28,14 +28,14 @@ public sealed partial class WorkbenchWindow
         // Mutate shared brushes so existing inputs and open dialogs keep their contents.
         if (dark)
         {
-            Set(Canvas, 22, 26, 30); Set(Surface, 31, 37, 42);
+            Set(Canvas, 19, 27, 29); Set(Surface, 28, 38, 40);
             Set(Ink, 234, 239, 243); Set(Muted, 165, 177, 188); Set(Line, 57, 67, 76);
             Set(Accent, 139, 212, 178); Set(Primary, 43, 111, 88); Set(Soft, 32, 54, 46);
             Set(Amber, 239, 194, 116); Set(PaleAmber, 60, 46, 28);
         }
         else
         {
-            Set(Canvas, 246, 247, 249); Set(Surface, 255, 255, 255);
+            Set(Canvas, 242, 245, 242); Set(Surface, 253, 254, 252);
             Set(Ink, 30, 38, 47); Set(Muted, 99, 110, 122); Set(Line, 226, 230, 234);
             Set(Accent, 36, 99, 83); Set(Primary, 36, 99, 83); Set(Soft, 233, 243, 238);
             Set(Amber, 139, 89, 20); Set(PaleAmber, 255, 246, 227);
@@ -79,7 +79,7 @@ public sealed partial class WorkbenchWindow
             }
         };
         body.Children.Add(picker);
-        body.Children.Add(Text("立即生效并自动保存。跟随系统时，随 Windows 的应用颜色模式切换。", 13, Muted));
+        ToolTipService.SetToolTip(picker, "自动保存并立即生效");
         content.Children.Add(Card(body));
     }
 

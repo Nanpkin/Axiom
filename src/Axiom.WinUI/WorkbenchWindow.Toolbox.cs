@@ -15,7 +15,8 @@ public sealed partial class WorkbenchWindow
     {
         content.Children.Add(Text("发现与整理", 14, Muted));
         var body = Column(16); var heading = Row(14);
-        heading.Children.Add(new FontIcon { Glyph = "\uE7F8", FontSize = 24, Foreground = Accent });
+        heading.Children.Add(new Border { Width = 40, Height = 40, Background = Soft, CornerRadius = new CornerRadius(10),
+            Child = new FontIcon { Glyph = "\uE7F8", FontSize = 20, Foreground = Accent } });
         heading.Children.Add(Text("Steam 游戏自动整理", 20, Ink, true)); body.Children.Add(heading);
         body.Children.Add(Text($"检查本机 Steam 安装项目，自动维护“{SteamTool.GroupName}”进程组。", 14, Muted));
         var toggle = new ToggleSwitch { Header = "每次 Axiom 启动时检查更新", OnContent = "已开启", OffContent = "已关闭",
