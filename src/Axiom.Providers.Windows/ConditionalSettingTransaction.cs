@@ -53,13 +53,14 @@ internal sealed class ConditionalSettingTransaction<T>(T baseline, Func<T> read,
         { UnconfirmedFailure = true; Relinquish(); return new(false, name + "目标或读写未确认，本次让出；可能已修改，不自动恢复未确认写入。", false); }
     }
     // WMI fade confirms each previous write before issuing the next one.
-    internal bool AdvanceFade(T target, CancellationToken token)
+    internal bool AdvanceFade(T target, CancellationToken token, Func<T>? targetAfterConfirmation = null)
     {
         if (!Owned) return false;
         try
         {
             if (!ConfirmFadeCore(token)) return false;
             token.ThrowIfCancellationRequested();
+            if (targetAfterConfirmation is not null) target = targetAfterConfirmation();
             if (equality.Equals(FadeExpected, target)) return true;
             pendingTarget = target; fadePending = true;
             write(target);

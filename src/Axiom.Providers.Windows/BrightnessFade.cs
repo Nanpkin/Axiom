@@ -1,21 +1,24 @@
 
 namespace Axiom.Providers.Windows;
 
-public readonly record struct BrightnessFadeOptions(bool Enabled = false, int DurationSeconds = 3)
+public readonly record struct BrightnessFadeOptions(bool Enabled = false, int DurationSeconds = 3, int WritesPerSecond = 10)
 {
     internal TimeSpan OperationTimeout => TimeSpan.FromSeconds(10 + (Enabled ? DurationSeconds : 0));
     public static BrightnessFadeOptions Parse(IReadOnlyDictionary<string, string> parameters)
     {
         var enabled = parameters.GetValueOrDefault("fadeEnabled", "false");
         var duration = parameters.GetValueOrDefault("fadeDurationSeconds", "3");
+        var frequency = parameters.GetValueOrDefault("fadeWritesPerSecond", "10");
         if (enabled is not ("true" or "false") ||
-            !int.TryParse(duration, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var seconds) || seconds is < 1 or > 15)
+            !int.TryParse(duration, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var seconds) || seconds is < 1 or > 15 ||
+            !int.TryParse(frequency, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var writes) || writes is < 1 or > 60)
             throw new ArgumentException("亮度渐变参数无效。");
-        return new(enabled == "true", seconds);
+        return new(enabled == "true", seconds, writes);
     }
     internal void Validate()
     {
         if (Enabled && DurationSeconds is < 1 or > 15) throw new ArgumentException("亮度渐变时长须为1–15秒。");
+        if (Enabled && WritesPerSecond is < 1 or > 60) throw new ArgumentException("渐变平滑度须为1–60整数次/秒。");
     }
 }
 
@@ -75,6 +78,7 @@ internal static class BrightnessFade
                     token.ThrowIfCancellationRequested();
                     if (!target.Transaction.Owned || completed.Contains(target)) continue;
                     var value = progress >= 1 ? end : (uint)Math.Round(initial + ((double)end - initial) * eased, MidpointRounding.AwayFromZero);
+                    TimeSpan Cadence(uint candidate) => TimeSpan.FromMilliseconds(Math.Max(1000d / settings.WritesPerSecond, candidate == end ? 100 : 0));
                     if (target.HardwareBurst)
                     {
                         var elapsed = time.GetElapsedTime(start);
@@ -91,7 +95,7 @@ internal static class BrightnessFade
                             {
                                 if (continuing && hardwareWrites.TryGetValue(target, out var previousWrite))
                                 {
-                                    var untilWrite = previousWrite + TimeSpan.FromMilliseconds(100) - elapsed;
+                                    var untilWrite = previousWrite + Cadence(value) - elapsed;
                                     var untilBoundary = bursts[target] + TimeSpan.FromSeconds(1) - elapsed;
                                     if (untilWrite > TimeSpan.Zero) Wait(untilWrite < untilBoundary ? untilWrite : untilBoundary, token);
                                     elapsed = time.GetElapsedTime(start);
@@ -102,7 +106,7 @@ internal static class BrightnessFade
                                 if (!continuing && !target.Transaction.ConfirmHardwareBurst(token, time, Wait)) continue;
                                 if (hardwareWrites.TryGetValue(target, out previousWrite))
                                 {
-                                    var untilWrite = previousWrite + TimeSpan.FromMilliseconds(100) - time.GetElapsedTime(start);
+                                    var untilWrite = previousWrite + Cadence(value) - time.GetElapsedTime(start);
                                     if (untilWrite > TimeSpan.Zero) Wait(untilWrite, token);
                                 }
                                 var segmentStarted = time.GetElapsedTime(start);
@@ -110,6 +114,31 @@ internal static class BrightnessFade
                                 var currentProgress = Math.Clamp(segmentStarted.TotalSeconds / settings.DurationSeconds, 0, 1);
                                 var currentEased = currentProgress * currentProgress * (3 - 2 * currentProgress);
                                 value = currentProgress >= 1 ? end : (uint)Math.Round(initial + ((double)end - initial) * currentEased, MidpointRounding.AwayFromZero);
+                                // A native confirmation or cadence wait can make this the endpoint frame.
+                                // Enforce its own spacing without issuing a second Set or bypassing a boundary.
+                                var endpointReady = true;
+                                if (value == end && hardwareWrites.TryGetValue(target, out previousWrite))
+                                {
+                                    var untilEndpoint = previousWrite + Cadence(end) - time.GetElapsedTime(start);
+                                    while (untilEndpoint > TimeSpan.Zero)
+                                    {
+                                        var delay = untilEndpoint;
+                                        if (continuing)
+                                        {
+                                            var untilBoundary = bursts[target] + TimeSpan.FromSeconds(1) - time.GetElapsedTime(start);
+                                            if (untilBoundary < delay) delay = untilBoundary;
+                                        }
+                                        if (delay > TimeSpan.Zero) Wait(delay, token);
+                                        if (continuing && time.GetElapsedTime(start) - bursts[target] >= TimeSpan.FromSeconds(1))
+                                        {
+                                            if (!target.Transaction.ConfirmHardwareBurst(token, time, Wait)) { endpointReady = false; break; }
+                                            continuing = false;
+                                        }
+                                        untilEndpoint = previousWrite + Cadence(end) - time.GetElapsedTime(start);
+                                    }
+                                }
+                                if (!endpointReady) continue;
+                                segmentStarted = time.GetElapsedTime(start);
                                 if (value != target.Transaction.FadeExpected) hardwareWrites[target] = segmentStarted;
                                 target.Transaction.WriteHardwareBurst(value, token);
                                 if (target.Transaction.Owned && target.Transaction.HasPendingFadeWrite && !continuing) bursts[target] = segmentStarted;
@@ -118,7 +147,22 @@ internal static class BrightnessFade
                         }
                     }
                     else if (target.Transaction.HasPendingFadeWrite || value != target.Transaction.Confirmed)
-                        target.Transaction.AdvanceFade(value, token);
+                    {
+                        if (hardwareWrites.TryGetValue(target, out var previousWrite))
+                        {
+                            var untilWrite = previousWrite + TimeSpan.FromMilliseconds(1000d / settings.WritesPerSecond) - time.GetElapsedTime(start);
+                            if (untilWrite > TimeSpan.Zero) Wait(untilWrite, token);
+                        }
+                        target.Transaction.AdvanceFade(value, token, () =>
+                        {
+                            var now = time.GetElapsedTime(start);
+                            var currentProgress = Math.Clamp(now.TotalSeconds / settings.DurationSeconds, 0, 1);
+                            var currentEased = currentProgress * currentProgress * (3 - 2 * currentProgress);
+                            var nextValue = currentProgress >= 1 ? end : (uint)Math.Round(initial + ((double)end - initial) * currentEased, MidpointRounding.AwayFromZero);
+                            if (nextValue != target.Transaction.Confirmed) hardwareWrites[target] = now;
+                            return nextValue;
+                        });
+                    }
                     token.ThrowIfCancellationRequested();
                     if (target.Transaction.Owned && !target.Transaction.HasPendingFadeWrite && target.Transaction.Confirmed == end)
                         completed.Add(target);

@@ -14,13 +14,16 @@ public sealed class BrightnessFadeTests
     {
         foreach (var descriptor in Descriptors())
         {
-            var legacy = descriptor.Fields.Where(f => f.Id is not ("fadeEnabled" or "fadeDurationSeconds"))
+            var legacy = descriptor.Fields.Where(f => !f.Id.StartsWith("fade", StringComparison.Ordinal))
                 .ToImmutableDictionary(f => f.Id, f => f.DefaultValue!);
             var invocation = new TaskInvocation(descriptor.Id, 1, legacy);
             Validate(invocation); Assert.False(BrightnessFadeSettings.Parse(legacy).Enabled);
             Assert.Equal(TimeSpan.FromSeconds(10), BrightnessFadeOptions.Parse(legacy).OperationTimeout);
             Assert.Equal("false", descriptor.Fields.Single(f => f.Id == "fadeEnabled").DefaultValue);
             Assert.Equal("3", descriptor.Fields.Single(f => f.Id == "fadeDurationSeconds").DefaultValue);
+            Assert.Equal("10", descriptor.Fields.Single(f => f.Id == "fadeWritesPerSecond").DefaultValue);
+            Assert.Equal(10, BrightnessFadeSettings.Parse(legacy).WritesPerSecond);
+            Assert.Equal(10, BrightnessFadeOptions.Parse(legacy).WritesPerSecond);
             Assert.All(descriptor.Fields.Where(f => f.Id.StartsWith("fade", StringComparison.Ordinal)), f => Assert.Equal("渐变设置", f.Group));
             foreach (var duration in new[] { "1", "3", "15" })
             {
@@ -31,6 +34,19 @@ public sealed class BrightnessFadeTests
             }
             Validate(invocation with { Parameters = legacy.Add("fadeEnabled", "true") });
             Validate(invocation with { Parameters = legacy.Add("fadeDurationSeconds", "5") });
+            foreach (var frequency in new[] { "1", "10", "18", "60" })
+            {
+                var configured = legacy.Add("fadeWritesPerSecond", frequency);
+                Validate(invocation with { Parameters = configured });
+                Assert.Equal(int.Parse(frequency), BrightnessFadeSettings.Parse(configured).WritesPerSecond);
+                Assert.Equal(BrightnessFadeSettings.Parse(configured).WritesPerSecond, BrightnessFadeOptions.Parse(configured).WritesPerSecond);
+            }
+            foreach (var invalid in new[] { "0", "61", "18.0", "+18", " 18", "18 ", "1e1", "", "-1" })
+            {
+                var configured = legacy.Add("fadeWritesPerSecond", invalid);
+                Assert.Throws<ArgumentException>(() => Validate(invocation with { Parameters = configured }));
+                Assert.Throws<ArgumentException>(() => BrightnessFadeOptions.Parse(configured));
+            }
             foreach (var invalid in new[] { "0", "16", "1.5", " 3", "", "-1" })
                 Assert.Throws<ArgumentException>(() => Validate(invocation with { Parameters = legacy.Add("fadeDurationSeconds", invalid) }));
             foreach (var invalid in new[] { "True", "1", "", "false " })
@@ -55,12 +71,12 @@ public sealed class BrightnessFadeTests
             ? relative ? HardwareBrightnessOperation.Adjust(api, "primary", "increase", 40, default, fade, clock, Wait) : HardwareBrightnessOperation.Apply(api, "primary", 90, default, fade, clock, Wait)
             : relative ? BuiltInBrightnessOperation.Adjust(api, "increase", 40, default, fade: fade, time: clock, wait: Wait) : BuiltInBrightnessOperation.Apply(api, 90, default, fade: fade, time: clock, wait: Wait);
         Assert.True(result.Success); Assert.Equal(90u, api.Current);
-        Assert.Equal(40, api.Writes.Count); Assert.Equal(api.Writes.Distinct(), api.Writes);
+        Assert.InRange(api.Writes.Count, 2, 11); Assert.Equal(api.Writes.Distinct(), api.Writes);
         Assert.Equal(api.Writes.Order(), api.Writes); Assert.Equal(90u, api.Writes[^1]);
-        Assert.All(api.WriteTimes.Zip(api.WriteTimes.Skip(1)), pair => Assert.True(pair.Second - pair.First >= TimeSpan.FromMilliseconds(16)));
+        Assert.All(api.WriteTimes.Zip(api.WriteTimes.Skip(1)), pair => Assert.True(pair.Second - pair.First >= TimeSpan.FromMilliseconds(100)));
         Assert.Equal("read", api.Calls[^1]); // The endpoint is never acknowledged before its native readback.
         Assert.Equal(1, hardware ? api.Acquisitions : api.Discoveries); Assert.Equal(hardware ? 1 : 0, api.Closes);
-        Assert.Equal(TimeSpan.FromMilliseconds(960), clock.GetElapsedTime(0));
+        Assert.InRange(clock.GetElapsedTime(0), TimeSpan.FromMilliseconds(900), TimeSpan.FromMilliseconds(1200));
     }
 
     [Fact]
@@ -173,7 +189,7 @@ public sealed class BrightnessFadeTests
             writes.Add(value); timestamps.Add(clock.GetElapsedTime(0));
             clock.Advance(TimeSpan.FromMilliseconds(50)); return true;
         });
-        BrightnessFade.Apply([(target, 90)], new(true, 1), default, clock, (delay, _) =>
+        BrightnessFade.Apply([(target, 90)], new(true, 1, 60), default, clock, (delay, _) =>
         { Assert.True(delay > TimeSpan.Zero && delay <= TimeSpan.FromMilliseconds(16)); clock.Advance(delay); });
         Assert.True(target.Transaction.Owned); Assert.False(target.Transaction.HasPendingFadeWrite);
         Assert.False(pending); Assert.Equal(writes, confirmations); Assert.Equal(90u, target.Transaction.Confirmed);
@@ -289,28 +305,51 @@ public sealed class BrightnessFadeTests
     [Fact(Timeout = 10000)]
     public async Task RestoreFadesBothDirectionsPreservesOriginalBaselineAcrossUpdatesAndManualTakeover()
     {
-        foreach (var takeover in new[] { false, true })
+        foreach (var hardware in new[] { false, true }) foreach (var takeover in new[] { false, true })
         {
-            var clock = new ManualTimeProvider(); var api = new Display(clock); var captures = 0;
+            var clock = new ManualTimeProvider(); var api = new Display(clock) { Current = 73 }; var captures = 0;
             var session = await BrightnessRestoreSession.CreateAsync(_ =>
             {
-                captures++; var target = new BrightnessRestoreTarget(50, p => (uint)p, () => api.Current, value => api.Write(value));
+                captures++; var target = new BrightnessRestoreTarget(73, p => (uint)p, () => api.Current, value => api.Write(value), hardwareBurst: hardware);
                 return new([target], 0, 0, _ => { }, () => { });
             }, null, TimeSpan.FromSeconds(10), default, clock, (delay, _) => clock.Advance(delay));
             try
             {
                 Dictionary<string, string> Parameters(int percent) => new() { ["percent"] = percent.ToString(), ["fadeEnabled"] = "true", ["fadeDurationSeconds"] = "3" };
-                Assert.True((await session.ApplyAsync(Parameters(90), default)).Owned);
-                Assert.Equal(40, api.Writes.Count); Assert.Equal(90u, api.Current);
-                Assert.True((await session.ApplyAsync(Parameters(70), default)).Owned); Assert.Equal(1, captures);
+                Assert.True((await session.ApplyAsync(Parameters(40), default)).Owned);
+                Assert.True(api.Writes.Count > 1); Assert.Equal(40u, api.Current);
+                Assert.True((await session.ApplyAsync(Parameters(60), default)).Owned); Assert.Equal(1, captures);
                 var applyCount = api.Writes.Count;
                 if (takeover) api.Current = 19;
                 var result = await session.ReleaseAsync(default); Assert.True(result.Success);
-                Assert.Equal(takeover ? 19u : 50u, api.Current);
+                Assert.Equal(takeover ? 19u : 73u, api.Current);
                 if (takeover) Assert.Equal(applyCount, api.Writes.Count);
-                else { Assert.True(api.Writes.Count > applyCount + 1); Assert.Equal(api.Writes.Skip(applyCount).OrderDescending(), api.Writes.Skip(applyCount)); }
+                else { Assert.True(api.Writes.Count > applyCount + 1); Assert.Equal(api.Writes.Skip(applyCount).Order(), api.Writes.Skip(applyCount)); }
             }
             finally { await session.DisposeAsync(); }
+        }
+    }
+
+    [Fact]
+    public void RequestedWriteFrequencyCapsBothBackendsAndHardwareEndpointRetains100msSpacing()
+    {
+        foreach (var hardware in new[] { false, true }) foreach (var frequency in new[] { 1, 10, 18, 60 })
+        {
+            var clock = new ManualTimeProvider(); uint current = 73;
+            var writes = new List<(TimeSpan At, uint Value)>(); var calls = new List<string>();
+            var target = new BrightnessRestoreTarget(73, p => (uint)p, () =>
+            { calls.Add("read"); clock.Advance(TimeSpan.FromMilliseconds(15)); return current; }, value =>
+            { calls.Add("write"); writes.Add((clock.GetElapsedTime(0), value)); current = value; clock.Advance(TimeSpan.FromMilliseconds(55)); return true; }, hardwareBurst: hardware);
+            BrightnessFade.Apply([(target, 40)], new(true, 1, frequency), default, clock, (delay, token) => { clock.Advance(delay); token.ThrowIfCancellationRequested(); });
+            Assert.True(target.Transaction.Owned); Assert.False(target.Transaction.HasPendingFadeWrite);
+            Assert.Equal(40u, current); Assert.Equal(40u, target.Transaction.Confirmed); Assert.Equal("read", calls[^1]);
+            Assert.Equal(writes.Select(w => w.Value).OrderDescending(), writes.Select(w => w.Value));
+            Assert.Equal(writes.Select(w => w.Value).Distinct(), writes.Select(w => w.Value));
+            Assert.All(writes.Zip(writes.Skip(1)), pair =>
+                Assert.True(pair.Second.At - pair.First.At >= TimeSpan.FromMilliseconds(1000d / frequency) - TimeSpan.FromTicks(1)));
+            if (hardware && writes.Count > 1) Assert.True(writes[^1].At - writes[^2].At >= TimeSpan.FromMilliseconds(100));
+            if (!hardware) Assert.All(calls.Select((call, i) => (call, i)).Where(c => c.call == "write"), c => Assert.Equal("read", calls[c.i - 1]));
+            Assert.InRange(clock.GetElapsedTime(0), TimeSpan.FromMilliseconds(900), TimeSpan.FromSeconds(3));
         }
     }
 
