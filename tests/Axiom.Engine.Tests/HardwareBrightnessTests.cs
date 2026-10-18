@@ -17,7 +17,7 @@ public sealed class HardwareBrightnessTests
     public async Task ActualRegistryPausedTemplateStrictImportAndSaveShareArbitrationAndEngineDelay()
     {
         var modules = BuiltInAutomationPlugins.Create(); var plugin = Assert.Single(modules.OfType<HardwareBrightnessPlugin>());
-        var binding = Assert.Single(plugin.Bindings, b => b.Descriptor.Id == HardwareBrightnessCapabilities.Set).Descriptor; Assert.Equal(RetryCategory.Never, binding.Retry); Assert.Equal(TimeSpan.FromSeconds(10), binding.Timeout);
+        var binding = Assert.Single(plugin.Bindings, b => b.Descriptor.Id == HardwareBrightnessCapabilities.Set).Descriptor; Assert.Equal(RetryCategory.Never, binding.Retry); Assert.Equal(TimeSpan.FromSeconds(30), binding.Timeout);
         Assert.DoesNotContain(plugin.Combinations, c => c.DetectionId is SessionDisplayCapabilities.State or DisplayCountCapabilities.Count);
         Assert.Contains(plugin.Combinations, c => c.DetectionId == PowerStateCapabilities.State);
         var action = new HardwareBrightnessTaskAction(); var scope = ResourceScope.Session("owner", 1);

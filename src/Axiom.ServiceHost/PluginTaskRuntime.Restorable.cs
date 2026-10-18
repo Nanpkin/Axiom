@@ -32,6 +32,7 @@ internal sealed partial class PluginTaskRuntime
         public bool Connected;
         public string? CapturedSelection;
         public bool ReleaseConfirmed;
+        public TimeSpan OperationTimeout = TimeSpan.FromSeconds(15);
     }
     private void SetRestorableAuthorization(ResourceKey key, long generation, bool authorized)
     {
@@ -64,6 +65,10 @@ internal sealed partial class PluginTaskRuntime
         var invocation = RestorableSettingInvocations.Decode(desired.Target.Text);
         if (invocation.CapabilityId != desired.Key.CapabilityId) return new(OutcomeStatus.Rejected, "设置租约能力与目标不匹配。", id);
         RestorableSettingInvocations.ValidateLease(invocation);
+        var fading = invocation.CapabilityId is BuiltInBrightnessRestoreCapabilities.Set or HardwareBrightnessRestoreCapabilities.Set &&
+            BrightnessFadeSettings.Parse(invocation.Parameters).Enabled;
+        var operationTimeout = fading ? TimeSpan.FromSeconds(30) : TimeSpan.FromSeconds(15);
+        var acquireTimeout = fading ? TimeSpan.FromSeconds(37) : TimeSpan.FromSeconds(12);
         // This currently has one real consumer: hardware brightness primary/all selects fixed handles.
         var selection = invocation.CapabilityId == HardwareBrightnessCapabilities.Set + ".restore" ? invocation.Parameters.GetValueOrDefault("target") : null;
         SettingLease? prior = null;
@@ -95,18 +100,19 @@ internal sealed partial class PluginTaskRuntime
             first = item.Lease is null;
             if (first) { item.Lease = new(Client()) { CapturedSelection = selection }; settingLeases.Add(item.Lease); }
             lease = item.Lease!;
+            lease.OperationTimeout = operationTimeout;
         }
         var entered = false;
         try
         {
             await lease.Serial.WaitAsync(token); entered = true;
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token, lease.Lifetime.Token);
-            deadline.CancelAfter(TimeSpan.FromSeconds(12));
+            deadline.CancelAfter(first ? acquireTimeout : operationTimeout);
             ProviderMessage receipt;
             if (first)
             {
                 await lease.Pipe.ConnectForUserAsync(2000, deadline.Token);
-                await ProviderProtocol.WriteAsync(lease.Pipe, new(1, "lease-setting", id.ToString("N"), DateTimeOffset.UtcNow.AddSeconds(12), Invocation: invocation), deadline.Token);
+                await ProviderProtocol.WriteAsync(lease.Pipe, new(1, "lease-setting", id.ToString("N"), DateTimeOffset.UtcNow.Add(acquireTimeout), Invocation: invocation), deadline.Token);
                 receipt = await ProviderProtocol.ReadAsync(lease.Pipe, deadline.Token);
                 ValidateSettingReceipt(receipt, id.ToString("N"), 0);
                 lease.Connected = true;
@@ -155,7 +161,7 @@ internal sealed partial class PluginTaskRuntime
             if (lease.Reply is not null) throw new IOException("前一次设置请求尚未返回，本次不排队。");
             reply = lease.Reply = new(TaskCreationOptions.RunContinuationsAsynchronously); sequence = ++lease.Sequence;
         }
-        await ProviderProtocol.WriteAsync(lease.Pipe, new(1, type, lease.Target!, DateTimeOffset.UtcNow.AddSeconds(15), Invocation: invocation, Sequence: sequence), token);
+        await ProviderProtocol.WriteAsync(lease.Pipe, new(1, type, lease.Target!, DateTimeOffset.UtcNow.Add(lease.OperationTimeout), Invocation: invocation, Sequence: sequence), token);
         return await reply.Task.WaitAsync(token);
     }
     private async Task MonitorSettingLeaseAsync(ResourceKey key, SettingLease lease)
@@ -197,7 +203,7 @@ internal sealed partial class PluginTaskRuntime
     }
     private async Task ReleaseSettingLeaseAsync(ResourceKey key, SettingLease lease)
     {
-        using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var cleanup = new CancellationTokenSource(lease.OperationTimeout);
         var entered = false;
         try
         {

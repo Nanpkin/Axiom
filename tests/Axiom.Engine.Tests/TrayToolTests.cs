@@ -13,7 +13,7 @@ namespace Axiom.Engine.Tests;
 public sealed class TrayToolTests
 {
     private static IAutomationPlugin[] Plugins => [new AxiomStartupPlugin(), new TrayPlugin(), new TrayToolPlugin()];
-    private static TrayToolSettings Settings(long version = 0, bool enabled = true, string mode = TrayTool.Startup, string path = @"C:\Apps\TraySample.exe") => new(version, enabled, mode, [path]);
+    private static TrayToolSettings Settings(long version = 0, bool enabled = true, string mode = TrayTool.Startup, string path = @"C:\Apps\TraySample.exe", int waitSeconds = 30) => new(version, enabled, mode, [path], waitSeconds);
     private static string NewDirectory() { var directory = Path.Combine(Path.GetTempPath(), "axiom-tray-tool-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(directory); return directory; }
     private static async Task Until(Func<bool> condition)
     {
@@ -32,7 +32,8 @@ public sealed class TrayToolTests
         foreach (var invalid in new[] { save with { ExpectedVersion = 1 }, save with { Group = new(Guid.NewGuid().ToString("D"), 0, "group", []) },
             save with { Type = "read", TraySettings = Settings() }, save with { Type = "run-tray-tool", TraySettings = null },
             save with { TrayTool = new(Settings(), "forged result") }, save with { TraySettings = Settings(mode: "poll") },
-            save with { TraySettings = Settings(path: "sample.exe") }, save with { TraySettings = Settings() with { Executables = [] } } })
+            save with { TraySettings = Settings(path: "sample.exe") }, save with { TraySettings = Settings() with { Executables = [] } },
+            save with { TraySettings = Settings(waitSeconds: 0) }, save with { TraySettings = Settings(waitSeconds: 31) } })
             Assert.ThrowsAny<Exception>(() => AutomationProtocol.ValidateRequest(invalid, now));
         Assert.Throws<InvalidDataException>(() => AutomationProtocol.ValidateRequest(save, now, true));
         var invoke = new TaskInvocation(TrayCapabilities.Hide, 1, ImmutableDictionary<string, string>.Empty.Add("executable", @"C:\Apps\TraySample.exe").Add("waitSeconds", "1").Add("delaySeconds", "0"));
@@ -42,7 +43,9 @@ public sealed class TrayToolTests
         Assert.Throws<InvalidDataException>(() => ProviderProtocol.Validate(observe with { Resources = [] }, now));
         Assert.Throws<ArgumentException>(() => ProviderProtocol.Validate(observe with { Invocation = invoke with { Parameters = invoke.Parameters.SetItem("executable", "sample.exe") } }, now));
         using var wire = new MemoryStream(); await AutomationProtocol.WriteAsync(wire, save, default); wire.Position = 0;
-        Assert.Equal(TrayTool.Startup, (await AutomationProtocol.ReadAsync(wire, default)).TraySettings!.Mode);
+        var settings = (await AutomationProtocol.ReadAsync(wire, default)).TraySettings!;
+        Assert.Equal(TrayTool.Startup, settings.Mode); Assert.Equal(30, settings.WaitSeconds);
+        Assert.Equal(30, System.Text.Json.JsonSerializer.Deserialize<TrayToolSettings>("""{"Version":0,"Enabled":false,"Mode":"startup","Executables":[]}""")!.WaitSeconds);
     }
 
     [Fact(Timeout = 15000)]
@@ -56,7 +59,7 @@ public sealed class TrayToolTests
             await using (var runtime = new PluginTaskRuntime(Plugins, store, "test-" + Guid.NewGuid().ToString("N"), activity.Engine, () => 1))
             {
                 await runtime.InitializeAsync(); Assert.Empty(runtime.ReadTrayTool().Settings.Executables);
-                var saved = await runtime.SaveTrayToolAsync(Settings(enabled: false, mode: TrayTool.Continuous), default);
+                var saved = await runtime.SaveTrayToolAsync(Settings(enabled: false, mode: TrayTool.Continuous, waitSeconds: 12), default);
                 Assert.False(saved.Settings.Enabled); Assert.Equal(1, saved.Settings.Version);
                 Assert.Empty((await runtime.ReadAsync(default)).Tasks);
                 Assert.DoesNotContain((await runtime.ReadAsync(default)).Capabilities, c => c.Id == TrayTool.Trigger);
@@ -75,7 +78,7 @@ public sealed class TrayToolTests
             await using (var runtime = new PluginTaskRuntime(Plugins, store, "test-" + Guid.NewGuid().ToString("N"), activity.Engine, () => 1))
             {
                 await runtime.InitializeAsync(); var loaded = runtime.ReadTrayTool().Settings;
-                Assert.Equal(1, loaded.Version); Assert.False(loaded.Enabled); Assert.Equal(TrayTool.Continuous, loaded.Mode);
+                Assert.Equal(1, loaded.Version); Assert.False(loaded.Enabled); Assert.Equal(TrayTool.Continuous, loaded.Mode); Assert.Equal(12, loaded.WaitSeconds);
                 Assert.Equal([@"C:\Apps\TraySample.exe"], loaded.Executables); await runtime.EnsureSafeToStopAsync(default);
             }
         }
@@ -97,26 +100,50 @@ public sealed class TrayToolTests
                 if (!restart) await runtime.SaveTrayToolAsync(Settings(), default);
                 var first = await provider.NextCall(); Assert.Equal(TrayCapabilities.Hide, first.Request.Invocation!.CapabilityId);
                 Assert.Contains("TraySample.exe", first.Request.Invocation.Parameters["executable"]);
+                Assert.Equal(restart ? "17" : "30", first.Request.Invocation.Parameters["waitSeconds"]);
                 first.Complete(OutcomeStatus.Succeeded, "fixture hidden");
                 await Until(() => runtime.ReadTrayTool().LastStatus == OutcomeStatus.Succeeded);
                 if (!restart)
                 {
-                    var saved = await runtime.SaveTrayToolAsync(Settings(1, path: @"C:\Apps\Changed.exe"), default);
+                    var saved = await runtime.SaveTrayToolAsync(Settings(1, path: @"C:\Apps\Changed.exe", waitSeconds: 7), default);
                     var changed = await provider.NextCall(); Assert.Equal(@"C:\Apps\Changed.exe", changed.Request.Invocation!.Parameters["executable"]);
+                    Assert.Equal("7", changed.Request.Invocation.Parameters["waitSeconds"]);
                     changed.Complete(OutcomeStatus.Failed, "fixture unchanged failure"); await Until(() => runtime.ReadTrayTool().LastStatus == OutcomeStatus.Failed);
                     await runtime.RunTrayToolAsync(saved.Settings.Version, default);
-                    var retry = await provider.NextCall(); retry.Complete(OutcomeStatus.Succeeded, "fixture retry hidden");
+                    var retry = await provider.NextCall(); Assert.Equal("7", retry.Request.Invocation!.Parameters["waitSeconds"]);
+                    retry.Complete(OutcomeStatus.Succeeded, "fixture retry hidden");
                     await Until(() => runtime.ReadTrayTool().LastResult == "fixture retry hidden");
                     await Assert.ThrowsAsync<InvalidOperationException>(() => runtime.RunTrayToolAsync(1, default));
                     Assert.Equal(3, provider.Calls); Assert.Equal(0, provider.Monitors);
                     // Preserve the same target for the restart assertion.
-                    await runtime.SaveTrayToolAsync(Settings(2), default);
+                    await runtime.SaveTrayToolAsync(Settings(2, waitSeconds: 17), default);
                     var final = await provider.NextCall(); final.Complete(OutcomeStatus.Succeeded, "fixture reset");
                     await Until(() => runtime.ReadTrayTool().LastResult == "fixture reset");
                 }
                 else { Assert.Equal(1, provider.Calls); Assert.Equal(0, provider.Monitors); }
                 await runtime.EnsureSafeToStopAsync(default);
             }
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
+    [Fact(Timeout = 15000)]
+    public async Task LegacyOneSecondTaskRemainsInternalAndCanSaveLongerWait()
+    {
+        var directory = NewDirectory();
+        try
+        {
+            using var activity = new AutomationFixture(); using var store = new SqliteAutomationTaskStore(Path.Combine(directory, "tasks.db"));
+            await store.SaveAsync(new(TrayTool.TaskId, 0, TrayTool.Name, true,
+                new(TrayTool.Trigger, 1, ImmutableDictionary<string, string>.Empty.Add("frequency", "every").Add("mode", TrayTool.Startup)),
+                new(TrayCapabilities.Hide, 1, ImmutableDictionary<string, string>.Empty.Add("executable", @"C:\Apps\TraySample.exe").Add("waitSeconds", "1").Add("delaySeconds", "0"))), default);
+            await using var runtime = new PluginTaskRuntime(Plugins, store, "test-" + Guid.NewGuid().ToString("N"), activity.Engine, () => 1);
+            await runtime.InitializeAsync();
+            Assert.Equal(1, runtime.ReadTrayTool().Settings.WaitSeconds); Assert.Empty((await runtime.ReadAsync(default)).Tasks);
+            var saved = await runtime.SaveTrayToolAsync(runtime.ReadTrayTool().Settings with { WaitSeconds = 30 }, default);
+            Assert.Equal(30, saved.Settings.WaitSeconds); Assert.False(saved.Settings.Enabled);
+            Assert.Equal("30", Assert.Single(await store.ListAsync()).Action.Parameters["waitSeconds"]);
+            Assert.Empty((await runtime.ReadAsync(default)).Tasks); await runtime.EnsureSafeToStopAsync(default);
         }
         finally { Directory.Delete(directory, true); }
     }

@@ -1,3 +1,4 @@
+
 namespace Axiom.Providers.Windows;
 
 internal sealed record HardwareLogicalMonitor(nint Handle, bool Primary);
@@ -80,13 +81,16 @@ internal static class HardwareBrightnessOperation
         return delta > 0 ? (uint)Math.Min((ulong)range.Maximum, range.Current + distance) :
             (uint)Math.Max((ulong)range.Minimum, (ulong)range.Current - Math.Min((ulong)range.Current, distance));
     }
-    internal static (bool Success, string Reason) Apply(IHardwareBrightnessApi api, string target, int percent, CancellationToken token) => ApplyCore(api, target, percent, null, token);
-    internal static (bool Success, string Reason) Adjust(IHardwareBrightnessApi api, string target, string operation, int step, CancellationToken token)
+    internal static (bool Success, string Reason) Apply(IHardwareBrightnessApi api, string target, int percent, CancellationToken token,
+        BrightnessFadeOptions fade = default, TimeProvider? time = null, Action<TimeSpan, CancellationToken>? wait = null) => ApplyCore(api, target, percent, null, token, fade, time, wait);
+    internal static (bool Success, string Reason) Adjust(IHardwareBrightnessApi api, string target, string operation, int step, CancellationToken token,
+        BrightnessFadeOptions fade = default, TimeProvider? time = null, Action<TimeSpan, CancellationToken>? wait = null)
     {
         if (operation is not ("increase" or "decrease") || step is < 1 or > 100) throw new ArgumentException("相对亮度参数无效。");
-        return ApplyCore(api, target, 0, operation == "increase" ? step : -step, token);
+        return ApplyCore(api, target, 0, operation == "increase" ? step : -step, token, fade, time, wait);
     }
-    private static (bool Success, string Reason) ApplyCore(IHardwareBrightnessApi api, string target, int percent, int? delta, CancellationToken token)
+    private static (bool Success, string Reason) ApplyCore(IHardwareBrightnessApi api, string target, int percent, int? delta, CancellationToken token,
+        BrightnessFadeOptions fade, TimeProvider? time, Action<TimeSpan, CancellationToken>? wait)
     {
         if (target is not ("primary" or "all") || percent is < 0 or > 100) throw new ArgumentException("硬件亮度参数无效。");
         token.ThrowIfCancellationRequested();
@@ -123,6 +127,7 @@ internal static class HardwareBrightnessOperation
                 catch (HardwareBrightnessLimitException) { return (false, "物理屏幕数量超出每个逻辑显示8块或总计64块的范围，本次未修改；已取得的句柄将释放。"); }
                 catch (Exception error) when (error is not (OperationCanceledException or OutOfMemoryException or StackOverflowException)) { unknown++; }
             }
+            var transitions = new List<(BrightnessRestoreTarget Target, uint Value)>();
             for (var index = 0; index < handles.Count; index++)
             {
                 var monitor = handles[index];
@@ -143,6 +148,16 @@ internal static class HardwareBrightnessOperation
                 try
                 {
                     token.ThrowIfCancellationRequested();
+                    if (fade.Enabled)
+                    {
+                        var captured = new BrightnessRestoreTarget(range.Current, p => Map(range, p), () =>
+                        {
+                            if (!api.IsAuthorized()) return null;
+                            var actual = api.Read(monitor);
+                            return actual is not null && actual.Minimum == range.Minimum && actual.Maximum == range.Maximum && Map(actual, 0).HasValue ? actual.Current : null;
+                        }, value => api.IsAuthorized() && api.Set(monitor, value));
+                        transitions.Add((captured, requested)); continue;
+                    }
                     var accepted = api.Set(monitor, requested); token.ThrowIfCancellationRequested();
                     if (!accepted) { failed++; continue; }
                     var actual = api.Read(monitor); token.ThrowIfCancellationRequested();
@@ -150,6 +165,12 @@ internal static class HardwareBrightnessOperation
                     else failed++;
                 }
                 catch (Exception error) when (error is not (OperationCanceledException or OutOfMemoryException or StackOverflowException)) { failed++; }
+            }
+            if (fade.Enabled)
+            {
+                BrightnessFade.Apply(transitions, fade, token, time, wait);
+                succeeded += transitions.Count(t => t.Target.Transaction.Owned);
+                failed += transitions.Count(t => !t.Target.Transaction.Owned);
             }
         }
         finally

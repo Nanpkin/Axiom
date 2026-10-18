@@ -12,7 +12,7 @@ internal interface ISessionRestorableCapabilityProvider
 // Ownership observation: idle is Known empty text; only a real native-confirmed apply echoes its target.
 internal class RestorableSettingCapabilityProvider(string capabilityId,
     Func<IReadOnlyDictionary<string, string>, CancellationToken, Task<IRestorableSettingSession>> create,
-    Action<TaskInvocation> validate, Func<TaskInvocation, string> resourceId) : ISessionCapabilityProvider, ISessionRestorableCapabilityProvider
+    Action<TaskInvocation> validate, Func<TaskInvocation, string> resourceId, TimeSpan? cleanupTimeout = null) : ISessionCapabilityProvider, ISessionRestorableCapabilityProvider
 {
     private readonly object gate = new();
     private readonly Dictionary<string, Lease?> leases = [];
@@ -84,6 +84,7 @@ internal class RestorableSettingCapabilityProvider(string capabilityId,
         Task.FromResult((OutcomeStatus.Rejected, "条件恢复设置必须使用持续条件租约，不能作为一次性命令。"));
     internal sealed class Lease(RestorableSettingCapabilityProvider owner, string id, IRestorableSettingSession session) : IAsyncDisposable
     {
+        internal TimeSpan CleanupTimeout => owner.CleanupTimeout;
         private readonly SemaphoreSlim serial = new(1, 1);
         internal RestorableSettingResult Initial { get; set; } = new(false, "尚未确认应用。", false);
         internal string? Target;
@@ -120,8 +121,9 @@ internal class RestorableSettingCapabilityProvider(string capabilityId,
         }
         public async ValueTask DisposeAsync()
         {
-            using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            using var cleanup = new CancellationTokenSource(CleanupTimeout);
             await ReleaseAsync(cleanup.Token);
         }
     }
+    private TimeSpan CleanupTimeout => cleanupTimeout ?? TimeSpan.FromSeconds(15);
 }
