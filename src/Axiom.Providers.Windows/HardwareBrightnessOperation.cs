@@ -19,6 +19,19 @@ internal interface IHardwareBrightnessApi
 
 internal sealed class HardwareBrightnessLimitException : Exception { }
 
+// Bind the read/write pair once, before discovery or baseline capture. Failure never switches interfaces.
+internal sealed class HardwareBrightnessIo(bool directVcp,
+    Func<nint, (HardwareBrightnessRange? Range, int Error)> readHighLevel,
+    Func<nint, (HardwareBrightnessRange? Range, int Error)> readVcp,
+    Func<nint, uint, bool> writeHighLevel, Func<nint, uint, bool> writeVcp)
+{
+    private readonly Func<nint, (HardwareBrightnessRange? Range, int Error)> read = directVcp ? readVcp : readHighLevel;
+    private readonly Func<nint, uint, bool> write = directVcp ? writeVcp : writeHighLevel;
+    internal HardwareBrightnessRange? Read(nint monitor, CancellationToken token, Action<TimeSpan, CancellationToken>? wait = null) =>
+        HardwareBrightnessReadPolicy.Read(() => read(monitor), token, wait);
+    internal bool Write(nint monitor, uint value) => write(monitor, value);
+}
+
 internal static class HardwareBrightnessReadPolicy
 {
     // A framing error observed on supported hardware can clear after the device settles.
@@ -41,6 +54,8 @@ internal static class HardwareBrightnessReadPolicy
 
 internal static class HardwareBrightnessOperation
 {
+    internal static HardwareBrightnessRange? VcpRange(int type, uint current, uint maximum) =>
+        type == 1 && maximum > 0 && current <= maximum ? new(0, current, maximum) : null; // MC_SET_PARAMETER
     internal static HardwareBrightnessRange? ReadKnown(IHardwareBrightnessApi api, nint monitor, CancellationToken token, out bool unsupported)
     {
         unsupported = false;
