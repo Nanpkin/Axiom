@@ -22,7 +22,7 @@ public sealed partial class WorkbenchWindow
         body.Children.Add(toggle);
         if (trayTool is not null)
         {
-            body.Children.Add(Text($"{trayTool.Settings.Executables.Length} 个程序 · {TrayModeText(trayTool.Settings.Mode)}", 13, Muted));
+            body.Children.Add(Text($"{trayTool.Settings.Executables.Length} 个程序 · {TrayModeText(trayTool.Settings.Mode)} · 最多等待 {trayTool.Settings.WaitSeconds} 秒", 13, Muted));
             body.Children.Add(Text(trayTool.State, 13, trayTool.LastStatus is OutcomeStatus.Failed or OutcomeStatus.Unknown or OutcomeStatus.Rejected ? Amber : Muted));
             if (trayTool.LastRunUtc is { } at) body.Children.Add(Text($"上次结果：{TrayResultText(trayTool.LastStatus)} · {at.ToLocalTime():MM-dd HH:mm:ss}（详情见工具设置）", 12, Muted));
         }
@@ -84,7 +84,7 @@ public sealed partial class WorkbenchWindow
         if (trayTool is null || closed) { ShowNotice(trayToolError ?? "托盘工具状态未确认。"); return; }
         var original = trayTool.Settings;
         var selection = new ProcessSelectionState(string.Join("\n", original.Executables), true);
-        var mode = original.Mode; var enabled = original.Enabled;
+        var mode = original.Mode; var enabled = original.Enabled; double waitSeconds = original.WaitSeconds;
         while (!closed)
         {
             var next = "";
@@ -96,6 +96,10 @@ public sealed partial class WorkbenchWindow
             modes.SelectionChanged += (_, _) => mode = modes.SelectedIndex == 1 ? TrayTool.Continuous : TrayTool.Startup;
             body.Children.Add(modes);
             body.Children.Add(Text("仅启动：软件或资源管理器重建图标后可能再出现，可点击立即隐藏。\n持续：订阅系统通知，发现名单内图标重新出现后再隐藏；没有定时扫描。", 12, Muted));
+            var wait = new NumberBox { Header = "等待托盘图标出现（秒）", Minimum = 1, Maximum = 30, Value = waitSeconds,
+                SmallChange = 1, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact };
+            wait.ValueChanged += (_, _) => waitSeconds = wait.Value; body.Children.Add(wait);
+            body.Children.Add(Text("已有图标立即隐藏；尚未出现时，最多等待所设秒数的系统通知。每个程序分别等待，超时会说明未找到。启动较慢可设为 30 秒；这不是固定延迟。", 12, Muted));
             var toggle = new ToggleSwitch { Header = "启用托盘管理", OnContent = "已启用", OffContent = "已关闭", IsOn = enabled };
             toggle.Toggled += (_, _) => enabled = toggle.IsOn; body.Children.Add(toggle);
             body.Children.Add(Text("启用或启用时保存会处理当前图标一次。关闭只停止未来操作，不恢复已隐藏图标。系统版本、权限或未知图标身份可能使识别/隐藏失败，结果会说明。", 12, Amber));
@@ -120,7 +124,16 @@ public sealed partial class WorkbenchWindow
             var dialog = new ContentDialog { Title = TrayTool.Name + "设置", Content = new ScrollViewer { Content = body, MaxHeight = Math.Clamp(shell.ActualHeight - 200, 240, 680) },
                 PrimaryButtonText = "保存设置", CloseButtonText = "取消", DefaultButton = ContentDialogButton.Close, XamlRoot = shell.XamlRoot };
             dialog.Resources["ContentDialogMaxWidth"] = Math.Min(760d, shell.XamlRoot.Size.Width - 48);
-            dialog.PrimaryButtonClick += (_, args) => { try { TrayTool.Validate(new(original.Version, enabled, mode, [.. selection.Names])); } catch (ArgumentException exception) { error.Text = exception.Message; args.Cancel = true; } };
+            dialog.PrimaryButtonClick += (_, args) =>
+            {
+                try
+                {
+                    if (!double.IsFinite(waitSeconds) || waitSeconds != Math.Truncate(waitSeconds) || waitSeconds is < 1 or > 30)
+                        throw new ArgumentException("等待托盘图标出现的时间须为 1–30 的整数秒。");
+                    TrayTool.Validate(new(original.Version, enabled, mode, [.. selection.Names], (int)waitSeconds));
+                }
+                catch (ArgumentException exception) { error.Text = exception.Message; args.Cancel = true; }
+            };
             var answer = await ShowDialogAsync(dialog);
             if (next == "redraw") continue;
             if (next == "tray") { await ShowTrayPickerAsync(selection); continue; }
@@ -136,7 +149,7 @@ public sealed partial class WorkbenchWindow
                 continue;
             }
             if (answer != ContentDialogResult.Primary) break;
-            if (await SaveTrayToolSettingsAsync(new(original.Version, enabled, mode, [.. selection.Names]))) break;
+            if (await SaveTrayToolSettingsAsync(new(original.Version, enabled, mode, [.. selection.Names], (int)waitSeconds))) break;
         }
         Render();
     }

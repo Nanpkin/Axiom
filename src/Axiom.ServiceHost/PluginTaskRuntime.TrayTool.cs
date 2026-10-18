@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Globalization;
 using Axiom.Contracts;
 using Axiom.Domain;
 using Axiom.Engine;
@@ -33,7 +34,8 @@ internal sealed partial class PluginTaskRuntime
         task.Detection.CapabilityId == TrayTool.Trigger && task.Detection.SchemaVersion == 1 && task.Detection.Parameters.Count == 2 &&
         task.Detection.Parameters.GetValueOrDefault("frequency") == "every" && task.Detection.Parameters.GetValueOrDefault("mode") is TrayTool.Startup or TrayTool.Continuous &&
         task.Action.CapabilityId == TrayCapabilities.Hide && task.Action.SchemaVersion == 1 && task.Action.Parameters.Count == 3 &&
-        task.Action.Parameters.GetValueOrDefault("waitSeconds") == "1" && task.Action.Parameters.GetValueOrDefault("delaySeconds") == "0";
+        int.TryParse(task.Action.Parameters.GetValueOrDefault("waitSeconds"), NumberStyles.None, CultureInfo.InvariantCulture, out var waitSeconds) &&
+        waitSeconds is >= 1 and <= 30 && task.Action.Parameters.GetValueOrDefault("delaySeconds") == "0";
 
     private AutomationTask? TrayTask()
     {
@@ -47,7 +49,8 @@ internal sealed partial class PluginTaskRuntime
         {
             var task = TrayTask();
             var settings = task is null ? new TrayToolSettings(0, false, TrayTool.Startup, []) : new(task.Version, !task.Paused,
-                task.Detection.Parameters["mode"], TrayCapabilities.ValidateTargets(task.Action));
+                task.Detection.Parameters["mode"], TrayCapabilities.ValidateTargets(task.Action),
+                int.Parse(task.Action.Parameters["waitSeconds"], CultureInfo.InvariantCulture));
             var state = task is null ? "尚未配置；先选择需要隐藏托盘图标的程序。" : task.Paused ? "已关闭；名单保留，不恢复已隐藏图标。" :
                 trayState ?? "等待后台和会话程序准备好，再处理当前图标。";
             return new(settings, state, trayRunning, trayLastRun, trayLastStatus, trayResult);
@@ -65,7 +68,8 @@ internal sealed partial class PluginTaskRuntime
             var targets = ExecutablePaths.Parse(string.Join("\n", settings.Executables));
             var task = new AutomationTask(TrayTool.TaskId, settings.Version, TrayTool.Name, !settings.Enabled,
                 new(TrayTool.Trigger, 1, ImmutableDictionary<string, string>.Empty.Add("frequency", "every").Add("mode", settings.Mode)),
-                new(TrayCapabilities.Hide, 1, ImmutableDictionary<string, string>.Empty.Add("executable", string.Join("\n", targets)).Add("waitSeconds", "1").Add("delaySeconds", "0")));
+                new(TrayCapabilities.Hide, 1, ImmutableDictionary<string, string>.Empty.Add("executable", string.Join("\n", targets))
+                    .Add("waitSeconds", settings.WaitSeconds.ToString(CultureInfo.InvariantCulture)).Add("delaySeconds", "0")));
             var saved = await SaveTaskAsync(task, token);
             await RefreshTrayMonitorAsync(saved, token);
             lock (statusGate)
