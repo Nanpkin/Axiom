@@ -172,7 +172,7 @@ Engine在新条件边沿/事件进入延迟前、延迟deadline以及队列取�
 本地两个native入口共享亮度ownership，恢复期间其他Axiom亮度写拒绝，外部变化仅在更新/释放及有限渐变步进时核验，稳定持有时无周期读取或持续压制。原生worker固定所有WMI对象/物理句柄并同线程执行；硬件捕获复用上述已知亮度优先准入，后续更新/释放继续核验原高层读取、原范围、授权及拓扑，不重复以能力查询否决有效当前值。displayOnly拓扑/恢复信号永久失效本轮，失败不枚举替代屏。per-target共享ConditionalSettingTransaction当前/最后确认相等检查，Unknown、不一致/其他来源改变后让出，不恢复猜测值；部分支持/未知/写读回/恢复与资源失败只输出计数，不输出设备描述或WMI身份。
 
 Release用独立清理token，末尾全部finally尝试清理，内屏对象及每组物理句柄清理异常不阻断其他资源。捕获固定10秒；未启用渐变的Apply/Release仍10秒，启用后增加所选过渡时长，调用者超时取消并不表示真实原生停止，资源与准入仍保留到worker真正返回；只按事件/条件生命周期工作，不重试或相对累加。比较与写入非原子、异常进程退出/驱动阻塞不能保证恢复，实机支持性待验。UI退出不结束后台租约；暂停、删除、Unknown及条件结束走共享租约释放回执。
-六个绝对/相对/恢复亮度动作共享可选fadeEnabled（默认false）与fadeDurationSeconds（1–15整数、默认3），省略新字段兼容旧规则。专用BrightnessFade在已固定目标的原生线程上运行有限smoothstep时间线，每批结束后至少等待250ms，不追赶逾期帧；同值不重复写，零距离一次核验即结束。WMI与硬件均逐步读验写验；取消停止后续写，未确认或外部接管让出，不回滚猜测值；正常恢复沿同一最初基线渐变。稳态无新定时器。
+六个绝对/相对/恢复亮度动作共享可选fadeEnabled（默认false）与fadeDurationSeconds（1–15整数、默认3），省略新字段兼容旧规则。专用BrightnessFade在已固定目标的原生线程上运行有限smoothstep时间线，每批结束后至少等待250ms，不追赶逾期帧；同值不重复写，零距离一次核验即结束。WMI与硬件均逐步读验写验；取消停止后续写，未确认或外部接管让出，不回滚猜测值；正常恢复沿同一最初基线渐变。渐变终点已严格读回原基线且仍Owned时直接完成释放，不重复两次原生读取；此前未确认或让出仍保留原失败/跳过判断，不凭稍后实物值追认成功。稳态无新定时器。
 
 原生动作10+过渡时长最多25秒，命令绑定30秒、恢复绑定40秒；Host仅启用亮度渐变时使用首次37秒、更新/释放30秒，Provider协议45秒上限保持；Agent亮度清理/Drain30秒。正常停止须覆盖有限恢复，超时仍保留现场而非强退。设备实际响应与粒度决定可见平滑度，非逐帧动画；[SetMonitorBrightness](https://learn.microsoft.com/en-us/windows/win32/api/highlevelmonitorconfigurationapi/nf-highlevelmonitorconfigurationapi-setmonitorbrightness)为同步设备调用。
 
