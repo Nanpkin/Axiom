@@ -24,3 +24,9 @@
 - 未测：实际Explorer重启、跨完整性广播、真实登录启动及全部Windows/软件身份格式。持续模式依赖可识别身份，不承诺全覆盖；没有开展性能数值/无关功能回归。
 - [PR22](https://github.com/Starvan/Axiom/pull/22)准确head0044f57的[检查38902198071](https://github.com/Starvan/Axiom/actions/runs/38902198071)及私有打包成功；[main检查38903019241](https://github.com/Starvan/Axiom/actions/runs/38903019241)固定71bd9b3成功。CI为9项通过、零跳过，两个桌面用例仅本机通过。
 - 新不可变标签v0.2.0-preview.20261016.2解析为71bd9b3；[发布38903463639](https://github.com/Starvan/Axiom/actions/runs/38903463639)复用准确main检查成功，[私有预览Release](https://github.com/Starvan/Axiom/releases/tag/v0.2.0-preview.20261016.2)非draft/prerelease。四资产均uploaded并有SHA256摘要：便携ZIP73038662字节、安装EXE49520851、BUILD-INFO236、SHA256SUMS318。来源/文件校验由发布任务完成；负责人核对标签、状态和资产元数据，没有另行下载重算二进制摘要。
+
+## 2026-10-18：工具等待时间
+
+- 启动隐藏原来固定等待1秒，工具设置缺少该字段。现提供1–30整数秒，新配置默认30秒；旧内部任务保留1秒并可编辑，不自动迁移用户配置。
+- 直接复用tray.hide的waitSeconds、已有SQLite任务和系统通知等待；已有图标立即处理，各目标并行等待。启动、保存、手动立即隐藏均使用保存值，无新增轮询/延迟/接口。
+- 本机7项TrayToolTests和1项精确原生等待/取消用例通过、零跳过；原生用例图标延后1.2秒创建。覆盖协议范围/默认值、持久化、旧任务兼容、启动/手动参数传递、暂停取消与原仲裁边界。WinUI构建零警告错误。CI清单仅7项工具测试，桌面用例只在本机执行。

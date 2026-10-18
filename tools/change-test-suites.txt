@@ -1,2 +1,1 @@
-Axiom.Engine.Tests.ScreenContentTests.AdvancedColorMetadataWithinSameModeDoesNotInvalidateCaptureButModeTransitionsDo
-Axiom.Engine.Tests.ScreenContentTests.LockPowerHdrAndCaptureLossReleaseResourcesAndRecoverOnlyFromRelevantEvents
+Axiom.Engine.Tests.TrayToolTests
