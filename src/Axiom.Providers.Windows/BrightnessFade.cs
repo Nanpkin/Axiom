@@ -44,6 +44,7 @@ internal static class BrightnessFade
             }
             var moving = new List<(BrightnessRestoreTarget Target, uint Value, uint Start)>();
             var completed = new HashSet<BrightnessRestoreTarget>();
+            var bursts = new Dictionary<BrightnessRestoreTarget, TimeSpan>();
             foreach (var (target, end) in targets)
             {
                 token.ThrowIfCancellationRequested();
@@ -73,7 +74,28 @@ internal static class BrightnessFade
                     token.ThrowIfCancellationRequested();
                     if (!target.Transaction.Owned || completed.Contains(target)) continue;
                     var value = progress >= 1 ? end : (uint)Math.Round(initial + ((double)end - initial) * eased, MidpointRounding.AwayFromZero);
-                    if (target.Transaction.HasPendingFadeWrite || value != target.Transaction.Confirmed)
+                    if (target.HardwareBurst)
+                    {
+                        var elapsed = time.GetElapsedTime(start);
+                        if (target.Transaction.HasPendingFadeWrite && target.Transaction.FadeExpected == end)
+                        {
+                            target.Transaction.ConfirmFade(token); bursts.Remove(target);
+                        }
+                        else
+                        {
+                            var pending = target.Transaction.HasPendingFadeWrite;
+                            var continuing = pending && bursts.TryGetValue(target, out var burstStarted) && elapsed - burstStarted < TimeSpan.FromSeconds(1);
+                            if (pending && !continuing || value != target.Transaction.FadeExpected)
+                            {
+                                // One boundary read confirms the previous segment and checks ownership for the next write.
+                                var segmentStarted = time.GetElapsedTime(start);
+                                target.Transaction.AdvanceFade(value, token, continueBurst: continuing);
+                                if (target.Transaction.Owned && target.Transaction.HasPendingFadeWrite && !continuing) bursts[target] = segmentStarted;
+                                else if (!target.Transaction.HasPendingFadeWrite) bursts.Remove(target);
+                            }
+                        }
+                    }
+                    else if (target.Transaction.HasPendingFadeWrite || value != target.Transaction.Confirmed)
                         target.Transaction.AdvanceFade(value, token);
                     token.ThrowIfCancellationRequested();
                     if (target.Transaction.Owned && !target.Transaction.HasPendingFadeWrite && target.Transaction.Confirmed == end)

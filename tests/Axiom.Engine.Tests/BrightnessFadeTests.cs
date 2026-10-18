@@ -81,7 +81,7 @@ public sealed class BrightnessFadeTests
     }
 
     [Fact]
-    public void FadeConfirmsPreviousWriteBeforeNextWriteWithoutFixedSettlingAndLegacyDoesNotWait()
+    public void HardwareFadeConfirmsBurstBoundariesAndLegacyKeepsImmediateReadback()
     {
         foreach (var captured in new[] { false, true }) foreach (var enabled in new[] { false, true })
         {
@@ -98,12 +98,16 @@ public sealed class BrightnessFadeTests
             for (var i = 0; i < api.Calls.Count; i++)
             {
                 if (api.Calls[i] != "write") continue;
-                var nextNative = api.Calls.Skip(i + 1).First(c => !c.StartsWith("wait:", StringComparison.Ordinal));
-                Assert.Equal("read", nextNative);
-                Assert.Equal("read", api.Calls.Take(i).Last(c => !c.StartsWith("wait:", StringComparison.Ordinal)));
+                if (!enabled)
+                {
+                    var nextNative = api.Calls.Skip(i + 1).First(c => !c.StartsWith("wait:", StringComparison.Ordinal));
+                    Assert.Equal("read", nextNative);
+                    Assert.Equal("read", api.Calls.Take(i).Last(c => !c.StartsWith("wait:", StringComparison.Ordinal)));
+                }
             }
             Assert.DoesNotContain("wait:500", api.Calls); Assert.DoesNotContain("wait:250", api.Calls);
             Assert.Equal("read", api.Calls[^1]);
+            if (enabled) Assert.True(api.Calls.Count(c => c == "write") > api.Calls.Count(c => c == "read"));
             if (enabled) Assert.All(api.Calls.Where(c => c.StartsWith("wait:", StringComparison.Ordinal)), c => Assert.Equal("wait:16", c));
             if (!enabled) Assert.DoesNotContain(api.Calls, c => c.StartsWith("wait:", StringComparison.Ordinal));
         }
@@ -231,9 +235,9 @@ public sealed class BrightnessFadeTests
             if (api.Writes.Count == 1) { if (cancel) stop.Cancel(); else api.Current = 17; }
             token.ThrowIfCancellationRequested();
         }
-        if (cancel) Assert.ThrowsAny<OperationCanceledException>(() => HardwareBrightnessOperation.Apply(api, "primary", 90, stop.Token, new(true, 3), clock, Wait));
-        else Assert.False(HardwareBrightnessOperation.Apply(api, "primary", 90, stop.Token, new(true, 3), clock, Wait).Success);
-        Assert.Single(api.Writes); Assert.Equal(cancel ? api.Writes[0] : 17u, api.Current); Assert.Equal(1, api.Closes);
+        if (cancel) Assert.ThrowsAny<OperationCanceledException>(() => BuiltInBrightnessOperation.Apply(api, 90, stop.Token, fade: new(true, 3), time: clock, wait: Wait));
+        else Assert.False(BuiltInBrightnessOperation.Apply(api, 90, stop.Token, fade: new(true, 3), time: clock, wait: Wait).Success);
+        Assert.Single(api.Writes); Assert.Equal(cancel ? api.Writes[0] : 17u, api.Current); Assert.Equal(0, api.Closes);
     }
 
     [Fact]

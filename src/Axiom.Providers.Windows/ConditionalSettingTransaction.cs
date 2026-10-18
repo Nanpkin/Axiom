@@ -14,6 +14,7 @@ internal sealed class ConditionalSettingTransaction<T>(T baseline, Func<T> read,
     public bool Owned => Volatile.Read(ref relinquished) == 0 && !released;
     internal T Confirmed => confirmed;
     internal bool HasPendingFadeWrite => fadePending;
+    internal T FadeExpected => fadePending ? pendingTarget : confirmed;
     internal bool UnconfirmedFailure { get; private set; }
     public void Relinquish()
     {
@@ -47,15 +48,16 @@ internal sealed class ConditionalSettingTransaction<T>(T baseline, Func<T> read,
         catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
         { UnconfirmedFailure = true; Relinquish(); return new(false, name + "目标或读写未确认，本次让出；可能已修改，不自动恢复未确认写入。", false); }
     }
-    // Fade-only: this read confirms the preceding write and checks ownership before the next write.
-    internal bool AdvanceFade(T target, CancellationToken token)
+    // Fade-only: normally confirm before the next write. The caller may continue a bounded hardware
+    // burst without that read, replacing only the latest pending expectation until its next boundary.
+    internal bool AdvanceFade(T target, CancellationToken token, bool continueBurst = false)
     {
         if (!Owned) return false;
         try
         {
-            if (!ConfirmFadeCore(token)) return false;
+            if ((!continueBurst || !fadePending) && !ConfirmFadeCore(token)) return false;
             token.ThrowIfCancellationRequested();
-            if (equality.Equals(confirmed, target)) return true;
+            if (equality.Equals(FadeExpected, target)) return true;
             pendingTarget = target; fadePending = true;
             write(target);
             token.ThrowIfCancellationRequested();

@@ -171,10 +171,10 @@ Engine在新条件边沿/事件进入延迟前、延迟deadline以及队列取�
 
 `display.brightness.restore`/`display.hardware-brightness.restore`新schema 1沿原绝对percent/delay及硬件primary/all字段，不更改旧Command行为。只有持续检测组合，亮度模块各自固定`brightness`Desired资源，配置经严格校验后沿`RestorableSettingInvocations`规范化绝对目标；不同硬件selection同资源竞争；范围改变先等待旧lease明确释放/清理确认才新捕获，不在原lease内换目标。首次capture只Known，硬件原始DWORD范围/值保留而非重算百分比基线；更新百分比不重抓基线，相对增减保持一次Command。
 
-本地两个native入口共享亮度ownership，恢复期间其他Axiom亮度写拒绝，外部变化仅在更新/释放及有限渐变步进时核验，稳定持有时无周期读取或持续压制。原生worker固定所有WMI对象/物理句柄并同线程执行；硬件捕获复用上述已知亮度优先准入，后续更新/释放继续核验首次固定接口、原范围、授权及拓扑，不重复以能力查询否决有效当前值。displayOnly拓扑/恢复信号永久失效本轮，失败不枚举替代屏。per-target共享ConditionalSettingTransaction当前/最后确认相等检查，Unknown、不一致/其他来源改变后让出，不恢复猜测值；部分支持/未知/写读回/恢复与资源失败只输出计数，不输出设备描述或WMI身份。
+本地两个native入口共享亮度ownership，恢复期间其他Axiom亮度写拒绝，外部变化仅在更新/释放及有限渐变确认点（硬件为段边界）核验，稳定持有时无周期读取或持续压制。原生worker固定所有WMI对象/物理句柄并同线程执行；硬件捕获复用上述已知亮度优先准入，后续更新/释放继续核验首次固定接口、原范围、授权及拓扑，不重复以能力查询否决有效当前值。displayOnly拓扑/恢复信号永久失效本轮，失败不枚举替代屏。per-target共享ConditionalSettingTransaction当前/最后确认相等检查，Unknown、不一致/其他来源改变后让出，不恢复猜测值；部分支持/未知/写读回/恢复与资源失败只输出计数，不输出设备描述或WMI身份。
 
 Release用独立清理token，末尾全部finally尝试清理，内屏对象及每组物理句柄清理异常不阻断其他资源。捕获固定10秒；未启用渐变的Apply/Release仍10秒，启用后增加所选过渡时长，调用者超时取消并不表示真实原生停止，资源与准入仍保留到worker真正返回；只按事件/条件生命周期工作，不重试或相对累加。比较与写入非原子、异常进程退出/驱动阻塞不能保证恢复，实机支持性待验。UI退出不结束后台租约；暂停、删除、Unknown及条件结束走共享租约释放回执。
-六个绝对/相对/恢复亮度动作共享可选fadeEnabled（默认false）与fadeDurationSeconds（1–15整数、默认3），省略新字段兼容旧规则。BrightnessFade在已固定目标的原生线程上运行有限smoothstep时间线，目标16ms帧距；原生调用较慢时按实际时间跳过逾期帧，不追赶，不重写相同原生值。移除旧250ms批次等待和500ms硬件写后等待。渐变每目标最多一笔待确认写入：下一步先严格读回确认上一笔，该读同时核对所有权，再写下一值；最后一步必须单独严格确认，才返回成功或完成基线释放。未确认、未知、手动改变和取消均让出，不用旧Confirmed追认pending或恢复猜测值；非渐变保留原流程，窄只读策略不变。稳态无新定时器；目标帧距不是显示器实际写入频率保证。
+六个绝对/相对/恢复亮度动作共享可选fadeEnabled（默认false）与fadeDurationSeconds（1–15整数、默认3），省略新字段兼容旧规则。BrightnessFade在已固定目标的原生线程上运行有限smoothstep时间线，目标16ms帧距；原生调用较慢时按实际时间跳帧，不追赶，不重写同值。移除旧250ms/500ms固定等待。WMI仍合并相邻步骤的严格确认。按2026-10-18所有者明确选择，硬件渐变采用最多1秒连续写入段：段开始核对当前==最后确认，段内每个不同目标仅单次Set并须接受，段末及最终目标严格读回最新期望值后才确认；较长渐变分段核验。连续段内手动调整可能被覆盖，无法逐写识别手动接管；这一延迟取舍已明确，不声称逐步守卫。待确认段不能用旧Confirmed追认或恢复原基线；写失败、未知、核对不符或取消立即停发、让出，不fallback/retry。非渐变原流程、窄只读策略及原生准入不变；稳态无新计时器，16ms不是硬件帧率保证。
 
 原生动作10+过渡时长最多25秒，命令绑定30秒、恢复绑定40秒；Host仅启用亮度渐变时使用首次37秒、更新/释放30秒，Provider协议45秒上限保持；Agent亮度清理/Drain30秒。正常停止须覆盖有限恢复，超时仍保留现场而非强退。设备实际响应与粒度决定可见平滑度，非逐帧动画；[SetMonitorBrightness](https://learn.microsoft.com/en-us/windows/win32/api/highlevelmonitorconfigurationapi/nf-highlevelmonitorconfigurationapi-setmonitorbrightness)为同步设备调用。
 
