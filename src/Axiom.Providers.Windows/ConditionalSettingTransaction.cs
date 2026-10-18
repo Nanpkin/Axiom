@@ -13,6 +13,11 @@ internal sealed class ConditionalSettingTransaction<T>(T baseline, Func<T> read,
     internal T Confirmed => confirmed;
     internal bool UnconfirmedFailure { get; private set; }
     public void Relinquish() => Interlocked.Exchange(ref relinquished, 1);
+    internal bool TryCompleteConfirmedRelease()
+    {
+        if (!Owned || !equality.Equals(confirmed, original)) return false;
+        released = true; Relinquish(); return true;
+    }
     public RestorableSettingResult Apply(T target, CancellationToken token)
     {
         if (!Owned) return new(false, name + "本次控制已让出；不会重新抓取基线或重试。", false);

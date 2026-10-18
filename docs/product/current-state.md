@@ -4,9 +4,9 @@
 
 ## 当前交付
 
-- 本机入口artifacts/Axiom-preview/Axiom.exe，目前0.2.0-preview.local.20261018.4/干净源码7d1025b；三角色来源、连接、原8条规则、托盘配置及登录启动已核验。
-- 本轮亮度渐变实现完成：六种动作默认关闭渐变，可设1–15秒，正常恢复也渐变；63项不同相关用例通过，一次审查后的零距离/停止期限仅局部复查。正在安全更新与实机/UI验收，尚未应用新规则；见[计划](../exec-plans/active/brightness-fade.md)。
-- 待交付分支包含已验证的[PR25托盘等待设置](https://github.com/Starvan/Axiom/pull/25)，原配置保留、新配置默认30秒；本轮不重跑其无关测试。上一版[20261018.1](https://github.com/Starvan/Axiom/releases/tag/v0.2.0-preview.20261018.1)已发布。
+- 本机入口artifacts/Axiom-preview/Axiom.exe，目前0.2.0-preview.local.20261018.5/干净源码8f0f70c；三角色来源、连接、原8条规则、托盘配置及登录启动已核验。
+- 本轮亮度渐变实现完成：六种动作默认关闭渐变，可设1–15秒，正常恢复也渐变；63项不同相关用例通过，一次审查后的零距离/停止期限仅局部复查。本机UI通过、原8规则保持；已保存3套推荐规则，因实机恢复回执未确认暂均暂停，最终未交付；见[计划](../exec-plans/active/brightness-fade.md)。
+- 已合并[PR26渐变](https://github.com/Starvan/Axiom/pull/26)，包含已验证的[PR25托盘等待设置](https://github.com/Starvan/Axiom/pull/25)，原配置保留、新配置默认30秒；本轮不重跑其无关测试。本轮尚未发新Release；上一版[20261018.1](https://github.com/Starvan/Axiom/releases/tag/v0.2.0-preview.20261018.1)已发布。
 
 ## 已可用
 

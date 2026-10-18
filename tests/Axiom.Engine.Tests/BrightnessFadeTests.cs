@@ -117,6 +117,41 @@ public sealed class BrightnessFadeTests
     }
 
     [Fact(Timeout = 10000)]
+    public async Task FadeReleaseCompletesAfterExactBaselineConfirmationWithoutExtraReadsAndRejectsUnconfirmedEndpoint()
+    {
+        foreach (var unconfirmed in new[] { false, true })
+        {
+            var clock = new ManualTimeProvider(); uint current = 100; var restoring = false; var baselineReads = 0;
+            var writes = new List<uint>();
+            var session = await BrightnessRestoreSession.CreateAsync(_ =>
+            {
+                var target = new BrightnessRestoreTarget(100, p => (uint)p, () =>
+                {
+                    if (restoring && current == 100)
+                    {
+                        baselineReads++;
+                        if (baselineReads > 1) throw new IOException("No native read is allowed after endpoint confirmation.");
+                        if (unconfirmed) return null;
+                    }
+                    return current;
+                }, value => { current = value; writes.Add(value); return true; });
+                return new([target], 0, 0, _ => { }, () => { });
+            }, null, TimeSpan.FromSeconds(10), default, clock, (_, _) => clock.Advance(TimeSpan.FromSeconds(3)));
+            try
+            {
+                Assert.True((await session.ApplyAsync(new Dictionary<string, string>
+                { ["percent"] = "95", ["fadeEnabled"] = "true", ["fadeDurationSeconds"] = "3" }, default)).Owned);
+                restoring = true;
+                var released = await session.ReleaseAsync(default);
+                Assert.Equal(!unconfirmed, released.Success); Assert.False(released.Owned);
+                Assert.Equal(1, baselineReads); Assert.Equal(new uint[] { 95, 100 }, writes);
+            }
+            finally { await session.DisposeAsync(); }
+            Assert.Equal(1, baselineReads); Assert.Equal(new uint[] { 95, 100 }, writes);
+        }
+    }
+
+    [Fact(Timeout = 10000)]
     public async Task RestoreFadesBothDirectionsPreservesOriginalBaselineAcrossUpdatesAndManualTakeover()
     {
         foreach (var takeover in new[] { false, true })
