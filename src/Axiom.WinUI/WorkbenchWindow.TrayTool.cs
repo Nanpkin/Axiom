@@ -128,8 +128,9 @@ public sealed partial class WorkbenchWindow
             {
                 try
                 {
-                    if (!double.IsFinite(waitSeconds) || waitSeconds != Math.Truncate(waitSeconds) || waitSeconds is < 1 or > 30)
+                    if (!int.TryParse(wait.Text, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.CurrentCulture, out var seconds) || seconds is < 1 or > 30)
                         throw new ArgumentException("等待托盘图标出现的时间须为 1–30 的整数秒。");
+                    waitSeconds = seconds;
                     TrayTool.Validate(new(original.Version, enabled, mode, [.. selection.Names], (int)waitSeconds));
                 }
                 catch (ArgumentException exception) { error.Text = exception.Message; args.Cancel = true; }
