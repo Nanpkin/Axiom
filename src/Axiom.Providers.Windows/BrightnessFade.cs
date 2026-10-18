@@ -45,7 +45,7 @@ internal static class BrightnessFade
                 if (settings.Enabled && initial == end)
                 {
                     // Confirm the live value once before excluding a zero-distance target.
-                    target.Transaction.Apply(end, token);
+                    target.Transaction.Apply(end, token, confirmUnchangedOnce: target.SettleAfterWrite);
                     token.ThrowIfCancellationRequested();
                 }
                 else moving.Add((target, end, initial));
@@ -69,7 +69,8 @@ internal static class BrightnessFade
                     if (!target.Transaction.Owned) continue;
                     var value = progress >= 1 ? end : (uint)Math.Round(initial + ((double)end - initial) * eased, MidpointRounding.AwayFromZero);
                     // Apply also checks ownership when rounding produces the same value; it does not write it again.
-                    target.Transaction.Apply(value, token, settings.Enabled && target.SettleAfterWrite ? settle : null);
+                    var hardwareFade = settings.Enabled && target.SettleAfterWrite;
+                    target.Transaction.Apply(value, token, hardwareFade ? settle : null, confirmUnchangedOnce: hardwareFade);
                     token.ThrowIfCancellationRequested();
                 }
                 if (progress >= 1) return;

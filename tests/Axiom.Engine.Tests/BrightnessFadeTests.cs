@@ -63,6 +63,23 @@ public sealed class BrightnessFadeTests
     }
 
     [Fact]
+    public void OnlyHardwareFadeConfirmsUnchangedValueOnceAndUnknownOrExternalChangeStillRelinquishes()
+    {
+        foreach (var hardware in new[] { false, true }) foreach (var enabled in new[] { false, true })
+        foreach (var state in new[] { "unchanged", "unknown", "external" })
+        {
+            var clock = new ManualTimeProvider(); var reads = 0; var writes = 0; var waits = 0;
+            uint? current = state == "unknown" ? null : state == "external" ? 17u : 50u;
+            var target = new BrightnessRestoreTarget(50, p => (uint)p, () => { reads++; return current; },
+                _ => { writes++; return true; }, settleAfterWrite: hardware);
+            BrightnessFade.Apply([(target, 50)], new(enabled, 3), default, clock, (_, _) => waits++);
+            Assert.Equal(state == "unchanged" && !(hardware && enabled) ? 2 : 1, reads);
+            Assert.Equal(state == "unchanged", target.Transaction.Owned);
+            Assert.Equal(0, writes); Assert.Equal(0, waits);
+        }
+    }
+
+    [Fact]
     public void HardwareFadeWaitsAfterEachAcceptedWriteBeforeItsFirstConfirmationAndLegacyDoesNotWait()
     {
         foreach (var captured in new[] { false, true }) foreach (var enabled in new[] { false, true })
