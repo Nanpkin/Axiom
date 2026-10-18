@@ -11,6 +11,7 @@
     <Compile Include="../../src/Axiom.Providers.Windows/TaskbarAutoHideOperation.cs" Link="TaskbarAutoHideOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/TaskbarAppBarData.cs" Link="TaskbarAppBarData.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/BrightnessRestoreSession.cs" Link="BrightnessRestoreSession.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/BrightnessFade.cs" Link="BrightnessFade.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/HardwareBrightnessOperation.cs" Link="HardwareBrightnessOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/NetworkCategoryState.cs" Link="NetworkCategoryState.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/NetworkCategoryObservation.cs" Link="NetworkCategoryObservation.cs" />

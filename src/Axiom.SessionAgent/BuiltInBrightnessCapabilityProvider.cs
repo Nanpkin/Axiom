@@ -15,11 +15,11 @@ internal sealed class BuiltInBrightnessCapabilityProvider(string sid) : ISession
         if (invocation.CapabilityId == BuiltInBrightnessAdjustCapabilities.Adjust)
         {
             var adjustment = BuiltInBrightnessAdjustCapabilities.Validate(invocation);
-            var adjusted = await WindowsBuiltInBrightness.AdjustAsync(adjustment.Operation, adjustment.Step, sid, token);
+            var adjusted = await WindowsBuiltInBrightness.AdjustAsync(adjustment.Operation, adjustment.Step, sid, token, BrightnessFadeOptions.Parse(invocation.Parameters));
             return (adjusted.Success ? OutcomeStatus.Succeeded : OutcomeStatus.Failed, adjusted.Reason);
         }
         var settings = BuiltInBrightnessCapabilities.Validate(invocation);
-        var result = await WindowsBuiltInBrightness.SetAsync(settings.Percent, sid, token);
+        var result = await WindowsBuiltInBrightness.SetAsync(settings.Percent, sid, token, BrightnessFadeOptions.Parse(invocation.Parameters));
         return (result.Success ? OutcomeStatus.Succeeded : OutcomeStatus.Failed, result.Reason);
     }
 }

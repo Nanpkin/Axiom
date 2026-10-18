@@ -135,6 +135,21 @@ public sealed class AutomationTaskTests
         var task = Hdr(); Assert.Throws<ArgumentException>(() => router.Resolve(task with { Action = task.Action with { CapabilityId = "other" } }));
     }
     [Fact]
+    public void OnlyShutdownAcceptsExtendedDeadlineForNormalBrightnessRestoration()
+    {
+        var now = DateTimeOffset.UnixEpoch;
+        var request = new AutomationMessage(1, "shutdown", "synthetic", now.AddSeconds(40));
+        AutomationProtocol.ValidateRequest(request, now);
+        AutomationProtocol.ValidateRequest(request with { DeadlineUtc = now.AddSeconds(45) }, now);
+        AutomationProtocol.ValidateRequest(request with { Type = "read", DeadlineUtc = now.AddSeconds(15) }, now);
+        Assert.Throws<InvalidDataException>(() => AutomationProtocol.ValidateRequest(request with { DeadlineUtc = now.AddSeconds(45).AddTicks(1) }, now));
+        Assert.Throws<InvalidDataException>(() => AutomationProtocol.ValidateRequest(request with { DeadlineUtc = now }, now));
+        foreach (var type in new[] { "read", "read-startup", "read-shortcuts" })
+            Assert.Throws<InvalidDataException>(() => AutomationProtocol.ValidateRequest(request with { Type = type, DeadlineUtc = now.AddSeconds(15).AddTicks(1) }, now));
+        Assert.Throws<InvalidDataException>(() => AutomationProtocol.ValidateRequest(request, now, shortcutAgent: true));
+    }
+
+    [Fact]
     public async Task ProtocolRoundTripsGenericTaskAndRejectsResponseFieldsInRequest()
     {
         using var stream = new MemoryStream(); var request = new AutomationMessage(1, "save", "request", DateTimeOffset.UtcNow.AddSeconds(10), Task: Hdr());

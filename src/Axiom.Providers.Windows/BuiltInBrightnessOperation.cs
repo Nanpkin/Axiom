@@ -1,3 +1,4 @@
+
 namespace Axiom.Providers.Windows;
 
 internal enum BrightnessPanelSupport { Supported, Ignore, Unsupported, Unknown }
@@ -17,15 +18,18 @@ internal static class BuiltInBrightnessOperation
         technology is <= 5 or 8 or 9 or 10 or 12 or 14 or 15 or 16 or 17 ? BrightnessPanelSupport.Ignore : BrightnessPanelSupport.Unknown;
     internal static bool UsePrimaryHardware(IReadOnlyList<BrightnessPanel> panels) => panels.All(p => p.Support == BrightnessPanelSupport.Ignore);
     internal static (bool Success, string Reason) Apply(IBuiltInBrightnessApi api, int percent, CancellationToken token,
-        Func<(bool Success, string Reason)>? primaryHardware = null) => ApplyCore(api, percent, null, token, primaryHardware);
+        Func<(bool Success, string Reason)>? primaryHardware = null, BrightnessFadeOptions fade = default,
+        TimeProvider? time = null, Action<TimeSpan, CancellationToken>? wait = null) => ApplyCore(api, percent, null, token, primaryHardware, fade, time, wait);
     internal static (bool Success, string Reason) Adjust(IBuiltInBrightnessApi api, string operation, int step, CancellationToken token,
-        Func<(bool Success, string Reason)>? primaryHardware = null)
+        Func<(bool Success, string Reason)>? primaryHardware = null, BrightnessFadeOptions fade = default,
+        TimeProvider? time = null, Action<TimeSpan, CancellationToken>? wait = null)
     {
         if (operation is not ("increase" or "decrease") || step is < 1 or > 100) throw new ArgumentException("相对亮度参数无效。");
-        return ApplyCore(api, 0, operation == "increase" ? step : -step, token, primaryHardware);
+        return ApplyCore(api, 0, operation == "increase" ? step : -step, token, primaryHardware, fade, time, wait);
     }
     private static (bool Success, string Reason) ApplyCore(IBuiltInBrightnessApi api, int percent, int? delta, CancellationToken token,
-        Func<(bool Success, string Reason)>? primaryHardware)
+        Func<(bool Success, string Reason)>? primaryHardware, BrightnessFadeOptions fade,
+        TimeProvider? time, Action<TimeSpan, CancellationToken>? wait)
     {
         if (percent is < 0 or > 100) throw new ArgumentException("亮度须为0–100整数。");
         token.ThrowIfCancellationRequested();
@@ -45,6 +49,7 @@ internal static class BuiltInBrightnessOperation
             .Where(g => string.IsNullOrEmpty(g.Key) || g.Count() > 1).Select(g => g.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var skipped = panels.Count(p => p.Support is BrightnessPanelSupport.Unknown or BrightnessPanelSupport.Unsupported || ambiguous.Contains(p.Key));
         var succeeded = 0; var failed = 0;
+        var transitions = new List<(BrightnessRestoreTarget Target, uint Value)>();
         foreach (var panel in panels.Where(p => p.Support == BrightnessPanelSupport.Supported && !ambiguous.Contains(p.Key)))
         {
             token.ThrowIfCancellationRequested();
@@ -53,11 +58,18 @@ internal static class BuiltInBrightnessOperation
                 var verified = api.Verify(panel.Key); token.ThrowIfCancellationRequested();
                 if (!verified) { failed++; continue; }
                 var requested = percent;
-                if (delta.HasValue)
+                if (delta.HasValue || fade.Enabled)
                 {
                     var current = api.Read(panel.Key); token.ThrowIfCancellationRequested();
                     if (current is not (>= 0 and <= 100)) { failed++; continue; }
-                    requested = Math.Clamp(current.Value + delta.Value, 0, 100);
+                    requested = delta.HasValue ? Math.Clamp(current.Value + delta.Value, 0, 100) : percent;
+                    if (fade.Enabled)
+                    {
+                        var captured = new BrightnessRestoreTarget((uint)current.Value, p => (uint)p,
+                            () => api.Read(panel.Key) is >= 0 and <= 100 and var value ? (uint)value : null,
+                            value => api.Verify(panel.Key) && api.Set(panel.Key, (byte)value) == 0);
+                        transitions.Add((captured, (uint)requested)); continue;
+                    }
                 }
                 var error = api.Set(panel.Key, (byte)requested); token.ThrowIfCancellationRequested();
                 if (error != 0) { failed++; continue; }
@@ -66,6 +78,12 @@ internal static class BuiltInBrightnessOperation
             }
             catch (OperationCanceledException) { throw; }
             catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException)) { failed++; }
+        }
+        if (fade.Enabled)
+        {
+            BrightnessFade.Apply(transitions, fade, token, time, wait);
+            succeeded += transitions.Count(t => t.Target.Transaction.Owned);
+            failed += transitions.Count(t => !t.Target.Transaction.Owned);
         }
         if (succeeded == 0 && failed == 0)
             return (false, "没有可确认支持WMI亮度设置的活动内置面板，本次未修改；外接显示器不在范围，缺失接口或未知身份不会尝试设置。");

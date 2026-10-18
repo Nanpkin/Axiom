@@ -15,11 +15,11 @@ internal sealed class HardwareBrightnessCapabilityProvider(string sid) : ISessio
         if (invocation.CapabilityId == HardwareBrightnessAdjustCapabilities.Adjust)
         {
             var adjustment = HardwareBrightnessAdjustCapabilities.Validate(invocation);
-            var adjusted = await WindowsHardwareBrightness.AdjustAsync(adjustment.Target, adjustment.Operation, adjustment.Step, sid, token);
+            var adjusted = await WindowsHardwareBrightness.AdjustAsync(adjustment.Target, adjustment.Operation, adjustment.Step, sid, token, BrightnessFadeOptions.Parse(invocation.Parameters));
             return (adjusted.Success ? OutcomeStatus.Succeeded : OutcomeStatus.Failed, adjusted.Reason);
         }
         var settings = HardwareBrightnessCapabilities.Validate(invocation);
-        var result = await WindowsHardwareBrightness.SetAsync(settings.Target, settings.Percent, sid, token);
+        var result = await WindowsHardwareBrightness.SetAsync(settings.Target, settings.Percent, sid, token, BrightnessFadeOptions.Parse(invocation.Parameters));
         return (result.Success ? OutcomeStatus.Succeeded : OutcomeStatus.Failed, result.Reason);
     }
 }
