@@ -34,46 +34,53 @@ internal static class BrightnessFade
             else Task.Delay(delay, time, cancellation).GetAwaiter().GetResult();
             cancellation.ThrowIfCancellationRequested();
         }
-        Action<CancellationToken> settle = cancellation => Wait(TimeSpan.FromMilliseconds(500), cancellation);
         try
         {
+            if (!settings.Enabled)
+            {
+                foreach (var (target, end) in targets)
+                { token.ThrowIfCancellationRequested(); target.Transaction.Apply(end, token); token.ThrowIfCancellationRequested(); }
+                return;
+            }
             var moving = new List<(BrightnessRestoreTarget Target, uint Value, uint Start)>();
+            var completed = new HashSet<BrightnessRestoreTarget>();
             foreach (var (target, end) in targets)
             {
                 token.ThrowIfCancellationRequested();
                 var initial = target.Transaction.Confirmed;
-                if (settings.Enabled && initial == end)
+                if (initial == end)
                 {
                     // Confirm the live value once before excluding a zero-distance target.
-                    target.Transaction.Apply(end, token, confirmUnchangedOnce: target.SettleAfterWrite);
+                    target.Transaction.ConfirmFade(token);
                     token.ThrowIfCancellationRequested();
                 }
                 else moving.Add((target, end, initial));
             }
             var start = time.GetTimestamp();
+            var next = TimeSpan.Zero;
             while (true)
             {
                 token.ThrowIfCancellationRequested();
-                if (!moving.Any(t => t.Target.Transaction.Owned)) return;
-                if (settings.Enabled)
-                {
-                    // Wait after the preceding batch has finished: slow native calls never cause catch-up writes.
-                    Wait(TimeSpan.FromMilliseconds(250), token);
-                }
+                if (!moving.Any(t => t.Target.Transaction.Owned && !completed.Contains(t.Target))) return;
+                var remaining = next - time.GetElapsedTime(start);
+                if (remaining > TimeSpan.Zero) Wait(remaining, token);
                 token.ThrowIfCancellationRequested();
-                var progress = settings.Enabled ? Math.Clamp(time.GetElapsedTime(start).TotalSeconds / settings.DurationSeconds, 0, 1) : 1;
+                var frameStarted = time.GetElapsedTime(start);
+                var progress = Math.Clamp(frameStarted.TotalSeconds / settings.DurationSeconds, 0, 1);
                 var eased = progress * progress * (3 - 2 * progress);
                 foreach (var (target, end, initial) in moving)
                 {
                     token.ThrowIfCancellationRequested();
-                    if (!target.Transaction.Owned) continue;
+                    if (!target.Transaction.Owned || completed.Contains(target)) continue;
                     var value = progress >= 1 ? end : (uint)Math.Round(initial + ((double)end - initial) * eased, MidpointRounding.AwayFromZero);
-                    // Apply also checks ownership when rounding produces the same value; it does not write it again.
-                    var hardwareFade = settings.Enabled && target.SettleAfterWrite;
-                    target.Transaction.Apply(value, token, hardwareFade ? settle : null, confirmUnchangedOnce: hardwareFade);
+                    if (target.Transaction.HasPendingFadeWrite || value != target.Transaction.Confirmed)
+                        target.Transaction.AdvanceFade(value, token);
                     token.ThrowIfCancellationRequested();
+                    if (target.Transaction.Owned && !target.Transaction.HasPendingFadeWrite && target.Transaction.Confirmed == end)
+                        completed.Add(target);
                 }
-                if (progress >= 1) return;
+                // Slow native work skips expired frames; no backlog and no added hardware settling delay.
+                next = frameStarted + TimeSpan.FromMilliseconds(16);
             }
         }
         catch (OperationCanceledException)

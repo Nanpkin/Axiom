@@ -2,6 +2,10 @@
 
 更新：2026-10-18。只保留接手事实，按AGENTS限定范围和成本。
 
+## 当前任务
+
+- 正在按新反馈改善渐变阶梯和触发延迟；仅修改有限渐变确认/帧距、稳定0秒和按需4Hz采集，温和方案改即时/1秒。范围与验收见[当前计划](../exec-plans/active/brightness-responsive-fade.md)，分支codex/brightness-responsive-fade。
+
 ## 当前交付
 
 - 固定本机入口artifacts/Axiom-preview/Axiom.exe，preview.local.20261018.9/干净4ea331e；三角色来源、后台连接、所有者最新规则、托盘及登录启动保持已核对。

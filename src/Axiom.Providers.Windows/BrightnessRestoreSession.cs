@@ -24,11 +24,10 @@ internal sealed class BrightnessRestoreTarget
     internal readonly uint Baseline;
     internal readonly Func<int, uint?> Map;
     internal readonly ConditionalSettingTransaction<uint> Transaction;
-    internal readonly bool SettleAfterWrite;
     internal uint? LastRead;
-    internal BrightnessRestoreTarget(uint baseline, Func<int, uint?> map, Func<uint?> read, Func<uint, bool> write, bool settleAfterWrite = false)
+    internal BrightnessRestoreTarget(uint baseline, Func<int, uint?> map, Func<uint?> read, Func<uint, bool> write)
     {
-        Baseline = baseline; Map = map; SettleAfterWrite = settleAfterWrite;
+        Baseline = baseline; Map = map;
         Transaction = new(baseline, () =>
         {
             LastRead = read(); return LastRead ?? throw new IOException("原亮度目标未知。");
