@@ -45,6 +45,7 @@ internal static class BrightnessFade
             var moving = new List<(BrightnessRestoreTarget Target, uint Value, uint Start)>();
             var completed = new HashSet<BrightnessRestoreTarget>();
             var bursts = new Dictionary<BrightnessRestoreTarget, TimeSpan>();
+            var hardwareWrites = new Dictionary<BrightnessRestoreTarget, TimeSpan>();
             foreach (var (target, end) in targets)
             {
                 token.ThrowIfCancellationRequested();
@@ -88,17 +89,28 @@ internal static class BrightnessFade
                                 bursts.TryGetValue(target, out var burstStarted) && elapsed - burstStarted < TimeSpan.FromSeconds(1);
                             if (pending && !continuing || value != target.Transaction.FadeExpected)
                             {
+                                if (continuing && hardwareWrites.TryGetValue(target, out var previousWrite))
+                                {
+                                    var untilWrite = previousWrite + TimeSpan.FromMilliseconds(100) - elapsed;
+                                    var untilBoundary = bursts[target] + TimeSpan.FromSeconds(1) - elapsed;
+                                    if (untilWrite > TimeSpan.Zero) Wait(untilWrite < untilBoundary ? untilWrite : untilBoundary, token);
+                                    elapsed = time.GetElapsedTime(start);
+                                    continuing = elapsed - bursts[target] < TimeSpan.FromSeconds(1);
+                                }
                                 // Reuse the strict boundary confirmation for the next segment's ownership check.
                                 // A device may present earlier accepted values briefly; only that finite sequence can wait.
                                 if (!continuing && !target.Transaction.ConfirmHardwareBurst(token, time, Wait)) continue;
-                                var segmentStarted = time.GetElapsedTime(start);
-                                if (!continuing)
+                                if (hardwareWrites.TryGetValue(target, out previousWrite))
                                 {
-                                    // Confirmation can consume time. Skip expired interpolation frames rather than queue them.
-                                    var currentProgress = Math.Clamp(segmentStarted.TotalSeconds / settings.DurationSeconds, 0, 1);
-                                    var currentEased = currentProgress * currentProgress * (3 - 2 * currentProgress);
-                                    value = currentProgress >= 1 ? end : (uint)Math.Round(initial + ((double)end - initial) * currentEased, MidpointRounding.AwayFromZero);
+                                    var untilWrite = previousWrite + TimeSpan.FromMilliseconds(100) - time.GetElapsedTime(start);
+                                    if (untilWrite > TimeSpan.Zero) Wait(untilWrite, token);
                                 }
+                                var segmentStarted = time.GetElapsedTime(start);
+                                // Native work and cadence waits both skip expired interpolation frames.
+                                var currentProgress = Math.Clamp(segmentStarted.TotalSeconds / settings.DurationSeconds, 0, 1);
+                                var currentEased = currentProgress * currentProgress * (3 - 2 * currentProgress);
+                                value = currentProgress >= 1 ? end : (uint)Math.Round(initial + ((double)end - initial) * currentEased, MidpointRounding.AwayFromZero);
+                                if (value != target.Transaction.FadeExpected) hardwareWrites[target] = segmentStarted;
                                 target.Transaction.WriteHardwareBurst(value, token);
                                 if (target.Transaction.Owned && target.Transaction.HasPendingFadeWrite && !continuing) bursts[target] = segmentStarted;
                                 else if (!target.Transaction.HasPendingFadeWrite) bursts.Remove(target);

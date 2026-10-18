@@ -19,15 +19,65 @@ public sealed class HardwareBrightnessBurstTests
             writes.Add((now, value)); current = value; time.Advance(TimeSpan.FromMilliseconds(55)); return true;
         }, hardwareBurst: true);
         BrightnessFade.Apply([(target, 1000)], new(true, 3), default, time, (delay, _) =>
-        { Assert.True(delay <= TimeSpan.FromMilliseconds(16)); time.Advance(delay); });
+        { Assert.True(delay <= TimeSpan.FromMilliseconds(100)); time.Advance(delay); });
         Assert.True(target.Transaction.Owned); Assert.False(target.Transaction.HasPendingFadeWrite);
         Assert.Equal(1000u, target.Transaction.Confirmed); Assert.Equal(writes[^1].Value, current);
         Assert.True(reads[^1] > writes[^1].At); Assert.InRange(reads.Count, 3, 5);
-        Assert.InRange(writes.Count, 30, 50); Assert.Equal(writes.Select(w => w.Value).Distinct(), writes.Select(w => w.Value));
+        Assert.InRange(writes.Count, 16, 30); Assert.Equal(writes.Select(w => w.Value).Distinct(), writes.Select(w => w.Value));
         Assert.Equal(writes.Select(w => w.Value).Order(), writes.Select(w => w.Value));
-        Assert.Contains(writes.Zip(writes.Skip(1)), pair => pair.Second.At - pair.First.At == TimeSpan.FromMilliseconds(55));
-        Assert.All(writes.Zip(writes.Skip(1)), pair => Assert.True(pair.Second.At - pair.First.At >= TimeSpan.FromMilliseconds(55)));
+        Assert.Contains(writes.Zip(writes.Skip(1)), pair => pair.Second.At - pair.First.At == TimeSpan.FromMilliseconds(100));
+        Assert.All(writes.Zip(writes.Skip(1)), pair => Assert.True(pair.Second.At - pair.First.At >= TimeSpan.FromMilliseconds(100)));
         Assert.True(time.GetElapsedTime(0) < TimeSpan.FromMilliseconds(3500));
+    }
+
+    [Fact]
+    public void HardwareCadenceSkipsExpiredFramesWithoutDelayingSlowWritesAndCancellationStopsPendingWrite()
+    {
+        foreach (var cancel in new[] { false, true })
+        {
+            var time = new ManualTimeProvider(); using var stop = new CancellationTokenSource();
+            var writes = new List<(TimeSpan At, uint Value, TimeSpan VerifiedAt)>(); var waits = new List<TimeSpan>();
+            uint current = 0; var reads = 0; var verifiedAt = TimeSpan.Zero;
+            var target = new BrightnessRestoreTarget(0, p => (uint)p * 10, () =>
+            {
+                reads++; time.Advance(TimeSpan.FromMilliseconds(30)); verifiedAt = time.GetElapsedTime(0); return current;
+            }, value =>
+            {
+                var now = time.GetElapsedTime(0);
+                writes.Add((now, value, verifiedAt)); current = value;
+                time.Advance(TimeSpan.FromMilliseconds(cancel ? 55 : 150)); return true;
+            }, hardwareBurst: true);
+            void Wait(TimeSpan delay, CancellationToken token)
+            {
+                waits.Add(delay); time.Advance(delay);
+                if (cancel && writes.Count == 1 && delay > TimeSpan.FromMilliseconds(16)) stop.Cancel();
+                token.ThrowIfCancellationRequested();
+            }
+            if (cancel)
+            {
+                Assert.ThrowsAny<OperationCanceledException>(() => BrightnessFade.Apply([(target, 1000)], new(true, 3), stop.Token, time, Wait));
+                Assert.Single(writes); Assert.Equal(1, reads);
+                Assert.False(target.Transaction.Owned); Assert.True(target.Transaction.HasPendingFadeWrite);
+                Assert.True(target.Transaction.UnconfirmedFailure); Assert.False(target.Transaction.TryCompleteConfirmedRelease());
+                target.Transaction.Release(default); Assert.Single(writes); Assert.Equal(1, reads);
+            }
+            else
+            {
+                BrightnessFade.Apply([(target, 1000)], new(true, 3), stop.Token, time, Wait);
+                Assert.All(waits, delay => Assert.True(delay <= TimeSpan.FromMilliseconds(16)));
+                Assert.Contains(writes.Zip(writes.Skip(1)), pair => pair.Second.At - pair.First.At == TimeSpan.FromMilliseconds(150));
+                Assert.All(writes.Zip(writes.Skip(1)), pair => Assert.True(pair.Second.At - pair.First.At >= TimeSpan.FromMilliseconds(150)));
+                Assert.True(target.Transaction.Owned); Assert.False(target.Transaction.HasPendingFadeWrite);
+                Assert.Equal(1000u, target.Transaction.Confirmed); Assert.InRange(reads, 3, 5);
+            }
+            Assert.All(writes, write =>
+            {
+                Assert.True(write.At - write.VerifiedAt < TimeSpan.FromSeconds(1));
+                var progress = Math.Clamp(write.At.TotalSeconds / 3, 0, 1);
+                var eased = progress * progress * (3 - 2 * progress);
+                Assert.Equal((uint)Math.Round(1000 * eased, MidpointRounding.AwayFromZero), write.Value);
+            });
+        }
     }
 
     [Fact]

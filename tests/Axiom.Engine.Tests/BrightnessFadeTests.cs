@@ -108,7 +108,10 @@ public sealed class BrightnessFadeTests
             Assert.DoesNotContain("wait:500", api.Calls); Assert.DoesNotContain("wait:250", api.Calls);
             Assert.Equal("read", api.Calls[^1]);
             if (enabled) Assert.True(api.Calls.Count(c => c == "write") > api.Calls.Count(c => c == "read"));
-            if (enabled) Assert.All(api.Calls.Where(c => c.StartsWith("wait:", StringComparison.Ordinal)), c => Assert.Equal("wait:16", c));
+            if (enabled) Assert.All(api.WriteTimes.Zip(api.WriteTimes.Skip(1)), pair =>
+                Assert.True(pair.Second - pair.First >= TimeSpan.FromMilliseconds(100)));
+            if (enabled) Assert.All(api.Calls.Where(c => c.StartsWith("wait:", StringComparison.Ordinal)), c =>
+                Assert.InRange(double.Parse(c.AsSpan(5), System.Globalization.CultureInfo.CurrentCulture), double.Epsilon, 100));
             if (!enabled) Assert.DoesNotContain(api.Calls, c => c.StartsWith("wait:", StringComparison.Ordinal));
         }
     }
