@@ -86,7 +86,7 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
     public AuthorizationDecision Authorize(string principal, ResourceKey key, CapabilityOperation operation) => new(
         principal == sid && key.Scope == scope && bindings.TryGetValue(key.CapabilityId, out var b) &&
         (operation == CapabilityOperation.Observe && b.Descriptor.Observe || operation == CapabilityOperation.ExecuteCommand && b.Descriptor.Command ||
-            operation == CapabilityOperation.ApplyDesired && (!wheelTakenOver || !IsBrightness(key.CapabilityId)) && (b.Descriptor.Id == KeepAwakeCapabilities.Hold || RestorableSettingInvocations.IsRestorable(b.Descriptor.Id)) && b.Descriptor.DesiredState ||
+            operation == CapabilityOperation.ApplyDesired && (b.Descriptor.Id == KeepAwakeCapabilities.Hold || RestorableSettingInvocations.IsRestorable(b.Descriptor.Id)) && b.Descriptor.DesiredState ||
             operation is CapabilityOperation.Override or CapabilityOperation.ReleaseOverride && (IsBrightness(key.CapabilityId) || key.CapabilityId == BrightnessWheelTool.Command)),
         "same-user-session registered plugin");
     public Guid NextId() => Guid.NewGuid();

@@ -26,6 +26,11 @@ public static class WindowsBrightnessWheelGesture
             if (wait is not null) wait(delay, token); else Task.Delay(delay, time, token).GetAwaiter().GetResult();
             token.ThrowIfCancellationRequested();
         }
+        void WaitUntil(TimeSpan deadline)
+        {
+            while (deadline - time.GetElapsedTime(start) is var remaining && remaining > TimeSpan.Zero)
+                Wait(remaining < TimeSpan.FromMilliseconds(1) ? TimeSpan.FromMilliseconds(1) : remaining);
+        }
         var states = capture.Targets.Select(target =>
         {
             var min = target.Map(0); var max = target.Map(100);
@@ -51,7 +56,7 @@ public static class WindowsBrightnessWheelGesture
                     var state = change.State; var end = change.End; var tx = state.Target.Transaction;
                     if (tx.HasPendingFadeWrite && Math.Sign((long)end - tx.FadeExpected) != Math.Sign((long)state.End - state.Initial))
                     {
-                        Wait(state.LastWrite + TimeSpan.FromMilliseconds(100) - time.GetElapsedTime(start));
+                        WaitUntil(state.LastWrite + TimeSpan.FromMilliseconds(100));
                         if (!tx.ConfirmHardwareBurst(token, time, (delay, _) => Wait(delay))) return new(false, consumed, "方向切换前结果未确认；已停止，不重试。");
                         state.Verified = true; state.Closing = false;
                     }
@@ -82,40 +87,45 @@ public static class WindowsBrightnessWheelGesture
                     if (!tx.ConfirmHardwareBurst(token, time, (delay, _) => Wait(delay))) return new(false, consumed, "当前亮度或授权未知；已让出。");
                     state.Verified = true;
                 }
-                elapsed = time.GetElapsedTime(start);
-                uint Value()
+                uint Value(TimeSpan at)
                 {
-                    var p = Math.Clamp((time.GetElapsedTime(start) - state.Started).TotalMilliseconds / smoothMilliseconds, 0, 1);
+                    var p = Math.Clamp((at - state.Started).TotalMilliseconds / smoothMilliseconds, 0, 1);
                     return p >= 1 ? state.End : (uint)Math.Round(state.Initial + ((double)state.End - state.Initial) * p * p * (3 - 2 * p), MidpointRounding.AwayFromZero);
                 }
-                var value = Value();
-                if (value == tx.FadeExpected) continue;
-                // Finish each finite segment and each final target with an individually spaced write.
-                var closing = tx.HasPendingFadeWrite && elapsed - state.BurstStarted >= TimeSpan.FromMilliseconds(800);
-                var spacing = TimeSpan.FromMilliseconds(Math.Max(1000d / frequency, closing || value == state.End ? 100 : 0));
-                if (state.HasWritten)
+                while (true)
                 {
-                    var delay = state.LastWrite + spacing - elapsed;
-                    if (tx.HasPendingFadeWrite)
-                    {
-                        var boundary = state.BurstStarted + TimeSpan.FromSeconds(1) - elapsed;
-                        if (boundary < delay) delay = boundary;
-                    }
-                    Wait(delay);
-                    if (latestSteps() != consumed) continue;
+                    token.ThrowIfCancellationRequested();
+                    if (latestSteps() != consumed) break;
                     elapsed = time.GetElapsedTime(start);
-                    if (tx.HasPendingFadeWrite && elapsed - state.BurstStarted >= TimeSpan.FromSeconds(1)) continue;
-                    value = Value();
-                    if (value == state.End) Wait(state.LastWrite + TimeSpan.FromMilliseconds(Math.Max(1000d / frequency, 100)) - elapsed);
-                    if (latestSteps() != consumed) continue;
-                    if (tx.HasPendingFadeWrite && time.GetElapsedTime(start) - state.BurstStarted >= TimeSpan.FromSeconds(1)) continue;
+                    if (tx.HasPendingFadeWrite && elapsed - state.BurstStarted >= TimeSpan.FromSeconds(1))
+                    {
+                        if (!tx.ConfirmHardwareBurst(token, time, (delay, _) => Wait(delay))) return new(false, consumed, "亮度段末结果未确认；不重试。");
+                        state.Verified = true; state.Closing = false;
+                        continue;
+                    }
+                    // Freeze one candidate for both its spacing decision and the eventual Set. Any wait
+                    // restarts preparation, so a newly reached endpoint always receives its own fence.
+                    var value = Value(elapsed);
+                    if (value == tx.FadeExpected) break;
+                    var closing = tx.HasPendingFadeWrite && elapsed - state.BurstStarted >= TimeSpan.FromMilliseconds(800);
+                    var spacing = TimeSpan.FromMilliseconds(Math.Max(1000d / frequency, closing || value == state.End ? 100 : 0));
+                    if (state.HasWritten)
+                    {
+                        var due = state.LastWrite + spacing;
+                        if (tx.HasPendingFadeWrite && state.BurstStarted + TimeSpan.FromSeconds(1) < due)
+                            due = state.BurstStarted + TimeSpan.FromSeconds(1);
+                        if (due > elapsed) { WaitUntil(due); continue; }
+                    }
+                    if (latestSteps() != consumed) break;
+                    var at = time.GetElapsedTime(start);
+                    if (tx.HasPendingFadeWrite && (at - state.BurstStarted >= TimeSpan.FromSeconds(1) ||
+                        !closing && at - state.BurstStarted >= TimeSpan.FromMilliseconds(800))) continue;
+                    var pending = tx.HasPendingFadeWrite;
+                    if (!tx.WriteHardwareBurst(value, token)) return new(false, consumed, "亮度写入未接受或已取消；不重试。");
+                    if (!pending) state.BurstStarted = at;
+                    state.LastWrite = at; state.HasWritten = true; state.Closing = closing;
+                    break;
                 }
-                var pending = tx.HasPendingFadeWrite;
-                var at = time.GetElapsedTime(start); value = Value();
-                if (value == tx.FadeExpected) continue;
-                if (!tx.WriteHardwareBurst(value, token)) return new(false, consumed, "亮度写入未接受或已取消；不重试。");
-                if (!pending) state.BurstStarted = at;
-                state.LastWrite = at; state.HasWritten = true; state.Closing = closing;
             }
             if (done && latestSteps() == consumed) return new(true, consumed, "滚轮亮度已严格确认；保持当下亮度，自动亮度仍由手动接管阻止。");
             Wait(TimeSpan.FromMilliseconds(16));

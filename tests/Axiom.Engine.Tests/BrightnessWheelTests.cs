@@ -132,6 +132,59 @@ public sealed class BrightnessWheelTests
     }
 
     [Fact]
+    public void EndpointFenceRechecksEarlyWakeAndFreezesCandidateWhenClockAdvancesBeforeWrite()
+    {
+        foreach (var preempt in new[] { false, true }) foreach (var cancel in new[] { false, true })
+        {
+            var time = new ManualTimeProvider(); using var stop = new CancellationTokenSource(); uint current = 96;
+            var reads = 0; var waits = 0; var observationsAfterFirstWrite = 0; var preempted = false;
+            var writes = new List<(TimeSpan At, uint Value)>();
+            var target = new BrightnessRestoreTarget(96, p => (uint)p, () =>
+            {
+                if (++reads == 1) time.Advance(TimeSpan.FromMilliseconds(preempt ? 22 : 55.4));
+                return current;
+            }, value =>
+            {
+                var at = time.GetElapsedTime(0);
+                // Model the observed device: Set accepts every value, but a final write spaced
+                // below 100ms can leave the previous accepted brightness physically unchanged.
+                if (value != 100 || writes.Count == 0 || at - writes[^1].At >= TimeSpan.FromMilliseconds(100)) current = value;
+                writes.Add((at, value)); time.Advance(TimeSpan.FromMilliseconds(55)); return true;
+            }, hardwareBurst: true);
+            using var capture = new BrightnessRestoreCapture([target], 0, 0, _ => { }, () => { });
+            long Latest()
+            {
+                if (preempt && writes.Count == 1 && ++observationsAfterFirstWrite == 3)
+                { preempted = true; time.Advance(TimeSpan.FromMilliseconds(20)); }
+                return 2;
+            }
+            void Wait(TimeSpan delay, CancellationToken token)
+            {
+                waits++;
+                // Task.Delay can return just before a fractional-millisecond deadline.
+                time.Advance(delay - TimeSpan.FromMilliseconds(0.4));
+                if (cancel && writes.Count > 0 && delay > TimeSpan.FromMilliseconds(16)) stop.Cancel();
+                token.ThrowIfCancellationRequested();
+            }
+            if (cancel)
+            {
+                Assert.ThrowsAny<OperationCanceledException>(() => WindowsBrightnessWheelGesture.RunCaptured(capture, 2, 150, 18, 0, Latest, stop.Token, time, Wait));
+                Assert.DoesNotContain(writes, write => write.Value == 100); Assert.True(target.Transaction.HasPendingFadeWrite);
+                target.Transaction.Relinquish(); Assert.False(target.Transaction.TryCompleteConfirmedRelease());
+            }
+            else
+            {
+                var result = WindowsBrightnessWheelGesture.RunCaptured(capture, 2, 150, 18, 0, Latest, default, time, Wait);
+                Assert.True(result.Success); Assert.Equal(100u, current); Assert.Equal(100u, target.Transaction.Confirmed);
+                Assert.False(target.Transaction.HasPendingFadeWrite); Assert.Single(writes, write => write.Value == 100);
+                Assert.True(writes[^1].At - writes[^2].At >= TimeSpan.FromMilliseconds(100));
+                if (preempt) { Assert.True(preempted); Assert.Equal(99u, writes[1].Value); }
+            }
+            Assert.InRange(waits, 1, 30); Assert.True(time.GetElapsedTime(0) < TimeSpan.FromSeconds(2));
+        }
+    }
+
+    [Fact]
     public void GestureUnknownWriteFailureOrCancellationStopsWithoutRetryOrBaselineRestoration()
     {
         foreach (var failure in new[] { "read", "write", "cancel" })
@@ -254,15 +307,29 @@ public sealed class BrightnessWheelTests
                 await store.SaveAsync(persisted with { Detection = persisted.Detection with { Parameters = persisted.Detection.Parameters.SetItem("manual", "true") } }, default);
             }
             using (var store = new SqliteAutomationTaskStore(path))
-            await using (var runtime = new PluginTaskRuntime([new BuiltInBrightnessPlugin(), new HardwareBrightnessPlugin()], store, "synthetic", activity.Engine))
+            await using (var runtime = new PluginTaskRuntime([new PowerStatePlugin(), new BuiltInBrightnessPlugin(), new HardwareBrightnessPlugin()], store, "synthetic", activity.Engine))
             {
                 await runtime.InitializeAsync(); var restored = runtime.ReadBrightnessWheel();
                 Assert.True(restored.ManualTakenOver); Assert.Equal(60, restored.Settings.WritesPerSecond); Assert.Equal("B", restored.Settings.Key);
                 Assert.Empty((await runtime.ReadAsync(default)).Tasks);
                 var key = new ResourceKey(HardwareBrightnessRestoreCapabilities.Set, "brightness", ResourceScope.Session("synthetic", System.Diagnostics.Process.GetCurrentProcess().SessionId));
-                Assert.False(runtime.Authorize("synthetic", key, CapabilityOperation.ApplyDesired).Allowed);
+                Assert.True(runtime.Authorize("synthetic", key, CapabilityOperation.ApplyDesired).Allowed);
                 Assert.True(runtime.Authorize("synthetic", key, CapabilityOperation.ReleaseOverride).Allowed);
                 Assert.False(runtime.Authorize("other", key, CapabilityOperation.Override).Allowed);
+                var rule = new AutomationTask(Guid.NewGuid().ToString("D"), 0, "synthetic brightness during manual takeover", false,
+                    new(PowerStateCapabilities.State, 1, ImmutableDictionary<string, string>.Empty.Add("mode", "ac").Add("threshold", "20")),
+                    new(HardwareBrightnessRestoreCapabilities.Set, 1, ImmutableDictionary<string, string>.Empty.Add("target", "primary").Add("percent", "40").Add("delaySeconds", "0")
+                        .Add("fadeEnabled", "true").Add("fadeDurationSeconds", "1").Add("fadeWritesPerSecond", "10")));
+                var first = await runtime.SaveAsync(rule, default);
+                var updated = await runtime.SaveAsync(first with { Action = first.Action with { Parameters = first.Action.Parameters.SetItem("fadeWritesPerSecond", "18") } }, default);
+                Assert.Equal(2, updated.Version);
+                var visible = Assert.Single((await runtime.ReadAsync(default)).Tasks);
+                var persistedRule = Assert.Single(await store.ListAsync(), t => t.Id == rule.Id);
+                Assert.Equal(updated.Version, visible.Version); Assert.Equal(visible.Version, persistedRule.Version);
+                Assert.Equal("18", visible.Action.Parameters["fadeWritesPerSecond"]); Assert.Equal("18", persistedRule.Action.Parameters["fadeWritesPerSecond"]);
+                Assert.True(runtime.ReadBrightnessWheel().ManualTakenOver);
+                var blocked = await runtime.ApplyDesiredAsync(new(key, StateValue.From(RestorableSettingInvocations.Schema, RestorableSettingInvocations.Encode(updated.Action)), "synthetic", 0, 1, "synthetic condition ends"), default);
+                Assert.Equal(OutcomeStatus.Rejected, blocked.Status); Assert.Contains("手动接管", blocked.Reason);
                 await runtime.EnsureSafeToStopAsync(default);
             }
         }
