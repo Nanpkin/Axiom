@@ -4,7 +4,8 @@
 
 ## 当前交付
 
-- 本机入口artifacts/Axiom-preview/Axiom.exe，版本0.2.0-preview.local.20261018.1，干净源码0855419。正常停止更新，三角色路径/ProductVersion、后台连接、更新前原7条规则指纹及登录启动位置保持已核验。
+- 本机入口artifacts/Axiom-preview/Axiom.exe，版本0.2.0-preview.local.20261018.4，干净源码7d1025b。正常停止更新，三角色路径/ProductVersion、后台连接、原8条规则指纹、托盘配置内容及登录启动位置保持已核验。
+- 托盘工具设置新增等待图标1–30整数秒，新配置默认30秒；旧配置保留1秒，所有者可改为30秒保存。已有图标立即处理，未出现时等系统通知，无新轮询。[PR25](https://github.com/Starvan/Axiom/pull/25)已推送，尚未合并/发新Release。
 - 功能与颜色事件过滤已合入maine3954b4：[PR23](https://github.com/Starvan/Axiom/pull/23)、[PR24](https://github.com/Starvan/Axiom/pull/24)。准确PR/main检查通过，[v0.2.0-preview.20261018.1](https://github.com/Starvan/Axiom/releases/tag/v0.2.0-preview.20261018.1)已发布；同模式亮度/nits元数据不再让出再重入控制。见 [验收记录](../exec-plans/completed/screen-content-brightness.md)。
 
 ## 已可用
@@ -16,9 +17,10 @@
 
 ## 本轮验证与限制
 
-- 初版8项相关纯测试、3项本机原生通过；真实GPU白黑灰/有色/75%面积、颜色通知注册重绑释放、旧Hub屏幕初值/reset重放已测。补丁仅复查2项纯测试、1项原生，均通过。相关构建零警告错误；正式UI模板/参数/时段编辑与取消通过，没有保存或启用正式新规则。
-- DXGI最多每秒一次，GPU64×36采样、CPU只回读4字节；画面不保存/发送。短夹具16秒静态CPU15.6ms；动态125ms含同进程造画面，均16次。停采后0新增、资源归零。混合桌面参考，非完整后台/GPU/游戏性能达标；有限取消等待见 [ADR0011](../adr/0011-screen-content-brightness.md)。
-- 首版仅SDR主屏，稀疏估算可能漏细小亮区。实际HDR切换、睡眠/物理关屏、游戏与多GPU/广设备矩阵未测，模拟和注册不能冒充实测。托盘Explorer重建及更广亮度设备限制沿用历史证据，不重跑无关回归。
+- 本轮7项TrayToolTests、1项本机原生等待/取消通过；图标延后1.2秒出现后隐藏。WinUI构建零警告错误，真实UI字段可见、空值/小数拒绝、编辑30后取消重开仍为1。详见 [托盘证据](../exec-plans/completed/tray-toolbox.md)。
+- UI验收中NumberBox提交时序曾触发两次原配置保存，仅工具版本号合计增加2，名单/模式/启用/等待值未改；已改为直接校验文本，最终复查无保存。没有新增正式规则。
+- 画面明亮面积此前GPU/通知/时段UI相关验证通过，详见原验收记录。DXGI最多每秒一次，GPU64×36采样、CPU回读4字节；画面不保存/发送。停采释放资源，非完整后台/GPU/游戏性能达标，见 [ADR0011](../adr/0011-screen-content-brightness.md)。
+- 画面检测仅SDR主屏，稀疏估算可能漏细小亮区；真实HDR切换、睡眠/物理关屏、游戏、多GPU及广设备矩阵未测。托盘真实登录启动/Explorer重建和未知身份限制沿用历史证据，本轮未重跑。
 
 ## 运行与接续
 
