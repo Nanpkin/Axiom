@@ -3,7 +3,6 @@ using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using Axiom.Contracts;
 using Axiom.Domain;
-using Axiom.Providers.Windows;
 
 namespace Axiom.ServiceHost;
 
@@ -50,7 +49,6 @@ internal sealed partial class PluginTaskRuntime
     {
         CancellationTokenSource? hdrStop = null, clockStop = null;
         Task? hdrPump = null, clockPump = null;
-        WindowsSessionEvents? clockEvents = null;
         try
         {
             while (!token.IsCancellationRequested)
@@ -72,15 +70,15 @@ internal sealed partial class PluginTaskRuntime
                         }
                     }
                     var timeNeeded = tasks.Any(t => !t.Paused && t.RunConditions?.TimeWindow is not null);
-                    if (timeNeeded && clockEvents is null)
+                    if (timeNeeded && clockStop is null)
                     {
-                        clockEvents = new(clockOnly: true); clockStop = CancellationTokenSource.CreateLinkedTokenSource(token);
-                        clockPump = PumpRunClockAsync(clockEvents, clockStop.Token);
+                        clockStop = CancellationTokenSource.CreateLinkedTokenSource(token);
+                        clockPump = ObserveRunClockAsync(clockStop.Token);
                     }
-                    else if (!timeNeeded && clockEvents is not null)
+                    else if (!timeNeeded && clockStop is not null)
                     {
-                        clockStop!.Cancel(); clockEvents.Dispose(); if (clockPump is not null) await clockPump;
-                        clockStop.Dispose(); clockStop = null; clockEvents = null; clockPump = null;
+                        clockStop.Cancel(); if (clockPump is not null) await clockPump;
+                        clockStop.Dispose(); clockStop = null; clockPump = null;
                     }
                     var zone = LocalZone(); var now = windowTime.GetUtcNow(); var changed = false;
                     lock (statusGate)
@@ -113,17 +111,14 @@ internal sealed partial class PluginTaskRuntime
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
         finally
         {
-            hdrStop?.Cancel(); clockStop?.Cancel(); clockEvents?.Dispose();
+            hdrStop?.Cancel(); clockStop?.Cancel();
             if (hdrPump is not null) await hdrPump;
             if (clockPump is not null) await clockPump;
             hdrStop?.Dispose(); clockStop?.Dispose();
         }
     }
-    private async Task PumpRunClockAsync(WindowsSessionEvents events, CancellationToken token)
-    {
-        try { await foreach (var _ in events.ClockChanges.ReadAllAsync(token)) WakeRunConditions(); }
-        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
-    }
+    private Task ObserveRunClockAsync(CancellationToken token) =>
+        ObserveRunResourceAsync(new(SystemEventCapabilities.ClockEvents, "local"), "axiom.event-count", _ => WakeRunConditions(), token);
     private async Task ObserveRunHdrAsync(CancellationToken token)
     {
         void Publish(bool? value) { lock (statusGate) runHdr = value; WakeRunConditions(); }
@@ -134,24 +129,29 @@ internal sealed partial class PluginTaskRuntime
             finally { Publish(null); }
             return;
         }
-        var resource = new ProviderResource(HdrStateCapabilities.State, "primary");
+        await ObserveRunResourceAsync(new(HdrStateCapabilities.State, "primary"), "axiom.bool",
+            sample => Publish(sample?.Quality == StateQuality.Known ? sample.Boolean : null), token);
+    }
+    private async Task ObserveRunResourceAsync(ProviderResource resource, string schema, Action<ProviderSample?> publish, CancellationToken token)
+    {
         while (!token.IsCancellationRequested)
         {
             try
             {
                 using var pipe = Client(); await pipe.ConnectForUserAsync(2000, token);
                 var id = Guid.NewGuid().ToString("N"); long sequence = 0;
-                await ProviderProtocol.WriteAsync(pipe, new(1, "observe", id, DateTimeOffset.UtcNow.AddSeconds(5), Resources: [resource], RequiredCapabilities: [HdrStateCapabilities.State]), token);
+                await ProviderProtocol.WriteAsync(pipe, new(1, "observe", id, DateTimeOffset.UtcNow.AddSeconds(5), Resources: [resource], RequiredCapabilities: [resource.CapabilityId]), token);
                 while (!token.IsCancellationRequested)
                 {
                     var response = await ProviderProtocol.ReadAsync(pipe, token);
                     if (response.Version != 1 || response.RequestId != id || response.Sequence != sequence++ || response.Type is not ("snapshot" or "update") ||
-                        response.Samples is not { Length: 1 } samples || samples[0].Resource != resource || samples[0].SchemaId != "axiom.bool" || samples[0].SchemaVersion != 1 ||
-                        samples[0].Quality == StateQuality.Known && samples[0].Boolean is null) throw new InvalidDataException("主屏HDR检测流无效。");
-                    Publish(samples[0].Quality == StateQuality.Known ? samples[0].Boolean : null);
+                        response.Samples is not { Length: 1 } samples || samples[0].Resource != resource || samples[0].SchemaId != schema || samples[0].SchemaVersion != 1 ||
+                        samples[0].Quality == StateQuality.Known && (schema == "axiom.bool" ? samples[0].Boolean is null : samples[0].Number is null or < 0))
+                        throw new InvalidDataException("外层运行条件检测流无效。");
+                    publish(samples[0]);
                 }
             }
-            catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException)) { Publish(null); }
+            catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException)) { publish(null); }
             try { await Task.Delay(TimeSpan.FromSeconds(5), token); } catch (OperationCanceledException) when (token.IsCancellationRequested) { break; }
         }
     }

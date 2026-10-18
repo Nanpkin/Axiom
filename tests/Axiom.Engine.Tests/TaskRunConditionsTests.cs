@@ -6,6 +6,7 @@ using Axiom.Contracts;
 using Axiom.Domain;
 using Axiom.Infrastructure;
 using Axiom.ServiceHost;
+using Axiom.SessionAgent;
 using Microsoft.Data.Sqlite;
 using static Axiom.Engine.Tests.AutomationFixture;
 
@@ -227,11 +228,19 @@ public sealed class TaskRunConditionsTests
         time.JumpUtc(new DateTimeOffset(at) - time.GetUtcNow());
         try
         {
+            var sid = "test-" + Guid.NewGuid().ToString("N");
+            var actualSid = System.Security.Principal.WindowsIdentity.GetCurrent().User!.Value;
+            using var provider = LocalPipeFactory.Create(ProviderProtocol.PipeName(sid), actualSid);
+            var accepted = provider.WaitForConnectionAsync(token);
             using var fixture = new AutomationFixture(); using var store = new SqliteAutomationTaskStore(path);
             var task = await store.SaveAsync(Config(new("any", new(540, 1020, 127))), token);
             await using var runtime = new PluginTaskRuntime([new HdrStatePlugin(), new KeepAwakePlugin()], store,
-                "test-" + Guid.NewGuid().ToString("N"), fixture.Engine, windowTime: time);
+                sid, fixture.Engine, windowTime: time);
             await runtime.InitializeAsync();
+            await accepted;
+            var request = await ProviderProtocol.ReadAsync(provider, token);
+            Assert.Equal(new ProviderResource(SystemEventCapabilities.ClockEvents, "local"), Assert.Single(request.Resources!));
+            await ProviderProtocol.WriteAsync(provider, new(1, "snapshot", request.RequestId, Samples: [new(request.Resources![0], StateQuality.Known, "axiom.event-count", 1, Number: 0)]), token);
             await using var states = runtime.WatchRunStatesAsync(token).GetAsyncEnumerator(token);
             Assert.True(await states.MoveNextAsync()); Assert.True(Assert.Single(states.Current).AutomaticallyPaused);
             Assert.Single(time.Timers, t => t.At.HasValue);
@@ -240,12 +249,41 @@ public sealed class TaskRunConditionsTests
             while (!time.Timers.Any(t => t.At.HasValue)) await Task.Delay(1, token);
             Assert.Single(time.Timers, t => t.At.HasValue);
             Assert.Equal(TimeSpan.FromHours(8), time.Timers.Single(t => t.At.HasValue).LastDue);
+            // A wall-clock/resume notification must recalculate immediately,
+            // even though the previously scheduled monotonic deadline has not fired.
+            time.JumpUtc(TimeSpan.FromHours(9));
+            await ProviderProtocol.WriteAsync(provider, new(1, "update", request.RequestId, Sequence: 1,
+                Samples: [new(request.Resources[0], StateQuality.Known, "axiom.event-count", 1, Number: 1)]), token);
+            Assert.True(await states.MoveNextAsync()); Assert.True(Assert.Single(states.Current).AutomaticallyPaused);
             task = await runtime.SaveAsync(task with { Paused = true }, token);
             Assert.True(await states.MoveNextAsync()); Assert.False(Assert.Single(states.Current).AutomaticallyPaused);
             await runtime.EnsureSafeToStopAsync(token);
             Assert.All(time.Timers, t => Assert.Null(t.At));
         }
         finally { SqliteConnection.ClearAllPools(); foreach (var file in Directory.GetFiles(Path.GetDirectoryName(path)!, Path.GetFileName(path) + "*")) File.Delete(file); }
+    }
+
+    [Fact(Timeout = 10000)]
+    public async Task InternalClockProviderReportsInitialAndOnlyNewNotificationsAndReleasesSourceOnCancel()
+    {
+        using var stop = new CancellationTokenSource();
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var changes = Channel.CreateUnbounded<byte>(); var updates = Channel.CreateUnbounded<ProviderUpdate>(); var released = false;
+        async Task Observe(Action changed, CancellationToken token)
+        {
+            try { changed(); await foreach (var _ in changes.Reader.ReadAllAsync(token)) changed(); }
+            finally { released = true; }
+        }
+        var provider = new ClockEventCapabilityProvider(Observe);
+        var resource = new ProviderResource(SystemEventCapabilities.ClockEvents, "local");
+        var run = provider.ObserveAsync([resource], update => updates.Writer.TryWrite(update), stop.Token);
+        var initial = await updates.Reader.ReadAsync(deadline.Token);
+        Assert.True(initial.Snapshot); Assert.Equal(0m, Assert.Single(initial.Samples).Number);
+        Assert.False(updates.Reader.TryRead(out _));
+        changes.Writer.TryWrite(1); var changed = await updates.Reader.ReadAsync(deadline.Token);
+        Assert.False(changed.Snapshot); Assert.Equal(1m, Assert.Single(changed.Samples).Number);
+        Assert.DoesNotContain(BuiltInAutomationPlugins.Create().SelectMany(p => p.Detections), d => d.Descriptor.Id == SystemEventCapabilities.ClockEvents);
+        stop.Cancel(); await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run); Assert.True(released);
     }
 
     private static AutomationTaskCompiler Compiler(bool supports)
