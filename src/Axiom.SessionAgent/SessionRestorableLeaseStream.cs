@@ -34,7 +34,7 @@ internal static class SessionRestorableLeaseStream
                 else if (next.Type == "lease-setting-release")
                 {
                     // The release token must outlive the ended condition/Host pipe.
-                    using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                    using var cleanup = new CancellationTokenSource(lease.CleanupTimeout);
                     var result = await lease.ReleaseAsync(cleanup.Token); released = true;
                     await Reply(next, result.Success, result.Reason, operation.Token); return;
                 }
