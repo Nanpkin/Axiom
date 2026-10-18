@@ -50,7 +50,7 @@ public sealed partial class WorkbenchWindow
         var add = Action("＋  新建任务", true); add.IsEnabled = status is not null;
         add.Click += (_, _) => SelectRule(null); buttons.Children.Add(add);
         Grid.SetColumn(buttons, 1); toolbar.Children.Add(buttons); content.Children.Add(toolbar);
-        var template = Action("从常用场景开始…"); template.IsEnabled = reachable && status is not null;
+        var template = Action("常用场景"); template.IsEnabled = reachable && status is not null;
         template.Click += async (_, _) => await ChooseTaskTemplateAsync(); buttons.Children.Insert(0, template);
         void FitToolbar()
         {
@@ -96,6 +96,7 @@ public sealed partial class WorkbenchWindow
                 foreach (var task in visible)
                 {
                     var row = new Grid { ColumnSpacing = 12, Padding = new Thickness(16, 12, 16, 12) };
+                    row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(36) });
                     row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                     row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                     var body = Column(5);
@@ -107,11 +108,12 @@ public sealed partial class WorkbenchWindow
                     Grid.SetColumn(badge, 1); heading.Children.Add(badge); body.Children.Add(heading);
                     var detection = task.DetectionExpression is null ? FindCapability(task.Detection, TaskCapabilityKind.Detection)?.Name ?? "检测暂不可用" : DetectionSummary(task);
                     var action = FindCapability(task.Action, TaskCapabilityKind.Action)?.Name ?? "动作暂不可用";
-                    body.Children.Add(Preview(detection + "  →  " + action, 13, Muted));
+                    body.Children.Add(Preview(detection + "  →  " + action, 12, Muted));
                     if (!task.Paused && RunState(task) is { AutomaticallyPaused: true } runState)
                         body.Children.Add(Text(runState.Reason ?? "等待运行条件满足", 12, Amber));
                     if (TaskStateLabel(task) == "状态未确认") body.Children.Add(Text("刷新以确认运行条件", 12, Amber));
-                    row.Children.Add(body);
+                    row.Children.Add(CategoryTile(FindCapability(task.Action, TaskCapabilityKind.Action)?.Category));
+                    Grid.SetColumn(body, 1); row.Children.Add(body);
                     var actions = Row(6); actions.VerticalAlignment = VerticalAlignment.Center;
                     var edit = Action("编辑"); edit.MinHeight = 32; edit.Padding = new Thickness(10, 4, 10, 4); edit.Click += (_, _) => SelectRule(task);
                     var toggle = Action(task.Paused ? "启用" : "暂停"); toggle.MinHeight = 32; toggle.Padding = new Thickness(10, 4, 10, 4);
@@ -131,9 +133,12 @@ public sealed partial class WorkbenchWindow
                         if (status?.Observations.FirstOrDefault(o => o.TaskId == task.Id)?.Value is { } admission) detail += "\n" + admission;
                     }
                     actions.Children.Add(Help(detail, "任务详情：" + task.Title));
-                    Grid.SetColumn(actions, 1); row.Children.Add(actions);
-                    cards.Children.Add(new Border { Child = row, BorderBrush = Line,
-                        BorderThickness = new Thickness(0, cards.Children.Count == 0 ? 0 : 1, 0, 0) });
+                    Grid.SetColumn(actions, 2); row.Children.Add(actions);
+                    var item = new Border { Child = row, Background = Surface, BorderBrush = Line,
+                        BorderThickness = new Thickness(0, cards.Children.Count == 0 ? 0 : 1, 0, 0) };
+                    item.PointerEntered += (_, _) => item.Background = Hover;
+                    item.PointerExited += (_, _) => item.Background = Surface;
+                    cards.Children.Add(item);
                 }
             }
         }

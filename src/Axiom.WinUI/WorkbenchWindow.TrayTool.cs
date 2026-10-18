@@ -12,15 +12,15 @@ public sealed partial class WorkbenchWindow
 
     private void BuildTrayTool()
     {
-        var body = Column(14); var heading = Row(14);
+        var body = Column(12); var heading = ToolHeading();
         heading.Children.Add(new Border { Width = 40, Height = 40, Background = Soft, CornerRadius = new CornerRadius(10),
             Child = new FontIcon { Glyph = "\uE7F4", FontSize = 20, Foreground = Accent } });
-        heading.Children.Add(Text(TrayTool.Name, 20, Ink, true)); body.Children.Add(heading);
+        var headingText = Text(TrayTool.Name, 18, Ink, true); headingText.VerticalAlignment = VerticalAlignment.Center; Grid.SetColumn(headingText, 1); heading.Children.Add(headingText); body.Children.Add(heading);
         body.Children.Add(Text("多选需要隐藏托盘图标的程序，选择启动时隐藏一次或持续隐藏。保留后台进程。", 14, Muted));
         var toggle = new ToggleSwitch { Header = "启用托盘管理", OnContent = "已启用", OffContent = "已关闭", IsOn = trayTool?.Settings.Enabled == true,
             IsEnabled = reachable && trayTool is { Settings.Executables.Length: > 0 } };
         toggle.Toggled += async (_, _) => { if (trayTool is not null) await SaveTrayToolSettingsAsync(trayTool.Settings with { Enabled = toggle.IsOn }); };
-        body.Children.Add(toggle);
+        PlaceToolToggle(heading, toggle);
         if (trayTool is not null)
         {
             body.Children.Add(Text($"{trayTool.Settings.Executables.Length} 个程序 · {TrayModeText(trayTool.Settings.Mode)} · 最多等待 {trayTool.Settings.WaitSeconds} 秒", 13, Muted));

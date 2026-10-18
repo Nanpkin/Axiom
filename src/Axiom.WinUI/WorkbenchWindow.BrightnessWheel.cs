@@ -14,10 +14,10 @@ public sealed partial class WorkbenchWindow
 
     private void BuildBrightnessWheelTool()
     {
-        var body = Column(14); var heading = Row(14);
+        var body = Column(12); var heading = ToolHeading();
         heading.Children.Add(new Border { Width = 40, Height = 40, Background = Soft, CornerRadius = new CornerRadius(10),
             Child = new FontIcon { Glyph = "\uE706", FontSize = 20, Foreground = Accent } });
-        heading.Children.Add(Text(BrightnessWheelTool.Name, 20, Ink, true)); body.Children.Add(heading);
+        var headingText = Text(BrightnessWheelTool.Name, 18, Ink, true); headingText.VerticalAlignment = VerticalAlignment.Center; Grid.SetColumn(headingText, 1); heading.Children.Add(headingText); body.Children.Add(heading);
         body.Children.Add(Text("按住自选组合键并滚动鼠标滚轮，调整支持的显示器亮度。", 14, Muted));
         var toggle = new ToggleSwitch { Header = "启用亮度滚轮", OnContent = "已启用", OffContent = "已关闭",
             IsOn = brightnessWheel?.Settings.Enabled == true, IsEnabled = reachable && brightnessWheel is not null && !brightnessWheelUnconfirmed };
@@ -26,7 +26,7 @@ public sealed partial class WorkbenchWindow
             if (brightnessWheel is null || busy) return;
             await MutateBrightnessWheelAsync(new(1, "save-brightness-wheel", Guid.NewGuid().ToString("N"), WheelSettings: brightnessWheel.Settings with { Enabled = toggle.IsOn }));
         };
-        body.Children.Add(toggle);
+        PlaceToolToggle(heading, toggle);
         if (brightnessWheel is { } wheel)
         {
             body.Children.Add(Text($"{BrightnessWheelTool.Describe(wheel.Settings)} · {(wheel.Settings.Target == "all" ? "全部支持的显示器" : "主显示器")} · 每格 {wheel.Settings.Step} 个百分点", 13, Muted));
@@ -36,7 +36,7 @@ public sealed partial class WorkbenchWindow
         }
         else body.Children.Add(Text("尚未读取亮度滚轮状态，请刷新后重试。", 13, Muted));
         if (brightnessWheelError is not null) body.Children.Add(Text(brightnessWheelError, 12, Amber));
-        var actions = Row(10); var settings = Action("亮度滚轮设置"); settings.IsEnabled = reachable;
+        var actions = Row(10); var settings = Action("工具设置"); settings.IsEnabled = reachable;
         settings.Click += async (_, _) => await OpenBrightnessWheelSettingsAsync(); actions.Children.Add(settings);
         var resume = Action("恢复自动亮度"); resume.IsEnabled = reachable && brightnessWheel?.ManualTakenOver == true && !brightnessWheelUnconfirmed;
         resume.Click += async (_, _) =>
@@ -44,7 +44,7 @@ public sealed partial class WorkbenchWindow
             if (brightnessWheel is not null) await MutateBrightnessWheelAsync(new(1, "resume-brightness-wheel", Guid.NewGuid().ToString("N"), ExpectedVersion: brightnessWheel.Settings.Version));
         };
         actions.Children.Add(resume);
-        var refresh = Action("刷新亮度滚轮状态"); refresh.IsEnabled = reachable;
+        var refresh = Action("刷新结果"); refresh.IsEnabled = reachable;
         refresh.Click += async (_, _) => { if (busy) return; SetBusy(true); try { await ReadBrightnessWheelAsync(); } finally { SetBusy(false); Render(); } };
         actions.Children.Add(refresh); body.Children.Add(actions);
         body.Children.Add(Help("滚轮调整会接管自动亮度。关闭工具保留当前手动亮度和接管状态，可另行恢复自动亮度；关闭 Axiom 窗口后仍可使用。"));

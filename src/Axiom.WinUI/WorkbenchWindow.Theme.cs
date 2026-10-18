@@ -28,15 +28,19 @@ public sealed partial class WorkbenchWindow
         // Mutate shared brushes so existing inputs and open dialogs keep their contents.
         if (dark)
         {
-            Set(Canvas, 19, 27, 29); Set(Surface, 28, 38, 40);
-            Set(Ink, 234, 239, 243); Set(Muted, 165, 177, 188); Set(Line, 57, 67, 76);
-            Set(Accent, 139, 212, 178); Set(Primary, 43, 111, 88); Set(Soft, 32, 54, 46);
+            Set(Canvas, 19, 26, 36); Set(Surface, 27, 36, 49);
+            Set(Rail, 14, 21, 31); Set(RailSelected, 30, 58, 59);
+            Set(Blue, 151, 187, 245); Set(BlueSoft, 33, 49, 74); Set(Hover, 33, 44, 58);
+            Set(Ink, 234, 239, 243); Set(Muted, 165, 177, 188); Set(Line, 48, 61, 77);
+            Set(Accent, 149, 225, 195); Set(Primary, 43, 119, 97); Set(Soft, 31, 57, 54);
             Set(Amber, 239, 194, 116); Set(PaleAmber, 60, 46, 28);
         }
         else
         {
-            Set(Canvas, 242, 245, 242); Set(Surface, 253, 254, 252);
-            Set(Ink, 30, 38, 47); Set(Muted, 99, 110, 122); Set(Line, 226, 230, 234);
+            Set(Canvas, 243, 246, 250); Set(Surface, 255, 255, 255);
+            Set(Rail, 24, 34, 47); Set(RailSelected, 40, 66, 69);
+            Set(Blue, 65, 103, 168); Set(BlueSoft, 234, 240, 251); Set(Hover, 245, 248, 251);
+            Set(Ink, 30, 38, 47); Set(Muted, 99, 110, 122); Set(Line, 229, 234, 240);
             Set(Accent, 36, 99, 83); Set(Primary, 36, 99, 83); Set(Soft, 233, 243, 238);
             Set(Amber, 139, 89, 20); Set(PaleAmber, 255, 246, 227);
         }
