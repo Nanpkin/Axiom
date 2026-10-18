@@ -331,6 +331,42 @@ public sealed class BrightnessFadeTests
     }
 
     [Fact]
+    public async Task RepeatedHardwareFadesConfirmPriorSegmentAndRestoreOriginalBaselineEveryCycle()
+    {
+        var clock = new ManualTimeProvider(); var captures = 0;
+        for (var cycle = 0; cycle < 8; cycle++)
+        {
+            var baseline = cycle % 2 == 0 ? 73u : 91u; var current = baseline; var end = 40u;
+            var pending = false; var writes = new List<uint>();
+            await using var session = await BrightnessRestoreSession.CreateAsync(_ =>
+            {
+                captures++;
+                var target = new BrightnessRestoreTarget(baseline, p => (uint)p, () =>
+                {
+                    pending = false; clock.Advance(TimeSpan.FromMilliseconds(55)); return current;
+                }, value =>
+                {
+                    writes.Add(value);
+                    // Reproduce a device that starts dropping an unconfirmed final Set after two cycles.
+                    if (!(cycle >= 2 && pending && value == end)) current = value;
+                    pending = true; clock.Advance(TimeSpan.FromMilliseconds(55)); return true;
+                }, hardwareBurst: true);
+                return new([target], 0, 0, _ => { }, () => { });
+            }, null, TimeSpan.FromSeconds(10), default, clock, (delay, _) => clock.Advance(delay));
+            var applied = await session.ApplyAsync(new Dictionary<string, string>
+            {
+                ["percent"] = "40", ["fadeEnabled"] = "true", ["fadeDurationSeconds"] = "1", ["fadeWritesPerSecond"] = "60"
+            }, default);
+            Assert.True(applied.Success, applied.Reason); Assert.Equal(40u, current);
+            end = baseline;
+            var restored = await session.ReleaseAsync(default);
+            Assert.True(restored.Success, restored.Reason); Assert.Equal(baseline, current);
+            Assert.Single(writes, value => value == 40); Assert.Single(writes, value => value == baseline);
+            Assert.Equal(cycle + 1, captures);
+        }
+    }
+
+    [Fact]
     public void RequestedWriteFrequencyCapsBothBackendsAndHardwareEndpointRetains100msSpacing()
     {
         foreach (var hardware in new[] { false, true }) foreach (var frequency in new[] { 1, 10, 18, 60 })

@@ -138,6 +138,13 @@ internal static class BrightnessFade
                                     }
                                 }
                                 if (!endpointReady) continue;
+                                // Match the wheel path: spacing alone does not guarantee that a monitor
+                                // will apply the last Set. Confirm this segment before issuing its endpoint.
+                                if (value == end && continuing)
+                                {
+                                    if (!target.Transaction.ConfirmHardwareBurst(token, time, Wait)) continue;
+                                    continuing = false;
+                                }
                                 segmentStarted = time.GetElapsedTime(start);
                                 if (value != target.Transaction.FadeExpected) hardwareWrites[target] = segmentStarted;
                                 target.Transaction.WriteHardwareBurst(value, token);
