@@ -79,17 +79,27 @@ internal static class BrightnessFade
                         var elapsed = time.GetElapsedTime(start);
                         if (target.Transaction.HasPendingFadeWrite && target.Transaction.FadeExpected == end)
                         {
-                            target.Transaction.ConfirmFade(token); bursts.Remove(target);
+                            target.Transaction.ConfirmHardwareBurst(token, time, Wait); bursts.Remove(target);
                         }
                         else
                         {
                             var pending = target.Transaction.HasPendingFadeWrite;
-                            var continuing = pending && bursts.TryGetValue(target, out var burstStarted) && elapsed - burstStarted < TimeSpan.FromSeconds(1);
+                            var continuing = pending && !target.Transaction.HardwareBurstFull &&
+                                bursts.TryGetValue(target, out var burstStarted) && elapsed - burstStarted < TimeSpan.FromSeconds(1);
                             if (pending && !continuing || value != target.Transaction.FadeExpected)
                             {
-                                // One boundary read confirms the previous segment and checks ownership for the next write.
+                                // Reuse the strict boundary confirmation for the next segment's ownership check.
+                                // A device may present earlier accepted values briefly; only that finite sequence can wait.
+                                if (!continuing && !target.Transaction.ConfirmHardwareBurst(token, time, Wait)) continue;
                                 var segmentStarted = time.GetElapsedTime(start);
-                                target.Transaction.AdvanceFade(value, token, continueBurst: continuing);
+                                if (!continuing)
+                                {
+                                    // Confirmation can consume time. Skip expired interpolation frames rather than queue them.
+                                    var currentProgress = Math.Clamp(segmentStarted.TotalSeconds / settings.DurationSeconds, 0, 1);
+                                    var currentEased = currentProgress * currentProgress * (3 - 2 * currentProgress);
+                                    value = currentProgress >= 1 ? end : (uint)Math.Round(initial + ((double)end - initial) * currentEased, MidpointRounding.AwayFromZero);
+                                }
+                                target.Transaction.WriteHardwareBurst(value, token);
                                 if (target.Transaction.Owned && target.Transaction.HasPendingFadeWrite && !continuing) bursts[target] = segmentStarted;
                                 else if (!target.Transaction.HasPendingFadeWrite) bursts.Remove(target);
                             }

@@ -11,14 +11,18 @@ internal sealed class ConditionalSettingTransaction<T>(T baseline, Func<T> read,
     private bool released;
     private bool fadePending;
     private T pendingTarget;
+    private readonly List<T> hardwareBurstValues = [];
+    private bool hardwareBurstVerified;
     public bool Owned => Volatile.Read(ref relinquished) == 0 && !released;
     internal T Confirmed => confirmed;
     internal bool HasPendingFadeWrite => fadePending;
     internal T FadeExpected => fadePending ? pendingTarget : confirmed;
     internal bool UnconfirmedFailure { get; private set; }
+    internal bool HardwareBurstFull => hardwareBurstValues.Count >= 100;
     public void Relinquish()
     {
         if (fadePending) UnconfirmedFailure = true;
+        hardwareBurstVerified = false;
         Interlocked.Exchange(ref relinquished, 1);
     }
     internal bool TryCompleteConfirmedRelease()
@@ -48,20 +52,77 @@ internal sealed class ConditionalSettingTransaction<T>(T baseline, Func<T> read,
         catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
         { UnconfirmedFailure = true; Relinquish(); return new(false, name + "目标或读写未确认，本次让出；可能已修改，不自动恢复未确认写入。", false); }
     }
-    // Fade-only: normally confirm before the next write. The caller may continue a bounded hardware
-    // burst without that read, replacing only the latest pending expectation until its next boundary.
-    internal bool AdvanceFade(T target, CancellationToken token, bool continueBurst = false)
+    // WMI fade confirms each previous write before issuing the next one.
+    internal bool AdvanceFade(T target, CancellationToken token)
     {
         if (!Owned) return false;
         try
         {
-            if ((!continueBurst || !fadePending) && !ConfirmFadeCore(token)) return false;
+            if (!ConfirmFadeCore(token)) return false;
             token.ThrowIfCancellationRequested();
             if (equality.Equals(FadeExpected, target)) return true;
             pendingTarget = target; fadePending = true;
             write(target);
             token.ThrowIfCancellationRequested();
             return Owned;
+        }
+        catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
+        { UnconfirmedFailure = true; Relinquish(); return false; }
+    }
+    // Only hardware fade may send a bounded segment after its initial ownership check. Keep the
+    // accepted values for this segment alone; successful Set is not a confirmed brightness value.
+    internal bool WriteHardwareBurst(T target, CancellationToken token)
+    {
+        if (!Owned) return false;
+        try
+        {
+            token.ThrowIfCancellationRequested();
+            if (!hardwareBurstVerified || HardwareBurstFull) { Relinquish(); return false; }
+            if (equality.Equals(FadeExpected, target)) return true;
+            pendingTarget = target; fadePending = true;
+            write(target);
+            hardwareBurstValues.Add(target);
+            token.ThrowIfCancellationRequested();
+            return Owned;
+        }
+        catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
+        { UnconfirmedFailure = true; Relinquish(); return false; }
+    }
+    internal bool ConfirmHardwareBurst(CancellationToken token, TimeProvider time, Action<TimeSpan, CancellationToken> wait)
+    {
+        if (!Owned) return false;
+        try
+        {
+            var started = time.GetTimestamp();
+            var previousIndex = -1;
+            while (true)
+            {
+                token.ThrowIfCancellationRequested();
+                var actual = read();
+                token.ThrowIfCancellationRequested();
+                if (!Owned) return false;
+                if (!fadePending)
+                {
+                    if (!equality.Equals(actual, confirmed)) { Relinquish(); return false; }
+                    hardwareBurstVerified = true;
+                    return true;
+                }
+                if (equality.Equals(actual, pendingTarget))
+                {
+                    confirmed = actual; fadePending = false; hardwareBurstValues.Clear();
+                    hardwareBurstVerified = true;
+                    return true;
+                }
+                var index = hardwareBurstValues.FindIndex(value => equality.Equals(value, actual));
+                if (index < 0 || index < previousIndex) { Relinquish(); return false; }
+                previousIndex = index;
+                var remaining = TimeSpan.FromSeconds(1) - time.GetElapsedTime(started);
+                if (remaining <= TimeSpan.Zero) { Relinquish(); return false; }
+                wait(remaining < TimeSpan.FromMilliseconds(50) ? remaining : TimeSpan.FromMilliseconds(50), token);
+                token.ThrowIfCancellationRequested();
+                // Native calls cannot be interrupted, but never start another read after this deadline.
+                if (time.GetElapsedTime(started) >= TimeSpan.FromSeconds(1)) { Relinquish(); return false; }
+            }
         }
         catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
         { UnconfirmedFailure = true; Relinquish(); return false; }
