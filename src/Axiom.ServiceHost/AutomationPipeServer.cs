@@ -59,6 +59,7 @@ internal sealed class AutomationPipeServer(ImmutableArray<IAutomationTaskBackend
                 GameHdrPipePeer.RequireSameSession(pipe, request.Type == "restore-shortcuts" ? "Axiom.SessionAgent.exe" : null);
                 AutomationProtocol.ValidateRequest(request, DateTimeOffset.UtcNow);
                 authorized = true;
+                if (request.Type == "shutdown") deadline.CancelAfter(request.DeadlineUtc!.Value - DateTimeOffset.UtcNow);
                 if (request.Type == "usage")
                 {
                     var result = await usage.HandleAsync(request, await ReadAsync(deadline.Token), deadline.Token);

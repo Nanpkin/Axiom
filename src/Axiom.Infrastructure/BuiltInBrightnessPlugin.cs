@@ -22,8 +22,8 @@ public sealed class BuiltInBrightnessPlugin : IAutomationPlugin
         WifiProfileCapabilities.Disconnected, UsbDeviceCapabilities.Present, UsbDeviceCapabilities.Absent, MediaPlaybackCapabilities.State];
     public IEnumerable<CapabilityBinding> Bindings => new[] { BuiltInBrightnessCapabilities.Set, BuiltInBrightnessAdjustCapabilities.Adjust }.Select(id => new CapabilityBinding(new(id, TaskInvocationCommands.Schema, new("axiom.bool", 1),
         ScopeKind.Session, false, true, false, ExecutionLocation.SessionAgent, "same-user-session", true, "available", false,
-        TimeSpan.FromSeconds(10), true, ConcurrencyScope.Resource, RetryCategory.Never, ConfirmationSource.ReceiptOnly, EventFidelity.EdgeSensitive,
-        TimeSpan.Zero, TimeSpan.Zero, CostClass.Low, true, "active commands", "same user", []), ScalarKind.Text, ScalarKind.Boolean)).Append(RestorableSettingTaskAction.Binding(BuiltInBrightnessRestoreCapabilities.Set));
+        TimeSpan.FromSeconds(30), true, ConcurrencyScope.Resource, RetryCategory.Never, ConfirmationSource.ReceiptOnly, EventFidelity.EdgeSensitive,
+        TimeSpan.Zero, TimeSpan.Zero, CostClass.Low, true, "active commands", "same user", []), ScalarKind.Text, ScalarKind.Boolean)).Append(RestorableSettingTaskAction.Binding(BuiltInBrightnessRestoreCapabilities.Set, TimeSpan.FromSeconds(40)));
 }
 
 public sealed class BuiltInBrightnessTaskAction : ITaskActionCompiler

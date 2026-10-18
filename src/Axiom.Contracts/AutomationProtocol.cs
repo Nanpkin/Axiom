@@ -28,7 +28,7 @@ public static class AutomationProtocol
     public static void ValidateRequest(AutomationMessage request, DateTimeOffset now, bool shortcutAgent = false)
     {
         if (request.Version != 1 || string.IsNullOrWhiteSpace(request.RequestId) || request.RequestId.Length > 64 ||
-            request.DeadlineUtc is not { } deadline || deadline <= now || deadline > now.AddSeconds(15) ||
+            request.DeadlineUtc is not { } deadline || deadline <= now || deadline > now.AddSeconds(request.Type == "shutdown" ? 45 : 15) ||
             request.TrayTool is not null || request.Snapshot is not null || request.Error is not null || request.Startup is not null || request.Shortcuts is not null ||
             request.Activity is not null || request.ActivityCleanup is not null || request.Groups is not null || request.Steam is not null || request.SteamTool is not null || request.Tray is not null || request.UsageSnapshot is not null || request.ExportText is not null ||
             request.ActivityBeforeId is <= 0 || request.ActivityPageSize is < 1 or > 64) throw new InvalidDataException("请求格式无效。");

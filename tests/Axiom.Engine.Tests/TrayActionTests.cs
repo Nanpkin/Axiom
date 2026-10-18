@@ -85,6 +85,7 @@ public sealed class TrayActionTests
     {
         using var target=new IconWindow(false);
         var pending=WindowsTrayActions.HideAsync(Environment.ProcessPath!,TimeSpan.FromSeconds(4),default);
+        await Task.Delay(1200); Assert.False(pending.IsCompleted);
         target.Add(false);Assert.True((await pending).Success);
         using var cancel=new CancellationTokenSource();
         var cancelled=WindowsTrayActions.HideAsync(Environment.ProcessPath!,TimeSpan.FromSeconds(4),cancel.Token);

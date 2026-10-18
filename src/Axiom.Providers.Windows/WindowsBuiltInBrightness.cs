@@ -7,36 +7,36 @@ namespace Axiom.Providers.Windows;
 public static partial class WindowsBuiltInBrightness
 {
     private static readonly BoundedNativeCommand Commands = new("屏幕亮度（自动选择）", TimeSpan.FromSeconds(10));
-    public static Task DrainAsync() => Task.WhenAll(Commands.DrainAsync(), BrightnessNativeOwnership.DrainAsync()).WaitAsync(TimeSpan.FromSeconds(10));
-    public static Task<(bool Success, string Reason)> SetAsync(int percent, string sid, CancellationToken token)
+    public static Task DrainAsync() => Task.WhenAll(Commands.DrainAsync(), BrightnessNativeOwnership.DrainAsync()).WaitAsync(TimeSpan.FromSeconds(30));
+    public static Task<(bool Success, string Reason)> SetAsync(int percent, string sid, CancellationToken token, BrightnessFadeOptions fade = default)
     {
         if (percent is < 0 or > 100) throw new ArgumentException("亮度须为0–100整数。");
         return RunSingleAsync(cancellation =>
         {
             using var api = new Api(cancellation);
             if (!api.Authorized(sid)) return (false, "当前用户或活动会话与亮度授权不一致，本次未修改。");
-            return BuiltInBrightnessOperation.Apply(api, percent, cancellation, () => WindowsHardwareBrightness.SetOwned("primary", percent, sid, cancellation));
-        }, token);
+            return BuiltInBrightnessOperation.Apply(api, percent, cancellation, () => WindowsHardwareBrightness.SetOwned("primary", percent, sid, cancellation, fade), fade);
+        }, token, fade);
     }
 
-    public static Task<(bool Success, string Reason)> AdjustAsync(string operation, int step, string sid, CancellationToken token)
+    public static Task<(bool Success, string Reason)> AdjustAsync(string operation, int step, string sid, CancellationToken token, BrightnessFadeOptions fade = default)
     {
         if (operation is not ("increase" or "decrease") || step is < 1 or > 100) throw new ArgumentException("相对亮度参数无效。");
         return RunSingleAsync(cancellation =>
         {
             using var api = new Api(cancellation);
             if (!api.Authorized(sid)) return (false, "当前用户或活动会话与亮度授权不一致，本次未修改。");
-            return BuiltInBrightnessOperation.Adjust(api, operation, step, cancellation, () => WindowsHardwareBrightness.AdjustOwned("primary", operation, step, sid, cancellation));
-        }, token);
+            return BuiltInBrightnessOperation.Adjust(api, operation, step, cancellation, () => WindowsHardwareBrightness.AdjustOwned("primary", operation, step, sid, cancellation, fade), fade);
+        }, token, fade);
     }
 
     private sealed record Panel(ManagementObject Brightness, ManagementObject Methods, ManagementObject Connection);
-    private static Task<(bool Success, string Reason)> RunSingleAsync(Func<CancellationToken, (bool Success, string Reason)> action, CancellationToken token) =>
+    private static Task<(bool Success, string Reason)> RunSingleAsync(Func<CancellationToken, (bool Success, string Reason)> action, CancellationToken token, BrightnessFadeOptions fade) =>
         Commands.RunAsync(cancellation =>
         {
             using var ownership = BrightnessNativeOwnership.TryAcquire();
             return ownership is null ? (false, "Axiom已有亮度恢复租约或原生操作；请先暂停已有亮度恢复任务并等待释放完成，再执行其他亮度动作。本次未执行，不排队。") : action(cancellation);
-        }, token);
+        }, token, operationTimeout: fade.OperationTimeout);
     private sealed class Api(CancellationToken token) : IBuiltInBrightnessApi, IDisposable
     {
         internal bool Authorized(string sid) => WindowsHardwareBrightness.AuthorizedUser(sid, token);
