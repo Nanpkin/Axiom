@@ -347,8 +347,9 @@ public sealed class BrightnessFadeTests
                 }, value =>
                 {
                     writes.Add(value);
-                    // Reproduce a device that starts dropping an unconfirmed final Set after two cycles.
-                    if (!(cycle >= 2 && pending && value == end)) current = value;
+                    // After two cycles, model accepted intermediate writes being silently skipped
+                    // until the controller reads back actual progress, as observed on hardware.
+                    if (!(cycle >= 2 && pending)) current = value;
                     pending = true; clock.Advance(TimeSpan.FromMilliseconds(55)); return true;
                 }, hardwareBurst: true);
                 return new([target], 0, 0, _ => { }, () => { });
@@ -364,6 +365,42 @@ public sealed class BrightnessFadeTests
             Assert.Single(writes, value => value == 40); Assert.Single(writes, value => value == baseline);
             Assert.Equal(cycle + 1, captures);
         }
+    }
+
+    [Fact]
+    public void HardwareCheckpointOnlyAcceptsThisSegmentsWrittenValuesAndNeverConfirmsItsEndpoint()
+    {
+        foreach (var actual in new uint[] { 60, 40, 73, 17 })
+        {
+            uint current = 73; var writes = new List<uint>(); var clock = new ManualTimeProvider();
+            var transaction = new ConditionalSettingTransaction<uint>(73, () => current, value => writes.Add(value), "synthetic");
+            Assert.True(transaction.CheckpointHardwareBurst(default));
+            Assert.True(transaction.WriteHardwareBurst(60, default)); Assert.True(transaction.WriteHardwareBurst(40, default));
+            current = actual;
+            var accepted = transaction.CheckpointHardwareBurst(default);
+            Assert.Equal(actual is 60 or 40, accepted);
+            Assert.Equal(new uint[] { 60, 40 }, writes);
+            if (accepted)
+            {
+                Assert.Equal(actual, transaction.Confirmed); Assert.False(transaction.HasPendingFadeWrite);
+                Assert.False(transaction.TryCompleteConfirmedRelease());
+                Assert.True(transaction.WriteHardwareBurst(30, default));
+                // Progress is not success: a final write still requires its exact endpoint.
+                Assert.False(transaction.ConfirmHardwareBurst(default, clock, (delay, _) => clock.Advance(delay)));
+                Assert.False(transaction.Owned);
+            }
+            else Assert.False(transaction.Owned);
+        }
+        using var stop = new CancellationTokenSource(); stop.Cancel(); var read = false;
+        var cancelled = new ConditionalSettingTransaction<uint>(73, () => { read = true; return 73; }, _ => { }, "synthetic");
+        Assert.False(cancelled.CheckpointHardwareBurst(stop.Token)); Assert.False(read); Assert.False(cancelled.Owned);
+        uint delayed = 73;
+        var settled = new ConditionalSettingTransaction<uint>(73, () => delayed, _ => { }, "synthetic");
+        Assert.True(settled.CheckpointHardwareBurst(default)); Assert.True(settled.WriteHardwareBurst(60, default));
+        delayed = 60; Assert.True(settled.CheckpointHardwareBurst(default)); Assert.True(settled.WriteHardwareBurst(40, default));
+        var waits = 0; var time = new ManualTimeProvider();
+        Assert.True(settled.ConfirmHardwareBurst(default, time, (delay, _) => { waits++; time.Advance(delay); delayed = 40; }));
+        Assert.Equal(1, waits); Assert.Equal(40u, settled.Confirmed);
     }
 
     [Fact]

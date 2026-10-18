@@ -89,6 +89,30 @@ internal sealed class ConditionalSettingTransaction<T>(T baseline, Func<T> read,
         catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
         { UnconfirmedFailure = true; Relinquish(); return false; }
     }
+    // A checkpoint records actual progress, not completion of the requested target. A skipped
+    // intermediate Set may be superseded only after reading a value sent in this finite segment.
+    internal bool CheckpointHardwareBurst(CancellationToken token)
+    {
+        if (!Owned) return false;
+        try
+        {
+            token.ThrowIfCancellationRequested();
+            var actual = read();
+            token.ThrowIfCancellationRequested();
+            if (!Owned) return false;
+            if (fadePending ? !hardwareBurstValues.Contains(actual) : !equality.Equals(actual, confirmed))
+            { Relinquish(); return false; }
+            var wasPending = fadePending;
+            confirmed = actual; fadePending = false; hardwareBurstValues.Clear();
+            // Retain only this observed, previously written value as a possible delayed reply to
+            // the next Set. It is never sufficient to confirm that next Set's final endpoint.
+            if (wasPending) hardwareBurstValues.Add(actual);
+            hardwareBurstVerified = true;
+            return true;
+        }
+        catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
+        { UnconfirmedFailure = true; Relinquish(); return false; }
+    }
     internal bool ConfirmHardwareBurst(CancellationToken token, TimeProvider time, Action<TimeSpan, CancellationToken> wait)
     {
         if (!Owned) return false;

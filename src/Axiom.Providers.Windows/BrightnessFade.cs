@@ -103,7 +103,7 @@ internal static class BrightnessFade
                                 }
                                 // Reuse the strict boundary confirmation for the next segment's ownership check.
                                 // A device may present earlier accepted values briefly; only that finite sequence can wait.
-                                if (!continuing && !target.Transaction.ConfirmHardwareBurst(token, time, Wait)) continue;
+                                if (!continuing && !target.Transaction.CheckpointHardwareBurst(token)) continue;
                                 if (hardwareWrites.TryGetValue(target, out previousWrite))
                                 {
                                     var untilWrite = previousWrite + Cadence(value) - time.GetElapsedTime(start);
@@ -131,7 +131,7 @@ internal static class BrightnessFade
                                         if (delay > TimeSpan.Zero) Wait(delay, token);
                                         if (continuing && time.GetElapsedTime(start) - bursts[target] >= TimeSpan.FromSeconds(1))
                                         {
-                                            if (!target.Transaction.ConfirmHardwareBurst(token, time, Wait)) { endpointReady = false; break; }
+                                            if (!target.Transaction.CheckpointHardwareBurst(token)) { endpointReady = false; break; }
                                             continuing = false;
                                         }
                                         untilEndpoint = previousWrite + Cadence(end) - time.GetElapsedTime(start);
@@ -142,7 +142,7 @@ internal static class BrightnessFade
                                 // will apply the last Set. Confirm this segment before issuing its endpoint.
                                 if (value == end && continuing)
                                 {
-                                    if (!target.Transaction.ConfirmHardwareBurst(token, time, Wait)) continue;
+                                    if (!target.Transaction.CheckpointHardwareBurst(token)) continue;
                                     continuing = false;
                                 }
                                 segmentStarted = time.GetElapsedTime(start);
