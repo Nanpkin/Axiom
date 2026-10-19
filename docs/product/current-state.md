@@ -10,6 +10,8 @@
 
 ## 当前开发状态
 
+- 本轮codex/fractional-screen-stability：画面变化稳定时间支持0–60秒、最多两位小数（如0.2/0.5），旧整数/零秒兼容；配置、250毫秒进入/退出期限及保存导入等6项相关验证通过。只迁入文件补丁，不引回旧历史；用户现有规则数值不改。正在统一构建并更新本机。
+
 - main仍是已发布亮度渐变批次，以下PR保持开放，没有借本轮维护合并功能。
 - [PR28](https://github.com/Starvan/Axiom/pull/28)：响应式亮度渐变及多键组合+滚轮；[PR29](https://github.com/Starvan/Axiom/pull/29)叠于其上，新增任务外层HDR/时段自动暂停与事件推送。
 - [PR30](https://github.com/Starvan/Axiom/pull/30)：工作台视觉/导航和紧凑任务行，基于PR29；浅深色/窄窗及8项呈现测试此前通过。
