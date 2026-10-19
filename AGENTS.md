@@ -37,8 +37,10 @@ Axiom是持续变化的小型Windows自动化工具：用户配置“何时、�
 
 ## 交付授权与保护
 
-- 每个有意义且完成相关验证的增量及时commit/push，采用通用项目作者身份；仓库私有。不强推、改写共享历史或覆盖他人改动，失败明确报告。
-- 每批有意义功能通过准确PR CI后可由负责人合入main；准确main检查成功后推新版本标签、自动发布私有预览Release。复用该SHA成功检查，不在发布阶段重复功能测试。实际来源/文件校验保留，操作见 [分发说明](docs/development/distribution.md)。
+- 每个有意义且完成相关验证的增量及时commit/push。新提交、合并和标签固定使用 `Axiom Contributors <63274913+Starvan@users.noreply.github.com>`；显示名通用，邮箱必须归属所有者，禁止根据项目名编造GitHub noreply地址。
+- 每次新clone先设置仓库级user.name/user.email与user.useConfigOnly=true；提交前核对git var GIT_AUTHOR_IDENT、git var GIT_COMMITTER_IDENT，提交后核对实际作者/提交者。禁止用git -c、--author或GIT_AUTHOR/GIT_COMMITTER环境变量换成未核实身份；发现不符先修正再提交/推送。具体命令见[提交身份与历史来源](docs/development/commit-identity-repair.md)。
+- 仓库当前公开；提交中禁止包含私人邮箱、个人配置与本机证据。通常不强推、改写共享历史或覆盖他人改动；历史维护每次须有所有者明确授权，失败明确报告。
+- 每批有意义功能通过准确PR CI后可由负责人合入main；准确main检查成功后推新版本标签、自动发布预览Release。复用该SHA成功检查，不在发布阶段重复功能测试。实际来源/文件校验保留，操作见 [分发说明](docs/development/distribution.md)。
 - 本机功能批次验证后已预授权正常停止旧Axiom→统一publish-preview更新固定artifacts/Axiom-preview/Axiom.exe→重启；不因进程正在运行逐次询问。核对运行来源、活动控制、旧进程确实退出及恢复完成；重启核对路径/版本/后台连接/原配置保持。
 - 受控游戏、停止拒绝、恢复不明时保留现场，报告尚未应用；不强杀、不绕过恢复保护、不做影响现场的安装/卸载/模拟按键。云端不声称更新所有者本机。固定产物不为每轮建版本目录或备份。
 - 统一用publish-package.ps1 / publish-preview.ps1 / clean-artifacts.ps1；临时夹具优先framework-dependent，用完清理二进制、保留有效证据。

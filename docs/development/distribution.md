@@ -25,8 +25,14 @@
 1. codex/分支相关验证后及时commit/push；PR精确head检查与对应包成功，再合入main。
 2. 准确main Check source成功后推不可变新标签v<版本>。普通提交、文档收尾不单独发版；同日新功能批次用新末尾序号，不移动旧标签。
 3. Publish preview release确认标签属于main并复用该SHA成功检查；实际重新构建四项资产，不拿旧PR/旧版本包发布，不重复功能测试。
-4. 核对四文件集合、SHA256、版本、干净源码SHA及ZIP内外来源。仅最终job有contents:write；draft上传核验后转private-repo pre-release。
+4. 核对四文件集合、SHA256、版本、干净源码SHA及ZIP内外来源。仅最终job有contents:write；draft上传核验后转pre-release；仓库当前公开，发布资产也公开。
 5. 失败只修/重试失败步骤，版本标签不重写；来源、hash或停止保护失败不能降级为成功。发布工具自身变更才按需运行其相关回归。
+
+## 提交身份与历史来源
+
+新clone先按[固定身份说明](commit-identity-repair.md)设置所有者的GitHub noreply邮箱。2026-10-19经所有者授权修正历史作者，旧源码SHA可按[提交对照表](../history/commit-identity-map-20261019.tsv)找到内容相同的新提交。
+
+此次标签目标随身份修复迁移；既有12个Release资产保留原构建字节、BUILD-INFO和校验值，Release说明同时记录原构建SHA与修复后等价SHA，不伪造重新构建或新SHA的CI通过。历史CI和签名不能直接转移到新SHA；未来功能批次仍按上节验证并使用不可变新标签，不把本次授权当成日常移动旧标签的许可。
 
 ## 安装边界
 
