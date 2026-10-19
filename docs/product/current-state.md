@@ -1,23 +1,22 @@
 # 当前交接
 
-更新：2026-10-19。按AGENTS限定范围；主工作区其他任务的未提交文档保持。
+更新：2026-10-19。主工作区其他任务未提交文档保持，以下只列当前事实。
 
-## 本轮：开机托盘隐藏
+## 本轮：启动动作被无关订阅重建取消
 
-- 本机固定入口artifacts/Axiom-preview/Axiom.exe现为0.2.0-preview.local.20261019.1，干净源码28c43b4。正常停止旧三角色后更新，实际路径/ProductVersion、后台连接与登录启动位置核验通过。
-- 实机启动确有触发，但旧配置仍1秒，错过晚启动程序；部分程序约30秒后启动。现已通过受权Host把本机工具等待改为60秒，后台及真实UI读回确认；名单、模式、启用状态保留。
-- 等待上限扩到120秒，默认仍30；Host命令130秒，仅已校验tray.hide Invoke允许135秒Provider请求，其他操作仍45秒。仍按系统通知等待、每目标并行，无定时扫描或自动重试。
-- 修复基于实际运行的53628fe，隔离工作树artifacts/tray-startup-fix、分支codex/tray-startup-runtime-fix；没有混入后续视觉重做。[PR31](https://github.com/Starvan/Axiom/pull/31)以PR29分支为基底，未合并/发新Release。
+- 本机固定入口artifacts/Axiom-preview/Axiom.exe已更新0.2.0-preview.local.20261019.2，干净源码cba7e1b。旧三角色正常退出，统一publish后重启；三角色实际路径/ProductVersion、后台连接、8条规则规范化指纹、托盘配置及登录启动状态/位置核验保持。
+- 实机失败记录是3个启动动作已触发，却在发往Agent前取消；60秒等待尚未开始。HDR门禁恢复内层观察时重建共享订阅，原代码释放Host启动源，撤销了无关启动程序/窗口关闭/托盘动作。上轮只改等待未覆盖此故障。
+- 现在仅主动重订阅、启动资源不变且无需新基线时保留启动源epoch/序列/值，待新观察就绪再接收工具请求。不重放边沿，不增加重试；真实断线、资源变更、新基线、暂停和停止仍保留取消保护。
+- 修复在隔离工作树artifacts/tray-startup-fix、分支codex/startup-observation-cancellation-fix，[PR32](https://github.com/Starvan/Axiom/pull/32)基于PR31。主开发分支codex/ui-refinement已同步并推送99e6b57。未合并main/发新Release，未混入后续视觉重做到本机。
 
-## 验证及限制
+## 验证与实机结论
 
-- 8项相关纯测试、1项合成托盘原生测试通过。原生复现1秒错过晚窗口，60秒等待自动隐藏；取消120秒等待后新图标保留。Host重启参数、持久化120边界、协议长截止及其他请求限制通过。WinUI构建零警告错误，真实UI显示已保存60，取消未改配置。
-- 本轮没有发送普通规则保存/删除请求。升级前指纹夹具未对参数字典排序，跨进程不可比较；不声称升级前后8规则指纹一致。设置60秒前后已用规范化指纹核对普通规则保持；托盘名单/模式/启用/版本与启动位置另行核验。
-- 未重启电脑，真实下次开机仍待确认。启动一次只处理期限内首批可识别图标，之后软件/Explorer重建可能再出现；持续模式与识别限制保持，关闭不恢复图标。
-- 本机证据仅artifacts/tray-startup-*.json、tray-startup-ui及工作树artifacts/test-results，未上传配置、日志或截图。技术边界见[托盘ADR](../adr/0010-tray-icon-discovery.md)；历史证据见[托盘记录](../exec-plans/completed/tray-toolbox.md)。
+- 新混合HDR门禁+3类启动命令回归在旧代码稳定失败，修复后3条回执全部成功、无取消；真实断线仍取消且重连不重放。17项直接相关测试通过、零跳过，清单tools/change-test-suites.txt；统一四角色publish通过。
+- 本机重启后台后未点击立即隐藏，实际自动完成8/8托盘目标，无此前取消记录；不是完整Windows开机验收。托盘等待仍60秒，上限120秒，原名单/模式/启用及其他任务均未修改。
+- 原“首次开机”窗口任务本次资格已经被旧版使用，重启后台按设计跳过；没有重置BootId认领、改frequency或伪造开机。真实下一次开机仍待确认。
+- 本机证据仅artifacts/boot-actions-diagnostic.json、tray-startup-*.json及工作树artifacts/test-results/startup-cancel（修复前后）/focused。不上传配置、日志、截图或真实目标路径。技术语义见[任务接入](../development/task-authoring-contracts.md)，原托盘边界见[ADR0010](../adr/0010-tray-icon-discovery.md)。
 
-## 已有功能与保护
+## 其他保持
 
-- 任务HDR/周时段自动暂停、watch-run-states状态推送、手动暂停保护保持；底层仍通过Service/Engine/Agent，UI退出后台继续。
-- 六亮度动作已有渐变与恢复保护、快捷键加滚轮手动接管；画面检测GPU采样按需共享，HDR暂停由任务配置决定。未重跑亮度/全UI/性能回归。
-- 用户数据共用、原地保存，不备份/EFS。受控游戏、恢复不明或正常停止拒绝时保留现场，不强杀。后续视觉重做与其他候选由所有者另行确认。
+- 任务HDR/周时段自动暂停、手动暂停保护、列表事件推送、亮度渐变/恢复及滚轮接管保持；本轮没有改原生窗口/托盘适配器，没有重跑全UI/原生/亮度/性能矩阵。
+- 本机共用用户数据，原地更新、不备份/EFS；受控游戏、恢复不明或拒停时保留现场。未开展Windows真实重启、Explorer重建或设备矩阵验收。
