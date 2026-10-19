@@ -1,1 +1,3 @@
 Axiom.Engine.Tests.WorkbenchPresentationTests
+Axiom.Engine.Tests.TrayToolTests
+Axiom.Engine.Tests.TrayActionTests.TrayModuleUsesStartupComposerAndBatchPathsWithDelayAndStrictValidation
