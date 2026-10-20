@@ -4,7 +4,7 @@
 
 ## 本轮：时间检测与定时Hosts
 
-- 分支codex/scheduled-hosts，[PR34](https://github.com/Starvan/Axiom/pull/34)叠于codex/fractional-screen-stability；代码已推送，CI排队中，未合并/发Release。
+- 分支codex/scheduled-hosts，[PR34](https://github.com/Starvan/Axiom/pull/34)叠于codex/fractional-screen-stability；代码已推送，未合并/发Release，CI按准确head核对。
 - 时间分类保留每隔N分钟、每天/每周、指定日期一次、时段间隔、时段一次；新增每月多个日期与last月末。不存在日期跳过、DST重复只取第一次，精确日历不补发错过机会、不唤醒电脑。
 - 工具箱“定时Hosts”直接配置何时、域名及DNS，动作固定；复用既有检测、组合、任务保存/活动/暂停。最多16域名，支持普通DNS IP/端口、标准DoH、bootstrap DNS、IPv4/IPv6/双栈。新配置默认暂停。
 - 整批解析成功后更新系统hosts管理区，本次名单替换旧IP，其他管理记录和手工内容保留；同名手工记录冲突/损坏管理区明确拒绝。暂停/删除/移除域名不撤销已写记录，应用缓存及既有连接不承诺立即变化。
@@ -12,10 +12,11 @@
 - 针对性审查与两项提交边界局部复查完成；新历史基线26项相关测试通过（Hosts/月度/每日/两项目录预算），清单tools/change-test-suites.txt。统一四角色构建成功。
 - 实机修复共用名单弹窗的XamlRoot、CR拆行及多行初始化顺序；两域名确认→重开→逐项读回通过，月度切换、默认暂停、窄窗按钮及取消草稿验证通过。仅使用合成草稿，未保存测试规则或改系统hosts。
 - 真实DoH/bootstrap解析两个公共示例域名并写合成hosts，回读/幂等/其他内容保持通过。本网络默认公共DoH TLS被重置，改指定另一服务后通过；不声称所有DNS上游均可达。
+- 本轮修复保存错误说明：后台DNS端点校验未通过，旧UI却隐藏具体原因。现在明确指出普通DNS或Bootstrap字段，提示填写单个IP/可带端口，不填域名、DoH网址或多个地址；兼容旧后台的无字段原因。3项精确回归与UI Release构建通过，合成DoH+程序运行规则在修正Bootstrap后保存成功，失败不会覆盖已保存版本。
 
 ## 本机与未解决
 
-- 原固定artifacts/Axiom-preview/Axiom.exe已正常停止→统一发布→重启至0.1.0-local.20261021.4，干净源码b10badd。来源/三角色/后台连接/登录启动位置确认；原8规则指纹与托盘/启动设置保持。界面停在工具箱，合成草稿已取消。
+- 固定artifacts/Axiom-preview/Axiom.exe仍为0.1.0-local.20261021.4/干净b10badd，前批来源/三角色/后台连接/启动位置及原8规则指纹确认保持。当前用户有未保存草稿，已只读定位Bootstrap格式无效，未改输入或代选DNS；为保护草稿，本轮提示修复尚未通过发布/重启应用。
 - 证据只在本机artifacts/scheduled-hosts-smoke、artifacts/test-results/focused；真实DNS合成夹具证据在旧检出同名artifacts。配置、日志、截图与设备信息不提交。
 - 首次开机窗口任务资格此前已消耗，未重置；真实下次开机仍待确认。用户配置以实时状态为准，不按旧摘要回填。
 - main仍为已发布亮度渐变批次，PR28–32及fractional-screen-stability前批保持原状态，本轮未合并它们。不重复无关UI/设备/性能验收。

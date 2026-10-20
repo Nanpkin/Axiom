@@ -196,6 +196,31 @@ public sealed class HostsToolTests
     }
     [Fact(Timeout = 15000)]
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    public async Task DohSaveNamesInvalidBootstrapAndKeepsPersistedConfigurationUnchanged()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "axiom-hosts-validation-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(directory);
+        try
+        {
+            using var activity = new AutomationFixture(); using var store = new SqliteAutomationTaskStore(Path.Combine(directory, "tasks.db"));
+            await using var runtime = new PluginTaskRuntime(BuiltInAutomationPlugins.Create(), store, "synthetic-hosts", activity.Engine, () => 1);
+            await runtime.InitializeAsync();
+            var action = Invocation(transport: "doh");
+            var task = new AutomationTask(HostsCapabilities.TaskId, 0, "synthetic Hosts", true,
+                new("process.running", 2, ImmutableDictionary<string, string>.Empty.Add("processNames", "Synthetic.exe")),
+                action with { Parameters = action.Parameters.SetItem("bootstrap", "resolver.example.test") });
+            var error = await Assert.ThrowsAsync<ArgumentException>(() => runtime.SaveAsync(task, default));
+            Assert.StartsWith("请将“Bootstrap DNS”", error.Message); Assert.Contains("单个DNS服务器IP", error.Message); Assert.Empty(await store.ListAsync());
+            var saved = await runtime.SaveAsync(task with { Action = action }, default); Assert.Equal(1, saved.Version);
+            var invalidEdit = saved with { Action = saved.Action with { Parameters = saved.Action.Parameters.SetItem("server", "https://dns.example.test/dns-query") } };
+            error = await Assert.ThrowsAsync<ArgumentException>(() => runtime.SaveAsync(invalidEdit, default));
+            Assert.StartsWith("请将“普通 DNS 服务器”", error.Message);
+            var persisted = Assert.Single(await store.ListAsync()); Assert.Equal(1, persisted.Version); Assert.Equal(action.Parameters["server"], persisted.Action.Parameters["server"]);
+            await runtime.EnsureSafeToStopAsync(default);
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+    [Fact(Timeout = 15000)]
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
     public async Task HostsToolConfigurationPersistsAndPauseUsesExistingTaskVersionProtection()
     {
         var directory = Path.Combine(Path.GetTempPath(), "axiom-hosts-store-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(directory);
