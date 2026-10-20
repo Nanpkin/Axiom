@@ -31,6 +31,27 @@ public sealed class HostsToolTests
             Assert.Throws<ArgumentException>(() => HostsCapabilities.Validate(action with { Parameters = action.Parameters.SetItem("useSystemProxy", value) }));
         Assert.Throws<ArgumentException>(() => HostsCapabilities.Validate(action with { Parameters = action.Parameters.SetItem("proxyUrl", "http://proxy.test") }));
     }
+    [Fact]
+    public async Task ProductionCatalogAndNineHostsTasksFitTheExistingPipeLimitWithUnicodeRoundTrip()
+    {
+        var modules = BuiltInAutomationPlugins.Create(); var compiler = new Axiom.Engine.AutomationTaskCompiler(supportsCompositeDetection: true, supportsRunConditions: true);
+        foreach (var module in modules) { foreach (var d in module.Detections) compiler.Register(d); foreach (var a in module.Actions) compiler.Register(a); }
+        compiler.Register(new HdrTaskAction());
+        var detection = new TaskInvocation("process.running", 2, ImmutableDictionary<string, string>.Empty.Add("processNames",
+            string.Join('\n', Enumerable.Range(1, 128).Select(i => $"SyntheticApplication{i}.exe"))));
+        var tasks = Enumerable.Range(1, 9).Select(i => new AutomationTask(Guid.NewGuid().ToString("D"), 1, new string('界', 120), true,
+            detection, Invocation("example.test\nother.test", transport: "doh"))).ToImmutableArray();
+        var snapshot = new AutomationSnapshot(tasks, compiler.Catalog, [.. modules.SelectMany(m => m.Combinations)], true, "等待条件", "", DateTimeOffset.UtcNow, []);
+        using var wire = new MemoryStream();
+        await AutomationProtocol.WriteAsync(wire, new(1, "snapshot", "synthetic", Snapshot: snapshot), default);
+        Assert.True(wire.Length - 4 <= AutomationProtocol.MaximumFrame);
+        var payload = Encoding.UTF8.GetString(wire.ToArray()[4..]); Assert.Contains("使用系统代理", payload);
+        wire.Position = 0; var read = await AutomationProtocol.ReadAsync(wire, default);
+        Assert.Equal(9, read.Snapshot!.Tasks.Length); Assert.Equal(new string('界', 120), read.Snapshot.Tasks[0].Title);
+        Assert.Equal(detection.Parameters["processNames"], read.Snapshot.Tasks[0].Detection.Parameters["processNames"]);
+        Assert.Equal(snapshot.Capabilities.Length, read.Snapshot.Capabilities.Length);
+        Assert.Equal(snapshot.Combinations.Length, read.Snapshot.Combinations.Length);
+    }
     [Fact(Timeout = 15000)]
     public async Task SystemProxyUsesConnectForDohAndDirectModeIgnoresIt()
     {
