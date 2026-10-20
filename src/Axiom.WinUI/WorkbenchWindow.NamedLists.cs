@@ -20,7 +20,7 @@ public sealed partial class WorkbenchWindow
         var edit = Action("编辑名单…");
         edit.Click += async (_, _) =>
         {
-            var input = new TextBox { Header = field.Label, Text = selected, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap,
+            var input = new TextBox { Header = field.Label, AcceptsReturn = true, Text = selected, TextWrapping = TextWrapping.Wrap,
                 MaxLength = field.MaximumLength, MinHeight = 180, MaxHeight = 320 };
             var body = Column(10); body.Children.Add(Text(field.Hint, 13, Muted)); body.Children.Add(input);
             var error = Text("", 12, Amber); body.Children.Add(error);
