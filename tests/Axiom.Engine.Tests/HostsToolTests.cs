@@ -20,6 +20,56 @@ public sealed class HostsToolTests
         new(HostsCapabilities.Update, 1, HostsCapabilities.Descriptor.Fields.ToImmutableDictionary(f => f.Id,
             f => f.Id switch { "domains" => domains, "family" => family, "transport" => transport, "server" => server, _ => f.DefaultValue! }));
     private static Dictionary<string, IPAddress[]> Addresses(string domain = "example.test", string address = "192.0.2.1") => new() { [domain] = [IPAddress.Parse(address)] };
+    [Fact]
+    public void SystemProxyDefaultsOffForLegacyAndNewSettingsAndRequiresAnExplicitBoolean()
+    {
+        var action = Invocation(transport: "doh");
+        Assert.False(HostsCapabilities.Validate(action).UseSystemProxy);
+        Assert.False(HostsCapabilities.Validate(action with { Parameters = action.Parameters.Remove("useSystemProxy") }).UseSystemProxy);
+        Assert.True(HostsCapabilities.Validate(action with { Parameters = action.Parameters.SetItem("useSystemProxy", "true") }).UseSystemProxy);
+        foreach (var value in new[] { "yes", "1", "TRUE" })
+            Assert.Throws<ArgumentException>(() => HostsCapabilities.Validate(action with { Parameters = action.Parameters.SetItem("useSystemProxy", value) }));
+        Assert.Throws<ArgumentException>(() => HostsCapabilities.Validate(action with { Parameters = action.Parameters.SetItem("proxyUrl", "http://proxy.test") }));
+    }
+    [Fact(Timeout = 15000)]
+    public async Task SystemProxyUsesConnectForDohAndDirectModeIgnoresIt()
+    {
+        using var limit = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var proxyListener = new TcpListener(IPAddress.Loopback, 0); proxyListener.Start();
+        using var directListener = new TcpListener(IPAddress.Loopback, 0); directListener.Start();
+        var proxyEndpoint = (IPEndPoint)proxyListener.LocalEndpoint; var directEndpoint = (IPEndPoint)directListener.LocalEndpoint;
+        var previous = HttpClient.DefaultProxy;
+        try
+        {
+            HttpClient.DefaultProxy = new WebProxy(new Uri($"http://127.0.0.1:{proxyEndpoint.Port}"));
+            var proxyServer = Task.Run(async () =>
+            {
+                using var client = await proxyListener.AcceptTcpClientAsync(limit.Token); await using var stream = client.GetStream();
+                var bytes = new List<byte>(); var buffer = new byte[1];
+                while (bytes.Count < 4096)
+                {
+                    await stream.ReadExactlyAsync(buffer, limit.Token); bytes.Add(buffer[0]);
+                    if (bytes.Count >= 4 && bytes.TakeLast(4).SequenceEqual(new byte[] { 13, 10, 13, 10 })) break;
+                }
+                var header = Encoding.ASCII.GetString(bytes.ToArray());
+                await stream.WriteAsync(Encoding.ASCII.GetBytes("HTTP/1.1 502 Synthetic proxy\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"), limit.Token);
+                return header;
+            }, limit.Token);
+            var action = Invocation(transport: "doh");
+            action = action with { Parameters = action.Parameters.SetItem("useSystemProxy", "true").SetItem("doh", "https://doh.synthetic.test/dns-query").SetItem("bootstrap", "192.0.2.53") };
+            await Assert.ThrowsAsync<IOException>(() => new HostsDnsResolver().ResolveAsync(HostsCapabilities.Validate(action), limit.Token));
+            Assert.StartsWith("CONNECT doh.synthetic.test:443 HTTP/1.1\r\n", await proxyServer);
+            var directServer = Task.Run(async () =>
+            {
+                using var client = await directListener.AcceptTcpClientAsync(limit.Token); await using var stream = client.GetStream();
+                var first = new byte[1]; await stream.ReadExactlyAsync(first, limit.Token); return first[0];
+            }, limit.Token);
+            action = action with { Parameters = action.Parameters.SetItem("useSystemProxy", "false").SetItem("doh", $"https://127.0.0.1:{directEndpoint.Port}/dns-query") };
+            await Assert.ThrowsAsync<IOException>(() => new HostsDnsResolver().ResolveAsync(HostsCapabilities.Validate(action), limit.Token));
+            Assert.Equal(22, await directServer); Assert.False(proxyListener.Pending());
+        }
+        finally { HttpClient.DefaultProxy = previous; }
+    }
     private static byte[] Answer(byte[] query, string address = "192.0.2.1")
     {
         var ip = IPAddress.Parse(address).GetAddressBytes(); var result = new byte[query.Length + 12 + ip.Length]; query.CopyTo(result, 0);
@@ -230,11 +280,14 @@ public sealed class HostsToolTests
             await using var runtime = new PluginTaskRuntime(BuiltInAutomationPlugins.Create(), store, "synthetic-hosts", activity.Engine, () => 1);
             await runtime.InitializeAsync();
             var task = new AutomationTask(HostsCapabilities.TaskId, 0, "定时Hosts", true,
-                new(IntervalCapabilities.Elapsed, 1, ImmutableDictionary<string, string>.Empty.Add("minutes", "60")), Invocation());
+                new(IntervalCapabilities.Elapsed, 1, ImmutableDictionary<string, string>.Empty.Add("minutes", "60")), Invocation() with { Parameters = Invocation().Parameters.Remove("useSystemProxy") });
             var saved = await runtime.SaveAsync(task, default); Assert.Equal(1, saved.Version);
             var stored = Assert.Single((await runtime.ReadAsync(default)).Tasks); Assert.True(stored.Paused); Assert.Equal("example.test", stored.Action.Parameters["domains"]);
             await Assert.ThrowsAsync<InvalidOperationException>(() => runtime.SaveAsync(task, default));
-            var pausedAgain = await runtime.SaveAsync(stored, default); Assert.Equal(2, pausedAgain.Version); Assert.True(Assert.Single(await store.ListAsync()).Paused);
+            Assert.False(HostsCapabilities.Validate(stored.Action).UseSystemProxy);
+            var pausedAgain = await runtime.SaveAsync(stored with { Action = stored.Action with { Parameters = stored.Action.Parameters.Add("useSystemProxy", "true") } }, default);
+            Assert.Equal(2, pausedAgain.Version); Assert.True(Assert.Single(await store.ListAsync()).Paused);
+            Assert.True(HostsCapabilities.Validate(Assert.Single(await store.ListAsync()).Action).UseSystemProxy);
             await runtime.EnsureSafeToStopAsync(default);
         }
         finally { Directory.Delete(directory, true); }

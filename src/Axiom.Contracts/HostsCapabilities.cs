@@ -4,7 +4,7 @@ using Axiom.Domain;
 
 namespace Axiom.Contracts;
 
-public sealed record HostsSettings(string[] Domains, string Transport, string Server, Uri? DohEndpoint, string Bootstrap, string Family);
+public sealed record HostsSettings(string[] Domains, string Transport, string Server, Uri? DohEndpoint, string Bootstrap, string Family, bool UseSystemProxy = false);
 
 public static class HostsCapabilities
 {
@@ -14,6 +14,7 @@ public static class HostsCapabilities
         "通过指定 DNS 解析域名，更新系统 hosts 的 Axiom 管理区；保留其他内容。",
         [new("domains", "域名名单", TaskFieldKind.TextList, true, "每行一个域名，最多16个；不含协议、端口、路径或通配符。", null, 4096, [], EditAsList: true),
          new("transport", "DNS 方式", TaskFieldKind.Choice, true, "普通DNS使用UDP，截断时转TCP；DoH使用HTTPS。", "doh", 8, [new("dns", "普通 DNS"), new("doh", "DNS over HTTPS（DoH）")]),
+         new("useSystemProxy", "使用系统代理", TaskFieldKind.Boolean, false, "仅用于DoH。开启后按系统代理和绕过规则连接，服务器地址由系统或代理解析；Bootstrap仅用于关闭时的直连。未配置代理或命中绕过规则时可能直连，普通DNS仍直连。", "false", 5, []),
          new("server", "普通 DNS 服务器", TaskFieldKind.Text, true, "单个DNS服务器IP，不填域名或DoH网址；可带端口，IPv6带端口使用[地址]:端口。", "1.1.1.1", 80, []),
          new("doh", "DoH 地址", TaskFieldKind.Text, true, "完整HTTPS地址，例如 https://cloudflare-dns.com/dns-query；使用标准DNS报文。", "https://cloudflare-dns.com/dns-query", 2048, []),
          new("bootstrap", "Bootstrap DNS", TaskFieldKind.Text, true, "单个普通DNS服务器IP（可带端口），用于解析DoH服务器域名；不填域名、DoH网址或多个地址。DoH服务器为IP时无需解析。", "1.1.1.1", 80, []),
@@ -42,10 +43,13 @@ public static class HostsCapabilities
     }
     public static HostsSettings Validate(TaskInvocation invocation)
     {
-        if (invocation.CapabilityId != Update || invocation.SchemaVersion != 1 || invocation.Parameters is null || invocation.Parameters.Count != 6 ||
-            Descriptor.Fields.Any(f => !invocation.Parameters.TryGetValue(f.Id, out var v) || string.IsNullOrWhiteSpace(v) || v.Length > f.MaximumLength))
+        if (invocation.CapabilityId != Update || invocation.SchemaVersion != 1 || invocation.Parameters is null || invocation.Parameters.Count is < 6 or > 7 ||
+            invocation.Parameters.Keys.Any(k => !Descriptor.Fields.Any(f => f.Id == k)) ||
+            Descriptor.Fields.Any(f => invocation.Parameters.TryGetValue(f.Id, out var v) ? string.IsNullOrWhiteSpace(v) || v.Length > f.MaximumLength : f.Required))
             throw new ArgumentException("Hosts配置无效，请填写域名、DNS和地址类型。");
         var p = invocation.Parameters;
+        var useProxy = p.GetValueOrDefault("useSystemProxy");
+        if (useProxy is not (null or "true" or "false")) throw new ArgumentException("请选择是否使用系统代理。");
         var domains = p["domains"].Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(Domain).Distinct().ToArray();
         if (domains.Length is < 1 or > 16) throw new ArgumentException("请选择1–16个不同域名。");
         if (p["transport"] is not ("dns" or "doh") || p["family"] is not ("ipv4" or "ipv6" or "both")) throw new ArgumentException("DNS方式或地址类型无效。");
@@ -57,6 +61,6 @@ public static class HostsCapabilities
         ValidateServer(p["server"], "普通 DNS 服务器"); ValidateServer(p["bootstrap"], "Bootstrap DNS");
         if (!Uri.TryCreate(p["doh"], UriKind.Absolute, out var uri) || uri.Scheme != "https" || uri.UserInfo.Length != 0 || uri.Fragment.Length != 0 || uri.Host.Length == 0)
             throw new ArgumentException("DoH须为有效HTTPS地址，不含用户信息或片段。");
-        return new(domains, p["transport"], p["server"], uri, p["bootstrap"], p["family"]);
+        return new(domains, p["transport"], p["server"], uri, p["bootstrap"], p["family"], useProxy == "true");
     }
 }

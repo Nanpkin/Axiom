@@ -13,8 +13,10 @@ public sealed class HostsDnsResolver
 {
     public async Task<IReadOnlyDictionary<string, IPAddress[]>> ResolveAsync(HostsSettings settings, CancellationToken token)
     {
-        using var handler = new SocketsHttpHandler { AllowAutoRedirect = false, UseProxy = false, ConnectTimeout = TimeSpan.FromSeconds(5) };
-        handler.ConnectCallback = async (context, cancellation) =>
+        var useProxy = settings.Transport == "doh" && settings.UseSystemProxy;
+        using var handler = new SocketsHttpHandler { AllowAutoRedirect = false, UseProxy = useProxy, ConnectTimeout = TimeSpan.FromSeconds(5) };
+        // Proxy routing and DNS belong to the system HTTP transport. Direct mode uses only the explicit bootstrap.
+        if (!useProxy) handler.ConnectCallback = async (context, cancellation) =>
         {
             var host = context.DnsEndPoint.Host;
             var addresses = IPAddress.TryParse(host, out var literal) ? [literal] :
