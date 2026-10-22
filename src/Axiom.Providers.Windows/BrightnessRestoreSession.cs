@@ -232,6 +232,7 @@ internal sealed class BrightnessRestoreSession : IRestorableSettingSession
     private RestorableSettingResult Restore(BrightnessRestoreCapture capture, BrightnessFadeOptions settings, CancellationToken token)
     {
         capture.UseToken(token); var restored = 0; var skipped = 0; var failed = 0;
+        foreach (var target in capture.Targets) target.Transaction.ConfirmInterruptedFadeForRelease(token);
         if (settings.Enabled)
             BrightnessFade.Apply(capture.Targets.Where(t => t.Transaction.Owned).Select(t => (t, t.Baseline)).ToArray(), settings, token, time, wait);
         foreach (var target in capture.Targets)

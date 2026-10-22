@@ -367,6 +367,53 @@ public sealed class BrightnessFadeTests
         }
     }
 
+    [Theory(Timeout = 10000)]
+    [InlineData("owned")]
+    [InlineData("owned-wmi")]
+    [InlineData("external")]
+    [InlineData("unknown")]
+    [InlineData("manual")]
+    [InlineData("unaccepted")]
+    public async Task InterruptedHardwareFadeRestoresCapturedBaselineOnlyAfterReadingItsOwnValue(string scenario)
+    {
+        var clock = new ManualTimeProvider(); uint current = 73; var writes = new List<uint>();
+        var ownsValue = scenario.StartsWith("owned", StringComparison.Ordinal);
+        for (var cycle = 0; cycle < 4; cycle++)
+        {
+            var baseline = current; using var stop = new CancellationTokenSource(); var interrupted = false;
+            await using var session = await BrightnessRestoreSession.CreateAsync(_ =>
+            {
+                var target = new BrightnessRestoreTarget(baseline, p => (uint)p,
+                    () => interrupted && scenario == "unknown" ? null : current,
+                    value =>
+                    {
+                        current = value; writes.Add(value);
+                        if (!interrupted)
+                        {
+                            interrupted = true; stop.Cancel();
+                            if (scenario == "unaccepted") throw new OperationCanceledException(stop.Token);
+                        }
+                        return true;
+                    }, hardwareBurst: scenario != "owned-wmi");
+                return new([target], 0, 0, _ => { }, () => { });
+            }, null, TimeSpan.FromSeconds(10), default, clock, (delay, _) => clock.Advance(delay));
+            var apply = await session.ApplyAsync(new Dictionary<string, string>
+            {
+                ["percent"] = "40", ["fadeEnabled"] = "true", ["fadeDurationSeconds"] = "1", ["fadeWritesPerSecond"] = "60"
+            }, stop.Token);
+            Assert.False(apply.Success);
+            var afterApply = writes.Count;
+            if (scenario == "external") current = 17;
+            if (scenario == "manual") await BrightnessNativeOwnership.BeginManual();
+            var restored = await session.ReleaseAsync(default);
+            if (!ownsValue) Assert.Equal(afterApply, writes.Count);
+            else { Assert.True(restored.Success, restored.Reason); Assert.Equal(baseline, current); }
+            if (scenario == "manual") BrightnessNativeOwnership.EndManual();
+            if (!ownsValue) break;
+        }
+        if (ownsValue) Assert.Equal(73u, current);
+    }
+
     [Fact]
     public void HardwareCheckpointOnlyAcceptsThisSegmentsWrittenValuesAndNeverConfirmsItsEndpoint()
     {

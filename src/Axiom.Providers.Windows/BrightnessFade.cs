@@ -180,7 +180,7 @@ internal static class BrightnessFade
         }
         catch (OperationCanceledException)
         {
-            foreach (var (target, _) in targets) target.Transaction.Relinquish();
+            foreach (var (target, _) in targets) target.Transaction.InterruptFade();
             throw;
         }
     }

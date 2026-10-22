@@ -13,6 +13,8 @@ internal sealed class ConditionalSettingTransaction<T>(T baseline, Func<T> read,
     private T pendingTarget;
     private readonly List<T> hardwareBurstValues = [];
     private bool hardwareBurstVerified;
+    private bool interruptedFade;
+    private bool fadeWriteAccepted;
     public bool Owned => Volatile.Read(ref relinquished) == 0 && !released;
     internal T Confirmed => confirmed;
     internal bool HasPendingFadeWrite => fadePending;
@@ -24,6 +26,32 @@ internal sealed class ConditionalSettingTransaction<T>(T baseline, Func<T> read,
         if (fadePending) UnconfirmedFailure = true;
         hardwareBurstVerified = false;
         Interlocked.Exchange(ref relinquished, 1);
+    }
+    internal void InterruptFade()
+    {
+        if (Owned) interruptedFade = true;
+        Relinquish();
+    }
+    // Cleanup alone may resume an interrupted fade, after a fresh read proves that the
+    // fixed target still has a value actually written by this transition. Never guess.
+    internal void ConfirmInterruptedFadeForRelease(CancellationToken token)
+    {
+        if (!interruptedFade || released) return;
+        interruptedFade = false;
+        try
+        {
+            token.ThrowIfCancellationRequested();
+            var actual = read();
+            token.ThrowIfCancellationRequested();
+            var matches = fadePending
+                ? fadeWriteAccepted && (hardwareBurstValues.Count > 0 ? hardwareBurstValues.Contains(actual) : equality.Equals(actual, pendingTarget))
+                : equality.Equals(actual, confirmed);
+            if (!matches) return;
+            confirmed = actual; fadePending = false; hardwareBurstValues.Clear();
+            hardwareBurstVerified = false; UnconfirmedFailure = false;
+            Interlocked.Exchange(ref relinquished, 0);
+        }
+        catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException)) { }
     }
     internal bool TryCompleteConfirmedRelease()
     {
@@ -62,13 +90,14 @@ internal sealed class ConditionalSettingTransaction<T>(T baseline, Func<T> read,
             token.ThrowIfCancellationRequested();
             if (targetAfterConfirmation is not null) target = targetAfterConfirmation();
             if (equality.Equals(FadeExpected, target)) return true;
-            pendingTarget = target; fadePending = true;
+            pendingTarget = target; fadePending = true; fadeWriteAccepted = false;
             write(target);
+            fadeWriteAccepted = true;
             token.ThrowIfCancellationRequested();
             return Owned;
         }
         catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
-        { UnconfirmedFailure = true; Relinquish(); return false; }
+        { if (error is OperationCanceledException) interruptedFade = true; UnconfirmedFailure = true; Relinquish(); return false; }
     }
     // Only hardware fade may send a bounded segment after its initial ownership check. Keep the
     // accepted values for this segment alone; successful Set is not a confirmed brightness value.
@@ -80,14 +109,15 @@ internal sealed class ConditionalSettingTransaction<T>(T baseline, Func<T> read,
             token.ThrowIfCancellationRequested();
             if (!hardwareBurstVerified || HardwareBurstFull) { Relinquish(); return false; }
             if (equality.Equals(FadeExpected, target)) return true;
-            pendingTarget = target; fadePending = true;
+            pendingTarget = target; fadePending = true; fadeWriteAccepted = false;
             write(target);
+            fadeWriteAccepted = true;
             hardwareBurstValues.Add(target);
             token.ThrowIfCancellationRequested();
             return Owned;
         }
         catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
-        { UnconfirmedFailure = true; Relinquish(); return false; }
+        { if (error is OperationCanceledException) interruptedFade = true; UnconfirmedFailure = true; Relinquish(); return false; }
     }
     // A checkpoint records actual progress, not completion of the requested target. A skipped
     // intermediate Set may be superseded only after reading a value sent in this finite segment.
@@ -111,7 +141,7 @@ internal sealed class ConditionalSettingTransaction<T>(T baseline, Func<T> read,
             return true;
         }
         catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
-        { UnconfirmedFailure = true; Relinquish(); return false; }
+        { if (error is OperationCanceledException) interruptedFade = true; UnconfirmedFailure = true; Relinquish(); return false; }
     }
     internal bool ConfirmHardwareBurst(CancellationToken token, TimeProvider time, Action<TimeSpan, CancellationToken> wait)
     {
@@ -150,14 +180,14 @@ internal sealed class ConditionalSettingTransaction<T>(T baseline, Func<T> read,
             }
         }
         catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
-        { UnconfirmedFailure = true; Relinquish(); return false; }
+        { if (error is OperationCanceledException) interruptedFade = true; UnconfirmedFailure = true; Relinquish(); return false; }
     }
     internal bool ConfirmFade(CancellationToken token)
     {
         if (!Owned) return false;
         try { return ConfirmFadeCore(token); }
         catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
-        { UnconfirmedFailure = true; Relinquish(); return false; }
+        { if (error is OperationCanceledException) interruptedFade = true; UnconfirmedFailure = true; Relinquish(); return false; }
     }
     private bool ConfirmFadeCore(CancellationToken token)
     {
