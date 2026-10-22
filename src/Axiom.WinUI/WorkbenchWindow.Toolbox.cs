@@ -13,7 +13,7 @@ public sealed partial class WorkbenchWindow
 
     private void BuildToolbox()
     {
-
+        BuildGameModeTool();
         var body = Column(12); var heading = ToolHeading();
         heading.Children.Add(new Border { Width = 40, Height = 40, Background = BlueSoft, CornerRadius = new CornerRadius(10),
             Child = new FontIcon { Glyph = "\uE7F8", FontSize = 20, Foreground = Blue } });

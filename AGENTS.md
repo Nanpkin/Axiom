@@ -46,3 +46,7 @@ Axiom是持续变化的小型Windows自动化工具：用户配置“何时、�
 - 统一用publish-package.ps1 / publish-preview.ps1 / clean-artifacts.ps1；临时夹具优先framework-dependent，用完清理二进制、保留有效证据。
 - 完成后更新当前交接；职责变化才改定位表，有计划才补本计划证据。技术保证保留在contract/ADR，历史完成不自动代表整项产品验收；下一批候选经所有者确认后启动。
 - docs/OWNER-CODEX-HANDBOOK.md仅供所有者，不默认读取、修改或当作规范。
+
+## 游戏模式协作约定
+
+修改监测/采集或游戏模式前，阅读 [游戏模式](docs/product/game-mode.md)。当前只交付配置预览；后续逐项声明继续、暂停或降频策略，遵守共享订阅、恢复保护和状态解释边界，不把预设保存当作已生效。

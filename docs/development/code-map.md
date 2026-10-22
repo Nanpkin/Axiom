@@ -4,6 +4,7 @@
 
 | 改动范围 | 代码入口 / 检索词 | 相关测试定位 |
 |---|---|---|
+| 游戏模式配置预览（尚无运行策略） | [工具UI](../../src/Axiom.WinUI/WorkbenchWindow.GameMode.cs)、[产品约定](../product/game-mode.md)；复用BuildProcessPicker | ProcessGroupTests组选择/128项用例；不代表实际降频验收 |
 | 通用任务声明、编译和组合 | [AutomationTasks](../../src/Axiom.Domain/AutomationTasks.cs)、[AutomationTaskCompiler](../../src/Axiom.Engine/AutomationTaskCompiler.cs)、[内置注册](../../src/Axiom.Infrastructure/BuiltInAutomationPlugins.cs) | 该能力Catalog/注册/严格导入用例 |
 | 保存、IPC、执行与生命周期 | [任务库](../../src/Axiom.Infrastructure/SqliteAutomationTaskStore.cs)、[PluginTaskRuntime](../../src/Axiom.ServiceHost/PluginTaskRuntime.cs)、[AutomationPipeServer](../../src/Axiom.ServiceHost/AutomationPipeServer.cs) | 对应持久化/Host用例，不默认全跑 |
 | Engine仲裁、时序、执行上下文 | [Engine目录](../../src/Axiom.Engine)、[Domain目录](../../src/Axiom.Domain)；检索EngineHost.Rules/Execution与对应contract | 按当前行为选精确Fact |
