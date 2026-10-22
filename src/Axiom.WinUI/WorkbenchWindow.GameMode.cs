@@ -77,6 +77,9 @@ public sealed partial class WorkbenchWindow
         manual.Toggled += (_, _) => Changed();
         automatic.Toggled += (_, _) => { Changed(); if (automatic.IsOn) targets.IsExpanded = true; };
         body.Children.Add(Help("在规则检测中选择游戏模式状态，通过逻辑与、逻辑非自行决定执行条件。普通条件组合不保证停止其他检测的采集；当前不会统一暂停任务或改变亮度。", "游戏模式与自动化规则"));
+        var wiki = Action("游戏模式说明（Wiki）");
+        wiki.Click += (_, _) => OpenDetail("游戏模式 Wiki");
+        body.Children.Add(wiki);
         var actions = FlowActions();
         var save = Action("保存", true); save.IsEnabled = gameMode is not null;
         save.Click += async (_, _) =>

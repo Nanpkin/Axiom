@@ -18,11 +18,12 @@ public sealed partial class WorkbenchWindow
     private void DetailHeader(string name)
     {
         pageTitle.Text = name;
-        pageSubtitle.Text = page == Page.Toolbox ? "工具箱" : "设置";
+        var wiki = name == "游戏模式 Wiki";
+        pageSubtitle.Text = wiki ? "设置 / 游戏模式" : page == Page.Toolbox ? "工具箱" : "设置";
         content.MaxWidth = 780;
-        var back = Action(page == Page.Toolbox ? "← 工具箱" : "← 设置");
-        back.Click += (_, _) => { detailPage = null; pageScrollToTop = true; Render(); };
-        var actions = Row(8); actions.Children.Add(back); actions.Children.Add(RefreshButton());
+        var back = Action(wiki ? "← 游戏模式" : page == Page.Toolbox ? "← 工具箱" : "← 设置");
+        back.Click += (_, _) => { detailPage = wiki ? "游戏模式" : null; pageScrollToTop = true; Render(); };
+        var actions = Row(8); actions.Children.Add(back); if (!wiki) actions.Children.Add(RefreshButton());
         pageTools.Children.Add(actions);
     }
 
@@ -87,6 +88,7 @@ public sealed partial class WorkbenchWindow
             {
                 case "外观": BuildThemeSettings(); break;
                 case "游戏模式": BuildGameModeSettings(); break;
+                case "游戏模式 Wiki": BuildGameModeWiki(); break;
                 case "快捷键": BuildShortcutSettings(); break;
                 case "登录启动": BuildStartupSettings(); break;
                 case "停止与退出": BuildStopSettings(); break;
