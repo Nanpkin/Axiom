@@ -13,7 +13,7 @@ public sealed partial class WorkbenchWindow
     private string? gameModePresetError;
     private static string GameModePresetPath => Path.Combine(AxiomUserData.Root, "game-mode-preset.json");
 
-    private void BuildGameModeTool()
+    private void BuildGameModeSettings()
     {
         if (gameModePreset is null)
         {
@@ -31,23 +31,40 @@ public sealed partial class WorkbenchWindow
         }
         var saved = gameModePreset;
         var body = Column(12);
-        body.Children.Add(Text("游戏模式", 18, Ink, true));
-        body.Children.Add(Text("游戏期间减少后台监测的资源占用。", 14, Muted));
-        body.Children.Add(Text("配置预览 · 尚未生效。当前只保存开启方式和程序名单，尚未接入自动检测、监测暂停或降频。", 13, Amber));
-        var manual = new ToggleSwitch { Header = "手动开启（预设）", IsOn = saved.Manual,
+        var title = Column(5);
+        title.Children.Add(Text("游戏模式", 18, Ink, true));
+        title.Children.Add(Text("游戏期间减少后台监测，优先留出资源。", 13, Muted));
+        var badge = new Border { Background = PaleAmber, CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(10, 5, 10, 5), VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right,
+            Child = Text("配置预览 · 尚未生效", 12, Amber) };
+        body.Children.Add(SideBySide(title, badge));
+        body.Children.Add(new Border { Height = 1, Background = Line });
+        var manual = new ToggleSwitch { IsOn = saved.Manual, HorizontalAlignment = HorizontalAlignment.Right,
             OnContent = "希望开启", OffContent = "希望关闭" };
-        var automatic = new ToggleSwitch { Header = "指定程序运行时自动开启（预设）", IsOn = saved.Automatic,
+        var automatic = new ToggleSwitch { IsOn = saved.Automatic, HorizontalAlignment = HorizontalAlignment.Right,
             OnContent = "已选择", OffContent = "未选择" };
-        body.Children.Add(manual); body.Children.Add(automatic);
-        body.Children.Add(Text("后续接入后：手动开启会保持游戏模式；关闭手动开启后，按自动检测结果决定。任一所选程序运行即自动开启，全部退出后自动结束。", 12, Muted));
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(manual, "手动开启游戏模式预设");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(automatic, "按程序自动开启游戏模式预设");
+        var manualTitle = Column(4); manualTitle.Children.Add(Text("手动开启", 14, Ink, true));
+        manualTitle.Children.Add(Text("主动保持游戏模式。", 12, Muted));
+        body.Children.Add(SideBySide(manualTitle, manual));
+        var autoTitle = Column(4); autoTitle.Children.Add(Text("按程序自动开启", 14, Ink, true));
+        autoTitle.Children.Add(Text("任一所选程序运行时开启，全部退出后结束。", 12, Muted));
+        body.Children.Add(SideBySide(autoTitle, automatic));
         var names = saved.Processes;
-        var picker = BuildProcessPicker(names, value => names = value);
-        var targets = new Expander { Header = "自动开启的程序", Content = picker,
-            IsExpanded = saved.Automatic, HorizontalAlignment = HorizontalAlignment.Stretch };
+        var targetCount = Text($"自动开启的程序 · 已选 {ProcessGroups.SplitNames(names).Length} 个", 13, Ink);
+        var picker = BuildProcessPicker(names, value =>
+        {
+            names = value;
+            targetCount.Text = $"自动开启的程序 · 已选 {ProcessGroups.SplitNames(names).Length} 个";
+        });
+        var targets = new Expander { Header = targetCount, Content = picker,
+            IsExpanded = false, HorizontalAlignment = HorizontalAlignment.Stretch };
         body.Children.Add(targets);
         automatic.Toggled += (_, _) => { if (automatic.IsOn) targets.IsExpanded = true; };
-        var message = Text(gameModePresetError ?? "修改后请点击保存；切页会放弃未保存输入。预设不会改变现有任务。", 12, Muted);
-        var save = Action("保存游戏模式预设", true);
+        body.Children.Add(Help("当前只保存开启方式和程序名单，自动检测及监测暂停、降频尚未接入。接入后手动开启优先保持；关闭手动开启后按自动检测决定。现有任务保持原有行为。", "游戏模式说明"));
+        var message = Text(gameModePresetError ?? "修改后请保存；切页会放弃未保存输入。", 12, Muted);
+        var save = Action("保存预设", true);
         save.Click += (_, _) =>
         {
             if (automatic.IsOn && string.IsNullOrWhiteSpace(names))

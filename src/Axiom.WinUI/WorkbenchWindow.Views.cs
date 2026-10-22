@@ -378,6 +378,7 @@ public sealed partial class WorkbenchWindow
     private void BuildSettings()
     {
         BuildThemeSettings();
+        BuildGameModeSettings();
         BuildShortcutSettings();
 
         var login = Column(10);
