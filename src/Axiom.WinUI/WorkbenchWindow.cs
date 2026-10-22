@@ -73,11 +73,11 @@ public sealed partial class WorkbenchWindow : Window
             if (closingConfirmed) return;
             if (busy) { args.Cancel = true; return; }
             if (activeDialog is not null) { args.Cancel = true; activeDialog.Hide(); return; }
-            if (!Dirty) return;
+            if (!Dirty && !GameModeDirty) return;
             args.Cancel = true;
             if (confirmingClose) return;
             confirmingClose = true;
-            try { if (await ConfirmDiscardAsync()) { closingConfirmed = true; Close(); } }
+            try { if (await (GameModeDirty ? ConfirmAsync("放弃未保存的更改并关闭？", "游戏模式及其他尚未保存的输入将丢失，已保存的配置不变。", "放弃并关闭") : ConfirmDiscardAsync())) { closingConfirmed = true; Close(); } }
             finally { confirmingClose = false; }
         };
         Activated += async (_, _) => { if (loaded) return; loaded = true; await RefreshAsync(); };
@@ -405,6 +405,7 @@ public sealed partial class WorkbenchWindow : Window
             if (page == Page.Activity) await ReadActivityCoreAsync(null, reset: true);
             if (page == Page.Settings)
             {
+                await ReadGameModeAsync();
                 startup = null; startupError = null;
                 try
                 {

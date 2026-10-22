@@ -82,6 +82,12 @@ internal sealed class AutomationPipeServer(ImmutableArray<IAutomationTaskBackend
                     finally { deadline.Cancel(); try { await disconnected; } catch (Exception error) when (error is IOException or OperationCanceledException) { } }
                     return;
                 }
+                if (request.Type is "read-game-mode" or "save-game-mode")
+                {
+                    var runtime = backends.OfType<PluginTaskRuntime>().Single();
+                    var snapshot = request.Type == "save-game-mode" ? await runtime.SaveGameModeAsync(request.GameModeSettings!, deadline.Token) : runtime.ReadGameMode();
+                    await AutomationProtocol.WriteAsync(pipe, new(1, "game-mode", request.RequestId, GameMode: snapshot), deadline.Token); return;
+                }
                 if (request.Type is "read-brightness-wheel" or "save-brightness-wheel" or "resume-brightness-wheel")
                 {
                     var runtime = backends.OfType<PluginTaskRuntime>().Single();
@@ -193,7 +199,7 @@ internal sealed class AutomationPipeServer(ImmutableArray<IAutomationTaskBackend
             }
             catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
             {
-                if (authorized && request?.Type is "save" or "delete" or "save-shortcut" or "delete-shortcut" or "set-startup" or "shutdown" or "save-group" or "delete-group" or "save-steam-settings" or "refresh-steam-tool" or "save-tray-tool" or "run-tray-tool")
+                if (authorized && request?.Type is "save-game-mode" or "save" or "delete" or "save-shortcut" or "delete-shortcut" or "set-startup" or "shutdown" or "save-group" or "delete-group" or "save-steam-settings" or "refresh-steam-tool" or "save-tray-tool" or "run-tray-tool")
                     engine.RecordActivity(new(DateTimeOffset.UtcNow, "操作", "操作未完成", error.Message, ActivityLevel.Error,
                         request.Task?.Title));
                 using var errorTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));

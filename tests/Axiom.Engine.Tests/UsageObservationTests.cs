@@ -340,6 +340,9 @@ public sealed class UsageObservationTests
         {
             var detections = index.GetProperty("DetectionIds").EnumerateArray().Select(d => d.GetString()!).ToArray();
             var actions = index.GetProperty("ActionIds").EnumerateArray().Select(a => a.GetString()!).ToArray();
+            if (index.TryGetProperty("Rows", out var rows))
+                return [.. rows.EnumerateArray().SelectMany(row => row.EnumerateArray().Skip(1)
+                    .Select(action => new TaskCombination(detections[row[0].GetInt32()], actions[action.GetInt32()])))];
             return [.. index.GetProperty("Pairs").EnumerateArray().Select(p => new TaskCombination(detections[p[0].GetInt32()], actions[p[1].GetInt32()]))];
         }
         var combinations = summary.GetProperty("combinations");

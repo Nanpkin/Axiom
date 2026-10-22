@@ -96,7 +96,7 @@ public sealed partial class WorkbenchWindow
         content.Spacing = 0;
         content.MaxWidth = 780;
         AddSettingsEntry("外观", "\uE790", "跟随系统、浅色或深色");
-        AddSettingsEntry("游戏模式", "\uE7FC", "手动与按程序自动开启 · 配置预览");
+        AddSettingsEntry("游戏模式", "\uE7FC", "手动与按程序自动开启");
         AddSettingsEntry("快捷键", "\uE765", "管理全局按键组合");
         AddSettingsEntry("登录启动", "\uE7E8", "登录 Windows 后在后台运行");
         AddSettingsEntry("停止与退出", "\uE711", "停止所有任务并退出后台");
@@ -118,7 +118,7 @@ public sealed partial class WorkbenchWindow
             Padding = new Thickness(16, 12, 16, 12), HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Stretch };
         AutomationProperties.SetName(button, name);
-        button.Click += (_, _) => OpenDetail(name);
+        button.Click += async (_, _) => { OpenDetail(name); if (name == "游戏模式") await OpenGameModeAsync(); };
         content.Children.Add(button);
         content.Children.Add(new Border { Height = 1, Background = Line });
     }

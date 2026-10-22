@@ -326,11 +326,12 @@ public static class UsageAnalysis
             var detectionIndices = detections.Select((id, index) => (id, index)).ToDictionary(p => p.id, p => p.index, StringComparer.Ordinal);
             var actionIndices = actions.Select((id, index) => (id, index)).ToDictionary(p => p.id, p => p.index, StringComparer.Ordinal);
             var index = new { DetectionIds = detections, ActionIds = actions,
-                Pairs = catalog.Combinations.Select(c => new[] { detectionIndices[c.DetectionId], actionIndices[c.ActionId] }).ToArray() };
+                Rows = catalog.Combinations.GroupBy(c => c.DetectionId).Select(g =>
+                    new[] { detectionIndices[g.Key] }.Concat(g.Select(c => actionIndices[c.ActionId])).ToArray()).ToArray() };
             var compact = JsonNode.Parse(result)!.AsObject();
             compact.Remove("combinations");
             compact["combinationIndex"] = JsonSerializer.SerializeToNode(index, CompactCatalogJson);
-            compact["omissions"] = "无本机身份/完整原始事件；最多6模式/3证据/12已处理。缺省说明/提示空、默认值/上下限/分组null、标记默认false；其余参数约束不变。combinationIndex:DetectionIds/ActionIds为完整ID，Pairs为零基索引对；全部组合保留。";
+            compact["omissions"] = "无本机身份/完整原始事件；最多6模式/3证据/12已处理。缺省说明/提示空、默认值/上下限/分组null、标记默认false；其余参数约束不变。combinationIndex:DetectionIds/ActionIds为完整ID，Rows每行首项为检测索引、余项为动作索引，均从零起；全部组合保留。";
             // All observed objects are applications; keep every ID while stating
             // that repeated default once, only in the existing tightest tier.
             foreach (var item in compact["objects"]!.AsArray()) item!.AsObject().Remove("kind");

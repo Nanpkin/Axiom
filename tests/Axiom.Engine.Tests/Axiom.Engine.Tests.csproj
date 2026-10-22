@@ -140,6 +140,7 @@
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsProgramControl.cs" Link="WindowsProgramControl.cs" />
     <Compile Include="../../src/Axiom.ServiceHost/PluginTaskRuntime.TrayTool.cs" Link="PluginTaskRuntime.TrayTool.cs" />
     <Compile Include="../../src/Axiom.ServiceHost/PluginTaskRuntime.cs" Link="PluginTaskRuntime.cs" />
+    <Compile Include="../../src/Axiom.ServiceHost/PluginTaskRuntime.GameMode.cs" Link="PluginTaskRuntime.GameMode.cs" />
     <Compile Include="../../src/Axiom.ServiceHost/WindowsBootIdentity.cs" Link="WindowsBootIdentity.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/ShortcutActionRegistry.cs" Link="ShortcutActionRegistry.cs" />
     <Compile Include="../../src/Axiom.ServiceHost/ShortcutCoordinator.cs" Link="ShortcutCoordinator.cs" />

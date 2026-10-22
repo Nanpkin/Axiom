@@ -22,7 +22,9 @@ public sealed record AutomationMessage(int Version, string Type, string RequestI
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] BrightnessWheelSettings? WheelSettings = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] BrightnessWheelSnapshot? Wheel = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TaskRunStatus[]? RunStates = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? RunStatesSequence = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? RunStatesSequence = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] GameModeSettings? GameModeSettings = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] GameModeSnapshot? GameMode = null);
 
 public sealed record LoginStartupStatus(bool Registered, bool CurrentLocation, bool LauncherAvailable, string? Error = null);
 
@@ -35,6 +37,14 @@ public static class AutomationProtocol
         Encoder = JavaScriptEncoder.Create(UnicodeRanges.All) };
     public static void ValidateRequest(AutomationMessage request, DateTimeOffset now, bool shortcutAgent = false)
     {
+        if (request.GameMode is not null || request.GameModeSettings is not null && request.Type != "save-game-mode") throw new InvalidDataException("游戏模式字段不属于此操作。");
+        if (request.Type is "read-game-mode" or "save-game-mode")
+        {
+            if (shortcutAgent || request.Type == "save-game-mode" && request.GameModeSettings is null) throw new InvalidDataException("游戏模式操作无效。");
+            ValidateRequest(request with { Type = "read-tray-tool", GameModeSettings = null }, now);
+            if (request.GameModeSettings is not null) GameModeCapabilities.Normalize(request.GameModeSettings);
+            return;
+        }
         if (request.RunStates is not null || request.RunStatesSequence is not null) throw new InvalidDataException("运行状态只用于后台回执。");
         if (request.Type == "watch-run-states")
         {

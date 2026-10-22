@@ -22,6 +22,7 @@ public sealed partial class SqliteAutomationTaskStore : IDisposable
         cmd.CommandText = "PRAGMA busy_timeout=2000; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS automation_tasks(id TEXT PRIMARY KEY, version INTEGER NOT NULL, configuration TEXT NOT NULL); CREATE TABLE IF NOT EXISTS host_startup(id INTEGER PRIMARY KEY CHECK(id=1), boot_id INTEGER NOT NULL); PRAGMA user_version=" + Math.Max(2, storedVersion) + ";";
         cmd.ExecuteNonQuery();
         CreateWindowOnceAttempts();
+        CreateGameModeSettings();
     }
     public async Task<AutomationTask[]> ListAsync(CancellationToken token = default)
     {

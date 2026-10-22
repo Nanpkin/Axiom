@@ -38,3 +38,5 @@ WinUI（可退出） ── Named Pipes ── Service 角色
 | 未来远程边界（当前不做） | [remote-control-boundary](docs/architecture/remote-control-boundary.md) |
 
 类型与当前实现细节按需读 [核心运行时](docs/development/rule-runtime-contracts.md)、[生命周期](docs/development/runtime-lifecycle-contracts.md)、[HDR 预览](docs/development/game-hdr-preview-contracts.md)。旧服务观察和文字草稿 contract 仅在维护对应代码时读。不得重走“先 skeleton/fake 再允许真实功能”的旧阶段。
+
+游戏模式状态由Host持有，设置以独立乐观版本在现有任务库原地保存。手动开启OR指定程序任一运行产生`axiom.game-mode`会话布尔状态；进程读取仍走Agent既有通知，不在Host引入原生扫描。该状态经Engine本地来源进入通用检测，可参与AND/OR/NOT；Unknown不当关闭，首次与重连不补发Command。它不隐式改写规则，两条现有定时亮度不受影响；组合不成立也不保证其他叶子已停采。UI只读写Host，旧UI预设须显式导入并保存。见[游戏模式](docs/product/game-mode.md)。
