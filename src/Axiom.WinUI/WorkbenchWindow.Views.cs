@@ -375,11 +375,8 @@ public sealed partial class WorkbenchWindow
             choices.Children.Add(browse);
         }
     }
-    private void BuildSettings()
+    private void BuildStartupSettings()
     {
-        BuildThemeSettings();
-        BuildGameModeSettings();
-        BuildShortcutSettings();
 
         var login = Column(10);
         var toggle = new ToggleSwitch { Header = "登录 Windows 后自动在后台运行", OnContent = "已登记",
@@ -402,7 +399,10 @@ public sealed partial class WorkbenchWindow
         if (startup?.LauncherAvailable == false) login.Children.Add(Text("当前程序文件不完整，请从完整交付文件夹打开 Axiom 后设置。", 13, Amber));
         login.Children.Add(Help("以管理员权限在当前用户登录后启动后台，不保存密码。Windows 可能延迟启动；未自动运行时可检查任务计划程序中的 Axiom 任务。删除程序前请先关闭登录启动。", "登录启动说明"));
         content.Children.Add(Card(login));
-        pageTools.Children.Add(RefreshButton());
+    }
+
+    private void BuildStopSettings()
+    {
         var stop = Column(12); stop.Children.Add(Text("停止所有任务", 20, Ink, true)); stop.Children.Add(Text("停止后不再检测；保存的任务会在下次打开时加载。", 14, Muted));
         var button = Action("停止后台并退出"); button.Click += async (_, _) => await StopBackendAsync(); stop.Children.Add(button); content.Children.Add(Details("停止与退出", stop));
     }

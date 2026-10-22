@@ -11,7 +11,7 @@ public sealed partial class WorkbenchWindow
     private ProcessGroupEntry[] steamProcesses = [];
     private string? steamToolError;
 
-    private void BuildToolbox()
+    private void BuildSteamTool()
     {
         var body = Column(12); var heading = ToolHeading();
         heading.Children.Add(new Border { Width = 40, Height = 40, Background = BlueSoft, CornerRadius = new CornerRadius(10),
@@ -30,9 +30,6 @@ public sealed partial class WorkbenchWindow
         refresh.Click += async (_, _) => { if (busy) return; SetBusy(true); try { await RefreshSteamToolAsync(); await ReadGroupsAsync(); } finally { SetBusy(false); Render(); } };
         buttons.Children.Add(refresh); body.Children.Add(buttons); content.Children.Add(Card(body));
         ToolTipService.SetToolTip(headingText, "自动更新程序组，不改变已保存任务的名单。");
-        BuildTrayTool();
-        BuildBrightnessWheelTool();
-        BuildHostsTool();
     }
     private static string SteamStatusText(SteamToolSnapshot snapshot) => snapshot.Scanning ? "正在后台检查，刷新状态可查看最新结果。" :
         snapshot.LastScanUtc is null ? "尚未检查，开启自动更新或点击立即检查更新。" :

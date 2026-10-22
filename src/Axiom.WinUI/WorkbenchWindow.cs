@@ -301,7 +301,7 @@ public sealed partial class WorkbenchWindow : Window
         button.Click += async (_, _) =>
         {
             if (busy || !await ConfirmDiscardAsync()) return;
-            editing = false; groupEditing = false; page = target; pageScrollToTop = true; notice.IsOpen = false; Render(); await RefreshAsync();
+            editing = false; groupEditing = false; detailPage = null; page = target; pageScrollToTop = true; notice.IsOpen = false; Render(); await RefreshAsync();
         };
         navigation[target] = button; panel.Children.Add(button);
     }

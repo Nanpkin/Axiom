@@ -32,8 +32,7 @@ public sealed partial class WorkbenchWindow
         var saved = gameModePreset;
         var body = Column(12);
         var title = Column(5);
-        title.Children.Add(Text("游戏模式", 18, Ink, true));
-        title.Children.Add(Text("游戏期间减少后台监测，优先留出资源。", 13, Muted));
+        title.Children.Add(Text("开启方式", 14, Ink, true));
         var badge = new Border { Background = PaleAmber, CornerRadius = new CornerRadius(6),
             Padding = new Thickness(10, 5, 10, 5), VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right,
             Child = Text("配置预览 · 尚未生效", 12, Amber) };

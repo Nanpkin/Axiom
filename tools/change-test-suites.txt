@@ -1,2 +1,1 @@
-Axiom.Engine.Tests.ProcessGroupTests.GroupSelectionDeduplicatesAndDeselectingOneGroupKeepsOtherSelections
-Axiom.Engine.Tests.ProcessGroupTests.Full128ProcessGroupCanBeSelectedAndCompiledWithinExistingSharedWatchLimit
+Axiom.Engine.Tests.WorkbenchPresentationTests
