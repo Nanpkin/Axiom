@@ -9,7 +9,8 @@
 - 新模板默认新模式与0.5秒稳定；已有整数/小数期限、HDR外层暂停、Unknown及亮度恢复保护保持。
 - 相关11个唯一用例通过（含两个实际GPU合成用例），未跑全套。仅修具体失败后复查对应项；目录64KiB边界保持，未放宽约束。
 - CPU微诊断均值0.015–0.082ms/次、结果48字节；混合负载、非全进程/GPU预算，不宣称完整性能达标。只回读9220字节量化网格/计数，画面不保存，更新最多4Hz，无新轮询。
-- 统一构建、本机模式配置与一次新增行为验收待完成；详见[本批计划](../exec-plans/active/concentrated-bright-regions.md)、[ADR0011](../adr/0011-screen-content-brightness.md)。私有诊断artifacts/bright-regions-smoke。
+- 固定预览已正常更新/重启为0.1.0-local.20261022.1，干净源码38cf387；三角色来源/版本、后台连接和更新前原9任务指纹/托盘/启动设置核对保持。随后仅将现有画面任务切mode=regions、进入20/退出12，动作/渐变/稳定时间/HDR条件逐项保持；滚轮关闭、手动接管false。
+- 一次实际白块出现/消失分别收到条件设置确认/释放确认，新评分有正确变化，窗口已关闭。证据只在本机artifacts/bright-regions-smoke/live-scene.json；详见[完成记录](../exec-plans/completed/concentrated-bright-regions.md)与[ADR0011](../adr/0011-screen-content-brightness.md)，不外推全部桌面场景。
 
 ## 已有边界
 
