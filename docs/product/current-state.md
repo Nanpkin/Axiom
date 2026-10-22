@@ -25,5 +25,11 @@
 
 - 分支codex/compact-toolbox-settings。工具箱首页4个132×92逻辑像素图标/短名称入口，窄窗换行；点击进入原工具配置二级页。设置首页5个紧凑入口，外观/游戏模式/快捷键/登录启动/停止与退出按需进入，不铺大表单。
 - 二级页保留原操作与状态；返回和刷新同行，刷新保持位置，侧栏切换返回首页。新增CompactPages仅承载这两个页面共用的局部导航，不改变Host或监测。
-- WinUI Release零警告；WorkbenchPresentationTests 11项通过。独立开发UI实际检查9个入口及返回、宽/窄工具箱与设置，无配置写入或工具动作。截图仅本机artifacts/compact-ui-review，不提交。固定预览仍前批版本，未更新。
+- WinUI Release零警告；WorkbenchPresentationTests 11项通过。独立开发UI实际检查9个入口及返回、宽/窄工具箱与设置，无配置写入或工具动作。截图仅本机artifacts/compact-ui-review，不提交。固定预览已正常停止/更新/重启为0.1.0-local.20261023.2、干净da1ec61；两个原入口同步逐文件校验，三角色来源/版本、UI连接、原9任务指纹/托盘/登录启动保持。证据仅本机artifacts/compact-ui-review/lifecycle-verify.json。
 - 游戏模式仍仅保存UI预设，未接入自动检测/暂停/降频。修改监测前读[游戏模式约定](game-mode.md)，手动/自动优先级、共享订阅、Unknown和恢复保护保持。
+
+## 游戏模式策略审阅
+
+- 已只读审阅实时9任务、36检测/41动作及4工具，详见[策略矩阵](game-mode-policy-review.md)。私人逐任务报告只在本机artifacts/compact-ui-review/current-tasks-review.md，不提交。
+- 分A采集/处理资源与B执行效果干扰；首选暂停画面亮区→亮度恢复、跳过定时调光，保留游戏HDR与必要网络/语音/唤醒。既有手动暂停不自动启用；Command与.restore恢复不同。
+- 子agent独立核对41动作与恢复边界，修正一次调光不会因进入模式恢复的说明。77能力ID覆盖无遗漏，文档链接检查通过；纯文档不构建/不跑测试/不再发版。策略尚未接入，未改任何用户任务。
