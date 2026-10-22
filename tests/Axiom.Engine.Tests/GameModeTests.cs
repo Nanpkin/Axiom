@@ -10,6 +10,23 @@ namespace Axiom.Engine.Tests;
 [System.Runtime.Versioning.SupportedOSPlatform("windows")]
 public sealed class GameModeTests
 {
+    [Fact(Timeout=10000)]
+    public async Task CompleteProductionCompositionInitializesWithUniqueGameModeCombinations()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "axiom-game-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            using var activity = new AutomationFixture();
+            using var store = new SqliteAutomationTaskStore(Path.Combine(dir, "tasks.db"));
+            await using var runtime = new PluginTaskRuntime(BuiltInAutomationPlugins.Create().Append(new TrayToolPlugin()),
+                store, "test-" + Guid.NewGuid().ToString("N"), activity.Engine, () => 42);
+            await runtime.InitializeAsync();
+            Assert.Single(runtime.Combinations.Where(c => c.DetectionId == GameModeCapabilities.State && c.ActionId == HostsCapabilities.Update));
+            Assert.False(runtime.ReadGameMode().Active);
+            await runtime.EnsureSafeToStopAsync(default);
+        }
+        finally { Directory.Delete(dir, true); }
+    }
     private static AutomationTask Rule() => new(Guid.NewGuid().ToString("D"),0,"game mode",false,
         new(GameModeCapabilities.State,1,ImmutableDictionary<string,string>.Empty.Add("state","on")),
         new("program.start",1,ProgramCapabilities.Describe(true).Fields.Where(f=>f.DefaultValue is not null).ToImmutableDictionary(f=>f.Id,f=>f.DefaultValue!).SetItem("executable", @"C:\Apps\synthetic.exe")));
