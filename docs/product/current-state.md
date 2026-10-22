@@ -6,8 +6,8 @@
 
 - codex/game-mode-condition：Host持久管理手动/按程序自动模式，复用Agent进程通知；设置二级页读写真实状态，原预设仅显式导入，不静默激活。UI退出仍工作，读取时状态按需刷新。
 - 新检测axiom.game-mode支持现有AND/OR/NOT与三值逻辑。首次/新建/重连不补Command；不自动改写任何用户任务。所有者明确两条定时亮度不受影响；逻辑组合不等于停止其他采集，不宣称性能收益。
-- 后台/启动握手6例、组合/编辑/原定时亮度3例、目录预算1例共10例通过；Host/WinUI Release零警告。目录新能力使极限摘要超预算，最终tier组合索引改按检测分组Rows，保留完整组合/参数及64KiB上限，原精确预算方法通过。
-- 本批尚待本机手动/合成进程进入退出与UI草稿保护验收、固定预览替换。计划[game-mode-condition](../exec-plans/active/game-mode-condition.md)，具体边界见[游戏模式](game-mode.md)；候选审阅不自动套到任务。
+- 后台/启动握手6例、组合/编辑/原定时亮度3例、目录预算1例共10例通过，随后生产初始化具体缺陷补1例通过（11个唯一用例）；Host/WinUI Release零警告。目录新能力使极限摘要超预算，最终tier组合索引改按检测分组Rows，保留完整组合/参数及64KiB上限，原精确预算方法通过。
+- 本机手动/合成进程自动进入退出、设置恢复及原9任务未变通过；UI刷新/返回draft保留、关闭确认通过。固定预览已正常更新为0.1.0-local.20261023.4、干净8f67a3c，两个原入口同步校验，三角色版本/连接/托盘/登录启动保持。生产重复Hosts组合导致启动失败已修，未强杀；证据仅本机artifacts/game-mode-smoke及compact-ui-review。见[完成记录](../exec-plans/completed/game-mode-condition.md)与[游戏模式](game-mode.md)。
 
 ## 已有交付与保持边界
 
