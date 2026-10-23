@@ -5,6 +5,7 @@
 ## 当前任务：亮度滚轮可用性与关闭交接
 
 - 已修复待本机发布：滚轮中间写入被合并时用本段已接受值checkpoint，不再强求每个中间终点；最终目标仍严格读回。关闭工具等待清理并恢复自动亮度，内部接管元数据变化不再使界面开关版本失效，真实配置冲突仍拒绝。BrightnessWheelTests共11例通过，含合并写入/末值失败/关闭成功与失败/旧界面版本；未重跑其他功能。
+- 修复38ee6ff已推送codex/brightness-wheel-repair；共享工作区另一批程序组改动不混入。隔离构建干净38ee6ff的0.1.0-local.20261023.9，包在隔离副本artifacts/package-stage，尚未替换固定预览.8。旧滚轮manual接管经正式接口解除；正常停止被在用HDR游戏保护拒绝，所有者选择“保持游戏，稍后更新”。不强杀、不模拟输入，实机快捷键/关闭后自动调节待游戏结束再验；本机证据artifacts/wheel-repair-smoke。
 
 - 分支codex/brightness-lease-handoff；f08bd19/8eabfea修复初始回执取消丢帧及租约交接：发帧后在原期限内读完，旧租约释放确认后才捕获下一轮基线；仍授权更新复用租约，旧代际不冒充当前成功。
 - ba8a249收紧settingGate：同步方法只操作租约状态，管道创建、Task调度、回执通知及状态发布放锁外；原子预留释放后再调度。真实命名管道及独立线程重新启用共5例通过；只跑WindowsConditionRestoreRuntimeTests。
