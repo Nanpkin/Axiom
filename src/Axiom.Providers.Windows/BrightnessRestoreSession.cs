@@ -140,13 +140,16 @@ internal sealed class BrightnessRestoreSession : IRestorableSettingSession
     }
     private async Task<BrightnessWheelGestureResult> RunWheelAsync(BrightnessWheelRequest wheel)
     {
-        if (wheel.Target != selection || Volatile.Read(ref terminal) != 0)
-            return new(false, wheel.FromSteps, "滚轮范围与当前租约不一致或租约正在恢复；未修改，也未改控其他屏幕。");
+        var inputToken = wheel.Token;
+        if (wheel.Target != selection)
+            return new(false, wheel.FromSteps, "滚轮范围与当前租约不一致；未修改，也未改控其他屏幕。");
+        BrightnessWheelGestureResult Closing() => new(true, wheel.LatestSteps(), "原场景正在结束或首次设置尚未确认；本次输入未修改亮度，不补放。监听继续，恢复完成后可再次滚动。");
+        if (Volatile.Read(ref terminal) != 0) return Closing();
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(wheel.Token, abandonStop.Token, captureStop.Token);
         wheel = wheel with { Token = lifetime.Token };
         await phase.WaitAsync(wheel.Token);
         if (Volatile.Read(ref terminal) != 0 || preferenceKey is null)
-        { phase.Release(); return new(false, wheel.FromSteps, "原场景已结束或首次设置尚未确认；本次手势未修改。"); }
+        { phase.Release(); return Closing(); }
         var receipt = new TaskCompletionSource<BrightnessWheelGestureResult>(TaskCreationOptions.RunContinuationsAsynchronously);
         var unused = new TaskCompletionSource<RestorableSettingResult>(TaskCreationOptions.RunContinuationsAsynchronously);
         Volatile.Write(ref manualCancellation, lifetime);
@@ -155,7 +158,9 @@ internal sealed class BrightnessRestoreSession : IRestorableSettingSession
             if (Volatile.Read(ref terminal) != 0) lifetime.Cancel();
             if (!requests.Writer.TryWrite(new(null, fade, wheel.Token, unused, wheel, receipt)))
             { phase.Release(); return new(false, wheel.FromSteps, "亮度租约已结束；未修改。"); }
-            return await receipt.Task.WaitAsync(wheel.Token);
+            // A condition exit cancels the native work, not the input subscription. Wait for
+            // its explicit stopped receipt; propagating that internal cancellation disables the tool.
+            return await receipt.Task.WaitAsync(inputToken);
         }
         finally { Interlocked.CompareExchange(ref manualCancellation, null, lifetime); }
     }
@@ -210,12 +215,14 @@ internal sealed class BrightnessRestoreSession : IRestorableSettingSession
                 if (request.Wheel is { } wheel)
                 {
                     BrightnessWheelGestureResult result = new(false, wheel.FromSteps, "场景调节未确认。");
+                    BrightnessWheelGestureResult SceneEnded() => new(true, wheel.LatestSteps(), "场景已结束，滚轮手势已取消；恢复原亮度由原租约处理，未宣称手势终点已到达。监听继续，不补放剩余输入。");
                     try
                     {
                         capture.UseToken(wheel.Token);
                         result = WindowsBrightnessWheelGesture.RunCaptured(capture, wheel.Step, wheel.SmoothMilliseconds, wheel.Frequency,
                             wheel.FromSteps, wheel.LatestSteps, wheel.Token, time, wait, retainBaseline: true);
-                        if (result.Success)
+                        if (wheel.Token.IsCancellationRequested && Volatile.Read(ref terminal) != 0) result = SceneEnded();
+                        else if (result.Success)
                         {
                             manualPercent = capture.Targets.Select(t => ToPercent(t, t.Transaction.Confirmed)).ToArray();
                             lock (preferenceGate)
@@ -231,6 +238,8 @@ internal sealed class BrightnessRestoreSession : IRestorableSettingSession
                             }
                         }
                     }
+                    catch (OperationCanceledException) when (Volatile.Read(ref terminal) != 0)
+                    { result = SceneEnded(); }
                     catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
                     { result = new(false, wheel.FromSteps, "场景手动调节取消或未确认；原基线保留，不补写或重抓基线。"); }
                     finally

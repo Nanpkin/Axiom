@@ -165,8 +165,11 @@ public sealed class BrightnessWheelTests
             await entered.Task;
             var release = session.ReleaseAsync(default);
             Assert.False(release.IsCompleted); Assert.Null(BrightnessNativeOwnership.TryAcquire());
+            var duringRelease = await BrightnessNativeOwnership.Coordinate(new("primary", 5, 500, 18, 3, () => 4, 0, default))!;
+            Assert.True(duringRelease.Success); Assert.Equal(4, duringRelease.ConsumedSteps); Assert.Contains("本次输入未修改", duringRelease.Reason);
             finish.Set();
-            try { Assert.False((await gesture).Success); } catch (OperationCanceledException) { }
+            var stopped = await gesture;
+            Assert.True(stopped.Success); Assert.Contains("场景已结束", stopped.Reason); Assert.Equal(3, stopped.ConsumedSteps);
             Assert.True((await release).Success); Assert.Equal(100u, current);
         }
         finally { finish.Set(); }
