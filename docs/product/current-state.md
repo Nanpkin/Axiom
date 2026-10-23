@@ -5,7 +5,8 @@
 ## 当前任务：进程组包含已有组
 
 - 新建/编辑组可折叠多选绑定已有组（含Steam自动组），按ID多层引用、成员去重，来源更新在读取时展开。循环/失效引用和被引用组删除拒绝；来源变更与所有父组容量同事务检查。规则/游戏模式已选名单仍独立，无轮询。
-- schema 3原库事务升级；直接成员和引用持久化，展开结果派生。ProcessGroupTests/SteamToolTests共17例通过，WinUI x64 Release零警告；本轮真实草稿选择/数量预览/未保存退出及正常关闭通过，未保存测试组或改用户配置。待提交及固定预览安全更新，沿[计划](../exec-plans/active/linked-process-groups.md)。
+- 058adcc已提交并推送codex/linked-process-groups；schema 3原库事务升级，直接成员和引用持久化，展开结果派生。ProcessGroupTests/SteamToolTests共17例通过，WinUI x64 Release零警告；真实草稿选择/数量预览/未保存退出及正常关闭通过，未保存测试组或改用户配置。
+- 本机安全停止返回“有游戏正在使用Axiom的HDR自动恢复”，已保留现场、未替换运行预览；本轮功能尚未应用到固定入口，待游戏正常退出后更新及核对来源/原配置。仅本机证据artifacts/linked-groups-smoke；沿[计划](../exec-plans/active/linked-process-groups.md)，不重验亮度。
 
 ## 当前任务：亮度滚轮可用性与关闭交接
 
