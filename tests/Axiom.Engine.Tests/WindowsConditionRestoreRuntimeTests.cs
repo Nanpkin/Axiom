@@ -15,10 +15,11 @@ namespace Axiom.Engine.Tests;
 public sealed class WindowsConditionRestoreRuntimeTests
 {
     [Theory(Timeout = 15000)]
-    [InlineData(false, true)]
-    [InlineData(true, true)]
-    [InlineData(true, false)]
-    public async Task CanceledInitialReplyIsDrainedAndNextGenerationWaitsForConfirmedRelease(bool partialReply, bool endCondition)
+    [InlineData(false, true, true)]
+    [InlineData(true, true, true)]
+    [InlineData(true, false, true)]
+    [InlineData(true, true, false)]
+    public async Task CanceledInitialReplyIsDrainedAndNextGenerationWaitsForConfirmedRelease(bool partialReply, bool endCondition, bool earlyNext)
     {
         var sid = "synthetic-handoff-" + Guid.NewGuid().ToString("N");
         var user = System.Security.Principal.WindowsIdentity.GetCurrent().User!.Value;
@@ -76,13 +77,17 @@ public sealed class WindowsConditionRestoreRuntimeTests
             await initialEntered.Task.WaitAsync(stop.Token);
             if (endCondition) runtime.SetDesiredAuthorization(key, 2, false);
             canceled.Cancel();
-            runtime.SetDesiredAuthorization(key, 3, true);
-            var applyingSecond = runtime.ApplyDesiredAsync(Desired(3), stop.Token).AsTask();
+            Task<Outcome>? applyingSecond = null;
+            if (earlyNext)
+            {
+                runtime.SetDesiredAuthorization(key, 3, true);
+                applyingSecond = runtime.ApplyDesiredAsync(Desired(3), stop.Token).AsTask();
+            }
             initialReply.TrySetResult();
             if (!endCondition)
             {
                 Assert.NotEqual(OutcomeStatus.Succeeded, (await applyingFirst).Status);
-                Assert.Equal(OutcomeStatus.Succeeded, (await applyingSecond).Status);
+                Assert.Equal(OutcomeStatus.Succeeded, (await applyingSecond!).Status);
                 Assert.False(secondAccepted.IsCompleted);
                 runtime.SetDesiredAuthorization(key, 4, false);
                 finishRelease.TrySetResult(); await servingFirst;
@@ -93,10 +98,21 @@ public sealed class WindowsConditionRestoreRuntimeTests
             await Task.WhenAny(releaseEntered.Task, servingFirst).WaitAsync(stop.Token);
             if (servingFirst.IsCompleted) await servingFirst;
             Assert.True(releaseEntered.Task.IsCompleted);
+            if (!earlyNext)
+            {
+                var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                new Thread(() =>
+                {
+                    try { runtime.SetDesiredAuthorization(key, 3, true); started.TrySetResult(); }
+                    catch (Exception error) { started.TrySetException(error); }
+                }) { IsBackground = true }.Start();
+                await started.Task.WaitAsync(TimeSpan.FromSeconds(2));
+                applyingSecond = runtime.ApplyDesiredAsync(Desired(3), stop.Token).AsTask();
+            }
             Assert.False(secondAccepted.IsCompleted);
             finishRelease.TrySetResult(); await servingFirst;
             Assert.NotEqual(OutcomeStatus.Succeeded, (await applyingFirst).Status);
-            Assert.Equal(OutcomeStatus.Succeeded, (await applyingSecond).Status);
+            Assert.Equal(OutcomeStatus.Succeeded, (await applyingSecond!).Status);
             runtime.SetDesiredAuthorization(key, 4, false);
             await servingSecond;
             await runtime.EnsureSafeToStopAsync(stop.Token);
