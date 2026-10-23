@@ -118,6 +118,8 @@ internal sealed partial class PluginTaskRuntime
             throw new IOException("亮度资源释放未确认，自动亮度仍保持接管；请刷新后重试关闭或恢复自动亮度。");
         await PersistWheelAsync(settings, false, token);
         wheelHandoffReady = false;
+        // Explicitly returning from manual control starts from the user's newly chosen brightness.
+        RebaseManuallyChosenBrightness();
         foreach (var key in BrightnessKeys().Append(WheelKey)) engine.ReleaseOverride(key, sid);
         wheelLastResult = "已恢复自动亮度；按当前有效规则重新判断，不回放旧动作。";
     }

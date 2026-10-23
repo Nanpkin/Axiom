@@ -268,6 +268,50 @@ public sealed class BrightnessFadeTests
     }
 
     [Fact(Timeout = 10000)]
+    public async Task FailedHardwareEndpointRestoresOriginalOnlyFromFreshAcceptedSegmentValues()
+    {
+        foreach (var outcome in new[] { "accepted", "external", "unknown", "refused" })
+        {
+            var clock = new ManualTimeProvider(); uint current = 100; var cleanup = false;
+            var writes = new List<uint>();
+            var session = await BrightnessRestoreSession.CreateAsync(_ =>
+            {
+                var target = new BrightnessRestoreTarget(100, p => (uint)p,
+                    () => cleanup && outcome == "unknown" ? null : current,
+                    value =>
+                    {
+                        writes.Add(value);
+                        if (value == 50)
+                        {
+                            if (outcome == "refused") return false;
+                            // Reproduce the live failure: Set accepts the last frame, but the
+                            // display remains at the preceding accepted value until cleanup.
+                            return true;
+                        }
+                        current = value; return true;
+                    }, hardwareBurst: true);
+                return new([target], 0, 0, _ => { }, () => { });
+            }, "primary", TimeSpan.FromSeconds(10), default, clock, (delay, _) => clock.Advance(delay));
+            try
+            {
+                var applied = await session.ApplyAsync(new Dictionary<string, string>
+                { ["target"] = "primary", ["percent"] = "50", ["fadeEnabled"] = "true", ["fadeDurationSeconds"] = "1", ["fadeWritesPerSecond"] = "60" }, default);
+                Assert.False(applied.Success); Assert.NotEqual(50u, current); Assert.NotEqual(100u, current);
+                if (outcome == "external") current = 7;
+                cleanup = true; var before = writes.Count;
+                var result = await session.ReleaseAsync(default);
+                if (outcome == "accepted")
+                {
+                    Assert.True(result.Success); Assert.Equal(100u, current);
+                    Assert.Contains("原亮度100%、最后读回100%", result.Reason);
+                }
+                else Assert.Equal(before, writes.Count);
+            }
+            finally { await session.DisposeAsync(); }
+        }
+    }
+
+    [Fact(Timeout = 10000)]
     public async Task FadeReleaseCompletesAfterExactBaselineConfirmationWithoutExtraReadsAndRejectsUnconfirmedEndpoint()
     {
         foreach (var unconfirmed in new[] { false, true })

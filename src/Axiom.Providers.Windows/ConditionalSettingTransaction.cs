@@ -32,11 +32,12 @@ internal sealed class ConditionalSettingTransaction<T>(T baseline, Func<T> read,
         if (Owned) interruptedFade = true;
         Relinquish();
     }
-    // Cleanup alone may resume an interrupted fade, after a fresh read proves that the
-    // fixed target still has a value actually written by this transition. Never guess.
+    // Cleanup may recover a canceled or unconfirmed hardware segment only after a fresh
+    // read proves the fixed target still has an accepted value from this finite segment.
     internal void ConfirmInterruptedFadeForRelease(CancellationToken token)
     {
-        if (!interruptedFade || released) return;
+        var incompleteHardware = UnconfirmedFailure && fadePending && fadeWriteAccepted && hardwareBurstValues.Count > 0;
+        if ((!interruptedFade && !incompleteHardware) || released) return;
         interruptedFade = false;
         try
         {

@@ -214,9 +214,18 @@ internal sealed partial class PluginTaskRuntime
     {
         lock (settingGate)
         {
-            if (settingAuthorizations.TryGetValue(key, out var current) && ReferenceEquals(current.Lease, lease)) current.Lease = null;
+            // A failed restoration is not a new baseline. Keep a completed failure marker so
+            // subsequent conditions cannot capture the partially dimmed value as the original.
+            if (lease.ReleaseConfirmed && settingAuthorizations.TryGetValue(key, out var current) && ReferenceEquals(current.Lease, lease)) current.Lease = null;
             settingLeases.Remove(lease);
         }
+    }
+    private void RebaseManuallyChosenBrightness()
+    {
+        lock (settingGate)
+            foreach (var pair in settingAuthorizations)
+                if (IsBrightness(pair.Key.CapabilityId) && pair.Value.Lease is { ReleaseConfirmed: false } failed && failed.Released.Task.IsCompleted)
+                    pair.Value.Lease = null;
     }
     private async Task MonitorSettingLeaseAsync(ResourceKey key, SettingLease lease)
     {

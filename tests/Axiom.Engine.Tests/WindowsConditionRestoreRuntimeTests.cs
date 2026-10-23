@@ -15,11 +15,12 @@ namespace Axiom.Engine.Tests;
 public sealed class WindowsConditionRestoreRuntimeTests
 {
     [Theory(Timeout = 15000)]
-    [InlineData(false, true, true)]
-    [InlineData(true, true, true)]
-    [InlineData(true, false, true)]
-    [InlineData(true, true, false)]
-    public async Task CanceledInitialReplyIsDrainedAndNextGenerationWaitsForConfirmedRelease(bool partialReply, bool endCondition, bool earlyNext)
+    [InlineData(false, true, true, true)]
+    [InlineData(true, true, true, true)]
+    [InlineData(true, false, true, true)]
+    [InlineData(true, true, false, true)]
+    [InlineData(true, true, true, false)]
+    public async Task CanceledInitialReplyIsDrainedAndNextGenerationWaitsForConfirmedRelease(bool partialReply, bool endCondition, bool earlyNext, bool releaseSucceeded)
     {
         var sid = "synthetic-handoff-" + Guid.NewGuid().ToString("N");
         var user = System.Security.Principal.WindowsIdentity.GetCurrent().User!.Value;
@@ -56,7 +57,7 @@ public sealed class WindowsConditionRestoreRuntimeTests
             }
             Assert.Equal("lease-setting-release", release.Type); Assert.Equal(endCondition ? 1 : 2, release.Sequence);
             releaseEntered.TrySetResult(); await finishRelease.Task.WaitAsync(stop.Token);
-            released = true; await Reply(first, release);
+            released = true; await Reply(first, release, releaseSucceeded);
         }
         async Task ServeSecond()
         {
@@ -67,8 +68,8 @@ public sealed class WindowsConditionRestoreRuntimeTests
             var release = await ProviderProtocol.ReadAsync(second, stop.Token);
             Assert.Equal("lease-setting-release", release.Type); await Reply(second, release);
         }
-        Task Reply(Stream pipe, ProviderMessage message) => ProviderProtocol.WriteAsync(pipe,
-            new(1, "lease-setting-result", message.RequestId, Sequence: message.Sequence, Status: OutcomeStatus.Succeeded, Reason: "synthetic confirmed"), stop.Token);
+        Task Reply(Stream pipe, ProviderMessage message, bool success = true) => ProviderProtocol.WriteAsync(pipe,
+            new(1, "lease-setting-result", message.RequestId, Sequence: message.Sequence, Status: success ? OutcomeStatus.Succeeded : OutcomeStatus.Failed, Reason: "synthetic confirmed"), stop.Token);
         var servingFirst = ServeFirst(); var servingSecond = ServeSecond();
         try
         {
@@ -112,6 +113,17 @@ public sealed class WindowsConditionRestoreRuntimeTests
             Assert.False(secondAccepted.IsCompleted);
             finishRelease.TrySetResult(); await servingFirst;
             Assert.NotEqual(OutcomeStatus.Succeeded, (await applyingFirst).Status);
+            if (!releaseSucceeded)
+            {
+                Assert.Equal(OutcomeStatus.Failed, (await applyingSecond!).Status);
+                for (var generation = 4; generation < 8; generation++)
+                {
+                    runtime.SetDesiredAuthorization(key, generation, true);
+                    Assert.Equal(OutcomeStatus.Failed, (await runtime.ApplyDesiredAsync(Desired(generation), stop.Token)).Status);
+                    Assert.False(secondAccepted.IsCompleted, "Failed restoration must never be replaced by a fresh baseline.");
+                }
+                return;
+            }
             Assert.Equal(OutcomeStatus.Succeeded, (await applyingSecond!).Status);
             runtime.SetDesiredAuthorization(key, 4, false);
             await servingSecond;
