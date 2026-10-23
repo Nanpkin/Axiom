@@ -8,6 +8,83 @@ namespace Axiom.Engine.Tests;
 public sealed class ProcessGroupTests
 {
     [Fact]
+    public void LinkedGroupsPersistUpdateTransitivelyAndRejectUnsafeGraphChanges()
+    {
+        var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".db");
+        try
+        {
+            string sourceId, parentId, grandId;
+            using (var store = new SqliteProcessGroupStore(path))
+            {
+                var source = store.Save(new(Guid.NewGuid().ToString("D"), 0, "源", [new("game.exe", "源名字")]));
+                var parent = store.Save(new(Guid.NewGuid().ToString("D"), 0, "父", [new("GAME.EXE", "自己的名字")],
+                    IncludedGroupIds: [source.Id.ToUpperInvariant(), source.Id]));
+                var grand = store.Save(new(Guid.NewGuid().ToString("D"), 0, "祖", [], IncludedGroupIds: [parent.Id]));
+                sourceId = source.Id; parentId = parent.Id; grandId = grand.Id;
+                Assert.Single(parent.IncludedGroupIds!); Assert.Equal("自己的名字", Assert.Single(parent.EffectiveEntries).DisplayName);
+                Assert.Throws<InvalidOperationException>(() => store.Delete(source.Id, source.Version));
+                Assert.Throws<ArgumentException>(() => store.Save(source with { IncludedGroupIds = [grand.Id] }));
+                Assert.Throws<ArgumentException>(() => store.Save(source with { IncludedGroupIds = [source.Id] }));
+                Assert.Throws<ArgumentException>(() => store.Save(source with { IncludedGroupIds = [Guid.NewGuid().ToString("D")] }));
+                source = store.Save(source with { Entries = [new("next.exe", "新程序")], ResolvedEntries = [new("fake.exe", "伪造")] });
+                Assert.Equal(2, source.Version);
+                Assert.Equal(1, store.Read().Single(g => g.Id == parent.Id).Version);
+            }
+            using (var store = new SqliteProcessGroupStore(path))
+            {
+                var groups = store.Read();
+                Assert.Equal(new[] { "game.exe", "next.exe" }, groups.Single(g => g.Id == grandId).EffectiveEntries.Select(e => e.ProcessName));
+                var parent = groups.Single(g => g.Id == parentId);
+                store.Save(parent with { IncludedGroupIds = [] });
+                var source = store.Read().Single(g => g.Id == sourceId); store.Delete(source.Id, source.Version);
+                Assert.Single(store.Read().Single(g => g.Id == grandId).EffectiveEntries);
+            }
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public void UpdatingSourceCannotOverflowParentOrCombinedExpandedQuotaAndRollsBack()
+    {
+        var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".db");
+        try
+        {
+            using var store = new SqliteProcessGroupStore(path);
+            ProcessGroupEntry[] Members(int count) => Enumerable.Range(0, count).Select(i => new ProcessGroupEntry($"g{i}.exe", $"程序{i}")).ToArray();
+            var source = store.Save(new(Guid.NewGuid().ToString("D"), 0, "源", Members(127)));
+            var parent = store.Save(new(Guid.NewGuid().ToString("D"), 0, "父", [new("extra.exe", "额外")], IncludedGroupIds: [source.Id]));
+            Assert.Throws<InvalidOperationException>(() => store.Save(source with { Entries = Members(128) }));
+            Assert.Equal(127, store.Read().Single(g => g.Id == source.Id).Entries.Length);
+            store.Save(parent with { Entries = [] });
+            store.Save(new(Guid.NewGuid().ToString("D"), 0, "父2", [], IncludedGroupIds: [source.Id]));
+            store.Save(new(Guid.NewGuid().ToString("D"), 0, "父3", [], IncludedGroupIds: [source.Id]));
+            store.Save(new(Guid.NewGuid().ToString("D"), 0, "额外", [new("extra.exe", "额外")]));
+            Assert.Throws<InvalidOperationException>(() => store.Save(source with { Entries = Members(128) }));
+            Assert.Equal(1, store.Read().Single(g => g.Id == source.Id).Version);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public void SchemaTwoGroupsMigrateInPlaceWithNoReferences()
+    {
+        var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".db");
+        try
+        {
+            using (var connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={path};Pooling=False"))
+            {
+                connection.Open(); using var command = connection.CreateCommand();
+                command.CommandText = "CREATE TABLE process_groups(id TEXT PRIMARY KEY, version INTEGER NOT NULL, name TEXT NOT NULL, entries TEXT NOT NULL); INSERT INTO process_groups VALUES($id,7,'旧组','[]'); PRAGMA user_version=2;";
+                command.Parameters.AddWithValue("$id", Guid.NewGuid().ToString("D")); command.ExecuteNonQuery();
+            }
+            using var store = new SqliteProcessGroupStore(path);
+            var group = Assert.Single(store.Read()); Assert.Equal(7, group.Version); Assert.Empty(group.IncludedGroupIds!);
+            Assert.Empty(store.Save(group with { Name = "仍可保存" }).EffectiveEntries);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
     public void EditingExistingHdrTaskPreservesBothProcessesWithoutDirtyingOrChangingIdentity()
     {
         var task = GameHdrTasks.FromLegacy(new(Guid.NewGuid().ToString("D"), 3, "HDR 游戏", "yuanshen.exe", "screen", true, false, "yuanshen.exe\nre4.exe"));

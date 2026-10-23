@@ -103,6 +103,26 @@ public sealed class SteamToolTests
         Assert.NotNull(result.Error); Assert.Null(result.LastSuccessUtc); Assert.Equal(1, result.DetectedCount); Assert.Equal(32, manager.ReadGroups().Length); Assert.Null(result.GroupId);
     }
     [Fact]
+    public async Task LinkedParentTracksSteamUpdatesAndOverflowPreservesOriginalGroup()
+    {
+        using var f = new Fixture();
+        var names = new[] { "one.exe" };
+        using var manager = new SteamToolManager(f.Store, (_, _) => Task.FromResult(Scan(names)));
+        await manager.SaveAsync(new(0, true, []), default);
+        var steam = Assert.Single(manager.ReadGroups());
+        var parent = f.Store.Save(new(Guid.NewGuid().ToString("D"), 0, "父", [new("extra.exe", "额外")], IncludedGroupIds: [steam.Id]));
+        names = ["two.exe"];
+        Assert.Null((await manager.ScanAsync(true, true, default)).Error);
+        Assert.Equal(new[] { "extra.exe", "two.exe" }, manager.ReadGroups().Single(g => g.Id == parent.Id).EffectiveEntries.Select(e => e.ProcessName));
+        var previousSteam = manager.ReadGroups().Single(g => g.Id == steam.Id);
+        names = Enumerable.Range(0, 128).Select(i => $"game{i}.exe").ToArray();
+        var failed = await manager.ScanAsync(true, true, default);
+        Assert.NotNull(failed.Error); Assert.Equal(128, failed.DetectedCount);
+        AssertSameGroup(previousSteam, manager.ReadGroups().Single(g => g.Id == steam.Id));
+        Assert.Equal(parent.Version, manager.ReadGroups().Single(g => g.Id == parent.Id).Version);
+        Assert.Equal(new[] { "extra.exe", "two.exe" }, manager.ReadGroups().Single(g => g.Id == parent.Id).EffectiveEntries.Select(e => e.ProcessName));
+    }
+    [Fact]
     public void ToolProtocolRejectsCrossOperationFieldsAndInvalidExclusions()
     {
         var now = DateTimeOffset.UtcNow; var read = new AutomationMessage(1, "read-steam-tool", "test", DeadlineUtc: now.AddSeconds(10));

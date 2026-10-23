@@ -12,7 +12,8 @@ public sealed partial class WorkbenchWindow
     private string groupSearch = "";
     private ProcessGroup? groupOriginal, groupDraft;
     private bool GroupDirty => groupDraft is not null && (groupOriginal is null || groupOriginal.Name != groupDraft.Name ||
-        !groupOriginal.Entries.SequenceEqual(groupDraft.Entries));
+        !groupOriginal.Entries.SequenceEqual(groupDraft.Entries) ||
+        !(groupOriginal.IncludedGroupIds ?? []).SequenceEqual(groupDraft.IncludedGroupIds ?? []));
 
     private UIElement BuildProcessPicker(string? value, Action<string> changed, bool includeGroups = true, bool executablePaths = false, bool currentTray = false)
     {
@@ -25,7 +26,7 @@ public sealed partial class WorkbenchWindow
         {
             count.Text = $"已选择 {selection.Names.Count} 个程序";
             selected.Children.Clear();
-            if (selection.Names.Count == 0) selected.Children.Add(Text(currentTray ? "从当前托盘勾选程序，或手动添加完整路径。" : executablePaths ? "批量输入完整路径，或多选程序文件。" : "从组中选择，或添加程序文件。", 12, Muted));
+            if (selection.Names.Count == 0) selected.Children.Add(Text(currentTray ? "从当前托盘勾选程序，或手动添加完整路径。" : executablePaths ? "批量输入完整路径，或多选程序文件。" : includeGroups ? "从组中选择，或添加程序文件。" : "批量输入程序名称，或选择程序文件。", 12, Muted));
             foreach (var item in selection.Names.ToArray())
             {
                 var row = Row(10); var remove = Action("移除"); remove.MinHeight = 28; remove.Padding = new Thickness(9, 3, 9, 3);
@@ -50,9 +51,9 @@ public sealed partial class WorkbenchWindow
             groupPicker.SelectionChanged += (_, _) =>
             {
                 options.Children.Clear(); checks.Clear(); var group = groupPicker.SelectedItem as ProcessGroup;
-                all.IsEnabled = clear.IsEnabled = group is not null && group.Entries.Length > 0;
+                all.IsEnabled = clear.IsEnabled = group is not null && group.EffectiveEntries.Length > 0;
                 if (group is null) return;
-                foreach (var entry in group.Entries)
+                foreach (var entry in group.EffectiveEntries)
                 {
                     var checkbox = new CheckBox { Content = entry.DisplayName == entry.ProcessName ? entry.ProcessName : $"{entry.DisplayName} · {entry.ProcessName}",
                         IsChecked = selection.Contains(entry.ProcessName) };
@@ -61,8 +62,8 @@ public sealed partial class WorkbenchWindow
                     checks[entry.ProcessName] = checkbox; options.Children.Add(checkbox);
                 }
             };
-            all.Click += (_, _) => { if (groupPicker.SelectedItem is ProcessGroup group) Set(group.Entries.Select(x => x.ProcessName).ToArray(), true); };
-            clear.Click += (_, _) => { if (groupPicker.SelectedItem is ProcessGroup group) Set(group.Entries.Select(x => x.ProcessName).ToArray(), false); };
+            all.Click += (_, _) => { if (groupPicker.SelectedItem is ProcessGroup group) Set(group.EffectiveEntries.Select(x => x.ProcessName).ToArray(), true); };
+            clear.Click += (_, _) => { if (groupPicker.SelectedItem is ProcessGroup group) Set(group.EffectiveEntries.Select(x => x.ProcessName).ToArray(), false); };
             panel.Children.Add(groupPicker); panel.Children.Add(actions);
             panel.Children.Add(new ScrollViewer { Content = options, MaxHeight = 230, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
             if (processGroups.Length == 0) panel.Children.Add(Text(groupsError ?? "还没有进程组。在左侧‘组’中创建，或先手动添加。", 12, Muted));
@@ -120,12 +121,59 @@ public sealed partial class WorkbenchWindow
             content.Children.Add(back);
             var name = new TextBox { Header = "组名称", MaxLength = 80, PlaceholderText = "例如 HDR 游戏、常用工具", Text = groupDraft.Name };
             name.TextChanged += (_, _) => groupDraft = groupDraft! with { Name = name.Text }; content.Children.Add(name);
+            var memberSummary = Text("", 12, Muted);
+            void UpdateMemberSummary()
+            {
+                try
+                {
+                    var resolved = PreviewGroup(groupDraft!);
+                    memberSummary.Text = $"共 {resolved.EffectiveEntries.Length} 个程序 · 直接添加 {groupDraft!.Entries.Length} 个 · 绑定 {(groupDraft.IncludedGroupIds ?? []).Length} 个组（重复程序自动合并）";
+                    memberSummary.Foreground = Muted;
+                }
+                catch (Exception error) when (error is ArgumentException or InvalidOperationException)
+                { memberSummary.Text = error.Message; memberSummary.Foreground = Amber; }
+            }
+            content.Children.Add(Text("直接添加的程序", 14, Ink, true));
             content.Children.Add(Card(BuildProcessPicker(string.Join("\n", groupDraft.Entries.Select(x => x.ProcessName)), value =>
             {
                 var old = groupDraft!.Entries;
                 groupDraft = groupDraft with { Entries = [.. ProcessGroups.SplitNames(value).Select(x =>
                     old.FirstOrDefault(e => e.ProcessName.Equals(x, StringComparison.OrdinalIgnoreCase)) ?? new ProcessGroupEntry(x, x))] };
+                UpdateMemberSummary();
             }, false)));
+            var bindings = Column(4);
+            bindings.Children.Add(Text("来源组新增或移除程序时，本组自动同步。已有任务和游戏模式的程序名单仍独立保存。", 12, Muted));
+            foreach (var candidate in processGroups.Where(x => x.Id != groupDraft.Id))
+            {
+                var checkbox = new CheckBox { Content = candidate.Name + (candidate.AutoManaged ? " · Steam 自动整理" : ""),
+                    IsChecked = (groupDraft.IncludedGroupIds ?? []).Contains(candidate.Id, StringComparer.OrdinalIgnoreCase) };
+                bool IncludesDraft(string id, HashSet<string> visited)
+                {
+                    if (id.Equals(groupDraft!.Id, StringComparison.OrdinalIgnoreCase)) return true;
+                    if (!visited.Add(id)) return false;
+                    return (processGroups.FirstOrDefault(x => x.Id.Equals(id, StringComparison.OrdinalIgnoreCase))?.IncludedGroupIds ?? [])
+                        .Any(child => IncludesDraft(child, visited));
+                }
+                if (IncludesDraft(candidate.Id, new(StringComparer.OrdinalIgnoreCase)) && checkbox.IsChecked != true)
+                {
+                    checkbox.IsEnabled = false;
+                    ToolTipService.SetToolTip(checkbox, "此组已包含当前组，不能循环绑定。");
+                }
+                void UpdateBinding()
+                {
+                    var ids = (groupDraft!.IncludedGroupIds ?? []).Where(id => !id.Equals(candidate.Id, StringComparison.OrdinalIgnoreCase));
+                    groupDraft = groupDraft with { IncludedGroupIds = checkbox.IsChecked == true ? [.. ids, candidate.Id] : [.. ids] };
+                    UpdateMemberSummary();
+                }
+                checkbox.Checked += (_, _) => UpdateBinding();
+                checkbox.Unchecked += (_, _) => UpdateBinding();
+                bindings.Children.Add(checkbox);
+            }
+            if (processGroups.All(x => x.Id == groupDraft.Id)) bindings.Children.Add(Text("暂无其他进程组，创建后可回来绑定。", 12, Muted));
+            content.Children.Add(new Expander { Header = "绑定其他进程组", HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch, IsExpanded = (groupDraft.IncludedGroupIds ?? []).Length > 0,
+                Content = new ScrollViewer { Content = bindings, MaxHeight = 260, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } });
+            content.Children.Add(memberSummary); UpdateMemberSummary();
             var save = Action("保存程序组", true); save.Click += async (_, _) => await SaveGroupAsync(groupDraft!, true);
             footer.Children.Add(save);
             var cancel = Action("取消"); cancel.Click += async (_, _) => { if (await ConfirmDiscardAsync()) { groupEditing = false; Render(); } }; footer.Children.Add(cancel);
@@ -133,7 +181,7 @@ public sealed partial class WorkbenchWindow
             {
                 var delete = Action("删除组"); delete.Click += async (_, _) =>
                 {
-                    if (!await ConfirmAsync("删除这个进程组？", "已有任务中的程序名单会保留。", "删除")) return;
+                    if (!await ConfirmAsync("删除这个进程组？", "已有任务中的程序名单会保留；被其他组绑定时，请先解除绑定。", "删除")) return;
                     SetBusy(true);
                     try
                     {
@@ -171,8 +219,8 @@ public sealed partial class WorkbenchWindow
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 row.Children.Add(CategoryTile("程序"));
                 var body = Column(4); body.Children.Add(Preview(group.Name, 16, Ink, true));
-                body.Children.Add(Preview($"{group.Entries.Length} 个程序" + (group.AutoManaged ? " · Steam 自动整理" : "") +
-                    (group.Entries.Length == 0 ? "" : " · " + string.Join("、", group.Entries.Take(3).Select(x => x.DisplayName))), 12, Muted));
+                body.Children.Add(Preview($"{group.EffectiveEntries.Length} 个程序" + ((group.IncludedGroupIds ?? []).Length > 0 ? $" · 绑定 {group.IncludedGroupIds!.Length} 个组" : "") + (group.AutoManaged ? " · Steam 自动整理" : "") +
+                    (group.EffectiveEntries.Length == 0 ? "" : " · " + string.Join("、", group.EffectiveEntries.Take(3).Select(x => x.DisplayName))), 12, Muted));
                 Grid.SetColumn(body, 1); row.Children.Add(body);
                 var edit = Action(group.AutoManaged ? "工具设置" : "编辑");
                 Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(edit, (group.AutoManaged ? "工具设置 " : "编辑组 ") + group.Name);
@@ -199,6 +247,8 @@ public sealed partial class WorkbenchWindow
         SetBusy(true);
         try
         {
+            ProcessGroups.Normalize(group);
+            PreviewGroup(group);
             var response = await WorkbenchClient.RequestAsync(new(1, "save-group", Guid.NewGuid().ToString("N"), Group: group));
             if (response.Type != "groups" || response.Groups is null) throw new InvalidOperationException(response.Error ?? "保存未确认。");
             processGroups = response.Groups; groupsError = null;
@@ -207,6 +257,11 @@ public sealed partial class WorkbenchWindow
         }
         catch (Exception error) { ShowNotice(error.Message); return false; }
         finally { SetBusy(false); }
+    }
+    private ProcessGroup PreviewGroup(ProcessGroup group)
+    {
+        var preview = group with { Name = string.IsNullOrWhiteSpace(group.Name) ? "未命名组 " + group.Id : group.Name, ResolvedEntries = null };
+        return ProcessGroups.Resolve([.. processGroups.Where(x => x.Id != group.Id), preview]).Single(x => x.Id == group.Id);
     }
     private async Task ReadGroupsAsync()
     {
