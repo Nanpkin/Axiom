@@ -133,8 +133,12 @@ internal sealed partial class PluginTaskRuntime
                 return new(receipt.Status!.Value, receipt.Reason!, id, FailureKind.Permanent);
             }
             lock (settingGate)
-                if (!settingAuthorizations.TryGetValue(desired.Key, out var current) || !current.Authorized || current.Generation != desired.Generation || !ReferenceEquals(current.Lease, lease))
+            {
+                if (!settingAuthorizations.TryGetValue(desired.Key, out var current) || !current.Authorized || !ReferenceEquals(current.Lease, lease))
                     throw new OperationCanceledException("设置条件已结束。");
+                if (current.Generation != desired.Generation)
+                    return new(OutcomeStatus.Rejected, "设置代际已变化；原租约供当前代际更新，不将旧回执报告为当前结果。", id);
+            }
             Record("条件设置已确认", receipt.Reason!, ActivityLevel.Success);
             return new(OutcomeStatus.Succeeded, receipt.Reason!, id);
         }

@@ -15,9 +15,10 @@ namespace Axiom.Engine.Tests;
 public sealed class WindowsConditionRestoreRuntimeTests
 {
     [Theory(Timeout = 15000)]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task CanceledInitialReplyIsDrainedAndNextGenerationWaitsForConfirmedRelease(bool partialReply)
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    public async Task CanceledInitialReplyIsDrainedAndNextGenerationWaitsForConfirmedRelease(bool partialReply, bool endCondition)
     {
         var sid = "synthetic-handoff-" + Guid.NewGuid().ToString("N");
         var user = System.Security.Principal.WindowsIdentity.GetCurrent().User!.Value;
@@ -47,7 +48,12 @@ public sealed class WindowsConditionRestoreRuntimeTests
             initialEntered.TrySetResult(); await initialReply.Task.WaitAsync(stop.Token);
             await first.WriteAsync(bytes.AsMemory(partialReply ? 8 : 0), stop.Token);
             var release = await ProviderProtocol.ReadAsync(first, stop.Token);
-            Assert.Equal("lease-setting-release", release.Type); Assert.Equal(1, release.Sequence);
+            if (!endCondition)
+            {
+                Assert.Equal("lease-setting-update", release.Type); await Reply(first, release);
+                release = await ProviderProtocol.ReadAsync(first, stop.Token);
+            }
+            Assert.Equal("lease-setting-release", release.Type); Assert.Equal(endCondition ? 1 : 2, release.Sequence);
             releaseEntered.TrySetResult(); await finishRelease.Task.WaitAsync(stop.Token);
             released = true; await Reply(first, release);
         }
@@ -68,10 +74,21 @@ public sealed class WindowsConditionRestoreRuntimeTests
             runtime.SetDesiredAuthorization(key, 1, true);
             var applyingFirst = runtime.ApplyDesiredAsync(Desired(1), canceled.Token).AsTask();
             await initialEntered.Task.WaitAsync(stop.Token);
-            runtime.SetDesiredAuthorization(key, 2, false); canceled.Cancel();
+            if (endCondition) runtime.SetDesiredAuthorization(key, 2, false);
+            canceled.Cancel();
             runtime.SetDesiredAuthorization(key, 3, true);
             var applyingSecond = runtime.ApplyDesiredAsync(Desired(3), stop.Token).AsTask();
             initialReply.TrySetResult();
+            if (!endCondition)
+            {
+                Assert.NotEqual(OutcomeStatus.Succeeded, (await applyingFirst).Status);
+                Assert.Equal(OutcomeStatus.Succeeded, (await applyingSecond).Status);
+                Assert.False(secondAccepted.IsCompleted);
+                runtime.SetDesiredAuthorization(key, 4, false);
+                finishRelease.TrySetResult(); await servingFirst;
+                await runtime.EnsureSafeToStopAsync(stop.Token);
+                return;
+            }
             // Await either the requested release or the pipe server's concrete framing failure.
             await Task.WhenAny(releaseEntered.Task, servingFirst).WaitAsync(stop.Token);
             if (servingFirst.IsCompleted) await servingFirst;
