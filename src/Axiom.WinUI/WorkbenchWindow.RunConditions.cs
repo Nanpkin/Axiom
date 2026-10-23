@@ -1,4 +1,4 @@
-using System.Collections.Immutable;
+﻿using System.Collections.Immutable;
 using Axiom.Contracts;
 using Axiom.Domain;
 using Microsoft.UI.Xaml;
@@ -75,7 +75,7 @@ public sealed partial class WorkbenchWindow
 
     private void SyncRunStatesWatch()
     {
-        var needed = !closed && reachable && page == Page.Rules && !editing && status?.RunConditionsVersion >= 1;
+        var needed = !closed && !hidden && reachable && page == Page.Rules && !editing && status?.RunConditionsVersion >= 1;
         if (!needed)
         {
             StopRunStatesWatch(); return;

@@ -58,6 +58,7 @@ public sealed partial class WorkbenchWindow : Window
     private Page page = Page.Rules;
     private readonly TaskEditorState editor = new();
     private bool editing, loaded, busy, closed, reachable, closingConfirmed, confirmingClose, renderQueued;
+    private bool hidden;
     private DateTimeOffset? readAt;
 
     public WorkbenchWindow()
@@ -73,15 +74,37 @@ public sealed partial class WorkbenchWindow : Window
             if (closingConfirmed) return;
             if (busy) { args.Cancel = true; return; }
             if (activeDialog is not null) { args.Cancel = true; activeDialog.Hide(); return; }
-            if (!Dirty && !GameModeDirty) return;
+            if (!Dirty && !GameModeDirty) { args.Cancel = true; HideWorkbench(); return; }
             args.Cancel = true;
             if (confirmingClose) return;
             confirmingClose = true;
-            try { if (await (GameModeDirty ? ConfirmAsync("放弃未保存的更改并关闭？", "游戏模式及其他尚未保存的输入将丢失，已保存的配置不变。", "放弃并关闭") : ConfirmDiscardAsync())) { closingConfirmed = true; Close(); } }
+            try { if (await (GameModeDirty ? ConfirmAsync("放弃未保存的更改并关闭？", "游戏模式及其他尚未保存的输入将丢失，已保存的配置不变。", "放弃并关闭") : ConfirmDiscardAsync())) { editing = false; groupEditing = false; gameModeDraft = gameMode?.Settings; page = Page.Rules; Render(); HideWorkbench(); } }
             finally { confirmingClose = false; }
         };
-        Activated += async (_, _) => { if (loaded) return; loaded = true; await RefreshAsync(); };
+        Activated += async (_, args) => {
+            if (args.WindowActivationState == WindowActivationState.Deactivated || (loaded && !hidden)) return;
+            loaded = true; hidden = false;
+            var area = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary).WorkArea;
+            AppWindow.Move(new PointInt32(area.X + (area.Width - AppWindow.Size.Width) / 2, area.Y + (area.Height - AppWindow.Size.Height) / 2));
+            if (new Windows.UI.ViewManagement.UISettings().AnimationsEnabled) {
+                var visual = Microsoft.UI.Xaml.Hosting.ElementCompositionPreview.GetElementVisual(shell);
+                var fade = visual.Compositor.CreateScalarKeyFrameAnimation();
+                fade.InsertKeyFrame(0, 0); fade.InsertKeyFrame(1, 1);
+                fade.Duration = TimeSpan.FromMilliseconds(160);
+                visual.StartAnimation("Opacity", fade);
+            }
+            await RefreshAsync();
+        };
         Render();
+    }
+
+    private void HideWorkbench()
+    {
+        hidden = true;
+        pendingUsageLease?.Dispose(); pendingUsageLease = null;
+        usageLease?.Dispose(); usageLease = null;
+        StopRunStatesWatch();
+        AppWindow.Hide();
     }
 
     private bool Dirty => editing && editor.Dirty || groupEditing && GroupDirty;

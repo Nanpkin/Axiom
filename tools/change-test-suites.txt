@@ -1,2 +1,1 @@
-Axiom.Engine.Tests.ProcessGroupTests
-Axiom.Engine.Tests.SteamToolTests
+Axiom.Engine.Tests.KeyboardShortcutTests
