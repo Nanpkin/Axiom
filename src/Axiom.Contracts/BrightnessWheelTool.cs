@@ -7,7 +7,8 @@ namespace Axiom.Contracts;
 
 public sealed record BrightnessWheelSettings(long Version = 0, bool Enabled = false,
     ShortcutModifiers Modifiers = ShortcutModifiers.Control | ShortcutModifiers.Alt, string Key = "",
-    string Target = "primary", int Step = 2, int SmoothMilliseconds = 150, int WritesPerSecond = 18, bool ImmediateResponse = true);
+    string Target = "primary", int Step = 2, int SmoothMilliseconds = 150, int WritesPerSecond = 18, bool ImmediateResponse = true,
+    bool CoordinateAutomatic = true, int PreferenceMinutes = 30);
 public sealed record BrightnessWheelSnapshot(BrightnessWheelSettings Settings, string State,
     bool Listening = false, bool ManualTakenOver = false, bool Running = false, string? LastResult = null);
 
@@ -21,8 +22,8 @@ public static class BrightnessWheelTool
     {
         if (settings.Version < 0 || settings.Modifiers == ShortcutModifiers.None || (settings.Modifiers & ~(ShortcutModifiers)15) != 0 ||
             settings.Key is null || settings.Key != "" && !HotkeyCapabilities.Keys.Contains(settings.Key) || settings.Target is not ("primary" or "all") ||
-            settings.Step is < 1 or > 20 || settings.SmoothMilliseconds is < 50 or > 1000 || settings.WritesPerSecond is < 1 or > 60)
-            throw new ArgumentException("请选择修饰键和可选主键；每格1–20百分点、平滑50–1000毫秒、频率1–60次/秒。");
+            settings.Step is < 1 or > 20 || settings.SmoothMilliseconds is < 50 or > 1000 || settings.WritesPerSecond is < 1 or > 60 || settings.PreferenceMinutes is < 0 or > 240)
+            throw new ArgumentException("请选择修饰键和可选主键；每格1–20百分点、平滑50–1000毫秒、频率1–60次/秒、偏好保留0–240分钟。");
     }
     public static TaskInvocation Gesture(string subscription, long fromSteps) => new(Command, 1,
         ImmutableDictionary<string, string>.Empty.Add("subscription", subscription).Add("fromSteps", fromSteps.ToString(CultureInfo.InvariantCulture)));

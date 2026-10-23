@@ -16,7 +16,7 @@ public static class WindowsBrightnessWheelGesture
     }
     internal static BrightnessWheelGestureResult RunCaptured(BrightnessRestoreCapture capture, int step, int smoothMilliseconds,
         int frequency, long fromSteps, Func<long> latestSteps, CancellationToken token, TimeProvider? clock = null,
-        Action<TimeSpan, CancellationToken>? wait = null)
+        Action<TimeSpan, CancellationToken>? wait = null, bool retainBaseline = false)
     {
         if (step is < 1 or > 20 || smoothMilliseconds is < 50 or > 1000 || frequency is < 1 or > 60) throw new ArgumentException("滚轮亮度参数无效。");
         var time = clock ?? TimeProvider.System; var start = time.GetTimestamp(); var consumed = fromSteps;
@@ -35,7 +35,8 @@ public static class WindowsBrightnessWheelGesture
         {
             var min = target.Map(0); var max = target.Map(100);
             if (!min.HasValue || !max.HasValue || max <= min) throw new IOException("亮度范围未知。");
-            return new Transition(target, ((double)target.Baseline - min.Value) * 100 / (max.Value - min.Value));
+            var initial = retainBaseline ? target.Transaction.Confirmed : target.Baseline;
+            return new Transition(target, ((double)initial - min.Value) * 100 / (max.Value - min.Value)) { Initial = initial, End = initial };
         }).ToArray();
         capture.UseToken(token);
         while (true)
@@ -140,7 +141,9 @@ public static class WindowsBrightnessWheelGesture
                     break;
                 }
             }
-            if (done && latestSteps() == consumed) return new(true, consumed, "滚轮亮度已严格确认；保持当下亮度，自动亮度仍由手动接管阻止。");
+            if (done && latestSteps() == consumed) return new(true, consumed, retainBaseline
+                ? "滚轮亮度已严格确认；保留场景修正与原亮度基线，自动检测继续。"
+                : "滚轮亮度已严格确认；保持当下亮度。");
             Wait(TimeSpan.FromMilliseconds(16));
         }
     }

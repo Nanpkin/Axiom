@@ -47,7 +47,9 @@ public sealed partial class WorkbenchWindow
         var refresh = Action("刷新结果"); refresh.IsEnabled = reachable;
         refresh.Click += async (_, _) => { if (busy) return; SetBusy(true); try { await ReadBrightnessWheelAsync(); } finally { SetBusy(false); Render(); } };
         actions.Children.Add(refresh); body.Children.Add(actions);
-        body.Children.Add(Help("命中组合键并滚动后才接管自动亮度。关闭工具会等待手势结束并恢复自动亮度；也可单独点击恢复按钮。关闭 Axiom 窗口后仍可使用。"));
+        body.Children.Add(Help(brightnessWheel?.Settings.CoordinateAutomatic != false
+            ? "滚轮修正当前降亮配置，不暂停自动检测。画面退出条件后恢复降亮前的原值；保留期内再次进入相同配置时沿用手动偏好。普通画面手动调节保留当前亮度，不强制100%。关闭窗口仍可使用。"
+            : "滚轮接管后暂停自动亮度；关闭工具或点击恢复自动亮度后解除。"));
         content.Children.Add(Card(body));
     }
 
@@ -106,6 +108,8 @@ public sealed partial class WorkbenchWindow
         var step = Number("每格调整（百分点，1–20）", original.Step);
         var smooth = Number("平滑时长（毫秒，50–1000）", original.SmoothMilliseconds);
         var writes = Number("写入请求上限（次/秒，1–60）", original.WritesPerSecond);
+        var coordinate = new ToggleSwitch { Header = "与自动亮度协调", IsOn = original.CoordinateAutomatic, OnContent = "修正场景，检测继续", OffContent = "手动接管，暂停自动" };
+        var memory = Number("相同降亮配置的偏好保留（分钟，0–240）", original.PreferenceMinutes);
         var inputMode = new ComboBox { Header = "滚轮输入方式", ItemsSource = new[] { "即时响应（鼠标滚轮）", "累计标准刻度（高精度滚轮 / 触控板）" },
             SelectedIndex = original.ImmediateResponse ? 0 : 1, HorizontalAlignment = HorizontalAlignment.Stretch };
         var body = Column(12); body.MaxWidth = 620;
@@ -116,7 +120,8 @@ public sealed partial class WorkbenchWindow
         body.Children.Add(Help("即时响应会让每条非零滚轮输入至少调整一次，不等攒满标准刻度；连续输入过于敏感时，改用累计标准刻度。大幅输入仍合并为相应步数。"));
         body.Children.Add(step); body.Children.Add(smooth); body.Children.Add(writes);
         body.Children.Add(Help("写入次数是后台亮度请求的上限，不是面板帧率；实际变化受显示器响应与亮度粒度影响。连续滚动由后台合并。"));
-        body.Children.Add(Text("滚轮调整会接管自动亮度；关闭工具后按当前规则恢复自动调节，不强制设为100%。关闭窗口不停止工具。", 12, Muted));
+        body.Children.Add(coordinate); body.Children.Add(memory);
+        body.Children.Add(Help("建议开启协调、保留30分钟：例如原100%自动降至50%，手动调至65%后本轮保持65%，退出仍恢复原100%。同配置和原基准的后续降亮可沿用65%；时长仅在下一轮检查，不会读着同一页面突然重置。0表示仅当前一轮。偏好不跨后台重启；不同降亮参数或原基准不共用。旧式接管模式仍可选。"));
         var error = Text("", 12, Amber); body.Children.Add(error);
         var editorPanel = new ContentControl { Content = body, HorizontalContentAlignment = HorizontalAlignment.Stretch };
         var resultUnknown = false;
@@ -140,7 +145,8 @@ public sealed partial class WorkbenchWindow
                         (shift.IsChecked == true ? ShortcutModifiers.Shift : 0) | (win.IsChecked == true ? ShortcutModifiers.Windows : 0);
                     if (key.SelectedItem is not string selectedKey || target.SelectedIndex < 0 || inputMode.SelectedIndex < 0) throw new ArgumentException("请选择主键、调整范围和滚轮输入方式。");
                     var proposed = new BrightnessWheelSettings(original.Version, enabled.IsOn, flags, selectedKey == "无主键" ? "" : selectedKey,
-                        target.SelectedIndex == 1 ? "all" : "primary", Parse(step, "每格调整"), Parse(smooth, "平滑时长"), Parse(writes, "写入请求上限"), inputMode.SelectedIndex == 0);
+                        target.SelectedIndex == 1 ? "all" : "primary", Parse(step, "每格调整"), Parse(smooth, "平滑时长"), Parse(writes, "写入请求上限"), inputMode.SelectedIndex == 0,
+                        coordinate.IsOn, Parse(memory, "偏好保留时长"));
                     BrightnessWheelTool.Validate(proposed);
                     SetBusy(true); editorPanel.IsEnabled = false; dialog.IsPrimaryButtonEnabled = false; dialog.IsSecondaryButtonEnabled = false; dialog.CloseButtonText = "请稍候";
                     var response = await WorkbenchClient.RequestAsync(new(1, "save-brightness-wheel", Guid.NewGuid().ToString("N"), WheelSettings: proposed));
@@ -167,6 +173,7 @@ public sealed partial class WorkbenchWindow
             {
                 original = brightnessWheel.Settings; enabled.IsOn = original.Enabled;
                 inputMode.SelectedIndex = original.ImmediateResponse ? 0 : 1;
+                coordinate.IsOn = original.CoordinateAutomatic; memory.Text = original.PreferenceMinutes.ToString(CultureInfo.InvariantCulture);
                 ctrl.IsChecked = original.Modifiers.HasFlag(ShortcutModifiers.Control); alt.IsChecked = original.Modifiers.HasFlag(ShortcutModifiers.Alt);
                 shift.IsChecked = original.Modifiers.HasFlag(ShortcutModifiers.Shift); win.IsChecked = original.Modifiers.HasFlag(ShortcutModifiers.Windows);
                 key.SelectedItem = original.Key.Length == 0 ? "无主键" : original.Key; target.SelectedIndex = original.Target == "all" ? 1 : 0;

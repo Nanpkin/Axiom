@@ -41,7 +41,7 @@ internal sealed partial class PluginTaskRuntime
     public BrightnessWheelSnapshot ReadBrightnessWheel()
     {
         lock (statusGate) return new(WheelSettings(), stopping ? "后台正在停止，未来滚轮写入已取消。" : wheelRunning ? "正在通过Engine调节亮度。" :
-            wheelListening ? wheelTakenOver ? "正在监听；自动亮度已由手动接管暂停。" : "正在监听，命中组合后才接管和调节。" : "尚未监听；请启用或检查后台连接。",
+            wheelListening ? wheelTakenOver ? "正在监听；自动亮度已由手动接管暂停。" : WheelSettings().CoordinateAutomatic ? "正在监听；滚轮修正当前降亮场景，自动检测继续。" : "正在监听，命中组合后才接管和调节。" : "尚未监听；请启用或检查后台连接。",
             wheelListening, wheelTakenOver, wheelRunning, wheelLastResult);
     }
     private ResourceKey[] BrightnessKeys() => new[]
@@ -88,7 +88,7 @@ internal sealed partial class PluginTaskRuntime
             if (stopping) throw new InvalidOperationException("后台正在停止，未启用滚轮工具。");
             if (!WheelVersionMatches(settings.Version)) throw new InvalidOperationException("亮度工具已在别处更改，请刷新后重试。");
             await StopWheelMonitorAsync(token);
-            if (!settings.Enabled && wheelTakenOver) await ResumeAutomaticBrightnessCoreAsync(settings, token);
+            if ((!settings.Enabled || settings.CoordinateAutomatic) && wheelTakenOver) await ResumeAutomaticBrightnessCoreAsync(settings, token);
             else await PersistWheelAsync(settings, wheelTakenOver, token);
             StartWheelMonitor(); return ReadBrightnessWheel();
         }
@@ -158,6 +158,8 @@ internal sealed partial class PluginTaskRuntime
                         if (steps != wheelConsumedSteps && !wheelRunning)
                         { wheelRunning = true; wheelWork = RunWheelCommandsAsync(id, token); }
                     }
+                    if (steps == 0 && wheelTakenOver && settings.CoordinateAutomatic)
+                        await ResumeAutomaticBrightnessCoreAsync(WheelSettings(), token);
                 }
             }
             catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
@@ -174,6 +176,13 @@ internal sealed partial class PluginTaskRuntime
     {
         if (wheelHandoffReady) return;
         foreach (var key in BrightnessKeys().Append(WheelKey)) if (!Authorize(sid, key, CapabilityOperation.Override).Allowed) throw new UnauthorizedAccessException();
+        if (WheelSettings().CoordinateAutomatic)
+        {
+            // Upgrade an existing persisted takeover only after native cleanup is confirmed.
+            if (wheelTakenOver) await ResumeAutomaticBrightnessCoreAsync(WheelSettings(), token);
+            wheelHandoffReady = true;
+            return;
+        }
         if (!wheelTakenOver) await PersistWheelAsync(WheelSettings(), true, token, runtimeOnly: true);
         using var pipe = Client(); await pipe.ConnectForUserAsync(2000, token);
         var id = Guid.NewGuid().ToString("N");
@@ -229,7 +238,7 @@ internal sealed partial class PluginTaskRuntime
         try
         {
             var gesture = BrightnessWheelTool.ValidateGesture(invocation);
-            if (!wheelTakenOver || !wheelHandoffReady || gesture.Subscription != wheelSubscription || gesture.FromSteps != wheelConsumedSteps)
+            if ((!wheelTakenOver && !WheelSettings().CoordinateAutomatic) || !wheelHandoffReady || gesture.Subscription != wheelSubscription || gesture.FromSteps != wheelConsumedSteps)
                 throw new UnauthorizedAccessException("手势没有有效的手动接管与监听授权。");
             using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(token, wheelCancel?.Token ?? new CancellationToken(true));
             lifetime.CancelAfter(command.Deadline - DateTimeOffset.UtcNow);

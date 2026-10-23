@@ -32,3 +32,9 @@ CPU复用visited/queue各一份；线性亮度≥0.60的四连通区域，保留
 静态画面可能因有限等待产生必要取消检查唤醒，开启采集不承诺接近零CPU。无其他有效消费者时，时段外或任务暂停无采集；HDR是否暂停由用户配置，外层事件订阅及下个时段期限单列。DXGI现有DuplicateOutput始终输出B8G8R8A8_UNORM（[官方说明](https://learn.microsoft.com/en-us/windows/win32/direct3ddxgi/desktop-dup-api)），HDR转换后的画面估计可能失真，不宣称HDR光度或nits准确。未增加高位深HDR采集路径。短测创建/稳定CPU、帧计数、动态场景与释放，记录混合负载局限；不外推完整产品/游戏/全部GPU预算通过。
 
 依据：[WGC与HDR格式](https://learn.microsoft.com/en-us/windows/apps/develop/media-authoring-processing/screen-capture)、[捕获边框权限](https://learn.microsoft.com/en-us/uwp/api/windows.graphics.capture.graphicscapturesession.isborderrequired)、[AcquireNextFrame取消限制](https://learn.microsoft.com/en-us/windows/win32/api/dxgi1_2/nf-dxgi1_2-idxgioutputduplication-acquirenextframe)、[ReleaseFrame性能建议](https://learn.microsoft.com/en-us/windows/win32/api/dxgi1_2/nf-dxgi1_2-idxgioutputduplication-releaseframe)。
+
+## 2026-10-24：滚轮与条件恢复协调
+
+默认协调模式不使用全局Engine覆盖来销毁自动租约。滚轮仍由Engine命令授权，Agent将请求提交给同范围的硬件亮度恢复租约，在其原工作线程串行处理；不存在并行原生写入。原基线固定不变；租约的目标回显表示有效配置（包含明确滚轮修正），不声称物理值仍等于原percent，执行说明给出实际读回。条件退出取消在途手势，依既有接受值核验恢复；未知/外部改变不覆盖、失败释放不能重抓基线。
+
+最多16组进程内偏好按规范排序的动作参数及各目标原基准匹配；0–240分钟只在新场景/配置初次匹配时检查，不在活动场景内定时重置。保留期内相同配置可以沿用手动值；不同基准不沿用。不持久化、不增加轮询，不宣称这是连续画面相似度或手机学习算法。无租约时走有限手动操作，保留实际手动值；旧式手动覆盖模式保留且须显式解除准入，迁移只在Agent确认后释放旧覆盖。详见[协调说明](../product/brightness-coordination.md)。

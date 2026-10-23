@@ -10,8 +10,10 @@ namespace Axiom.Providers.Windows;
 public static partial class WindowsHardwareBrightness
 {
     public static Task<BrightnessWheelGestureResult> RunWheelGestureAsync(string target, string sid, int step, int smoothMilliseconds,
-        int writesPerSecond, long fromSteps, Func<long> latestSteps, CancellationToken token)
+        int writesPerSecond, long fromSteps, Func<long> latestSteps, CancellationToken token, bool coordinateAutomatic = false, int preferenceMinutes = 30)
     {
+        if (coordinateAutomatic && BrightnessNativeOwnership.Coordinate(new(target, step, smoothMilliseconds, writesPerSecond,
+            fromSteps, latestSteps, preferenceMinutes, token)) is { } coordinated) return coordinated;
         var completion = new TaskCompletionSource<BrightnessWheelGestureResult>(TaskCreationOptions.RunContinuationsAsynchronously);
         new Thread(() =>
         {
@@ -20,7 +22,7 @@ public static partial class WindowsHardwareBrightness
             try
             {
                 token.ThrowIfCancellationRequested();
-                ownership = BrightnessNativeOwnership.TryAcquire(manualGesture: true) ?? throw new IOException("旧亮度原生工作尚未清理或没有手动授权。");
+                ownership = BrightnessNativeOwnership.TryAcquire(manualGesture: !coordinateAutomatic) ?? throw new IOException("旧亮度原生工作尚未清理或没有手动授权。");
                 capture = WindowsHardwareBrightness.Capture(target, sid, token, directVcp: true);
                 if (capture.Targets.Count == 0 || capture.Unknown != 0) throw new IOException("目标亮度未知；本次未修改。");
                 result = WindowsBrightnessWheelGesture.RunCaptured(capture, step, smoothMilliseconds, writesPerSecond, fromSteps, latestSteps, token);

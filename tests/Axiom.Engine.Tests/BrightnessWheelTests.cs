@@ -26,7 +26,8 @@ public sealed class BrightnessWheelTests
         AutomationProtocol.ValidateRequest(save with { Type = "read-brightness-wheel", WheelSettings = null }, now);
         AutomationProtocol.ValidateRequest(save with { Type = "resume-brightness-wheel", WheelSettings = null, ExpectedVersion = 1 }, now);
         foreach (var invalid in new[] { settings with { Step = 0 }, settings with { Step = 21 }, settings with { SmoothMilliseconds = 49 }, settings with { SmoothMilliseconds = 1001 },
-            settings with { WritesPerSecond = 0 }, settings with { WritesPerSecond = 61 }, settings with { Modifiers = ShortcutModifiers.None }, settings with { Key = "Unknown" }, settings with { Target = "device-id" } })
+            settings with { WritesPerSecond = 0 }, settings with { WritesPerSecond = 61 }, settings with { Modifiers = ShortcutModifiers.None }, settings with { Key = "Unknown" }, settings with { Target = "device-id" },
+            settings with { PreferenceMinutes = -1 }, settings with { PreferenceMinutes = 241 } })
             Assert.Throws<ArgumentException>(() => BrightnessWheelTool.Validate(invalid));
         foreach (var invalid in new[] { save with { Type = "read", WheelSettings = settings }, save with { ExpectedVersion = 1 }, save with { Bindings = [] },
             save with { TraySettings = new(0, false, "startup", []) }, save with { Wheel = new(settings, "forged") }, save with { StartupEnabled = true },
@@ -60,6 +61,7 @@ public sealed class BrightnessWheelTests
         await Task.Yield();
         var old = JsonSerializer.Deserialize<BrightnessWheelSettings>("{\"Version\":1}")!;
         Assert.True(old.ImmediateResponse);
+        Assert.True(old.CoordinateAutomatic); Assert.Equal(30, old.PreferenceMinutes);
         var immediate = new BrightnessWheelDelta(old.ImmediateResponse);
         foreach (var delta in new[] { 1, 30, 60, 90, 120, -1, -30, -60, -90, -120 })
             Assert.Equal(Math.Sign(delta), immediate.Add(delta));
@@ -72,6 +74,102 @@ public sealed class BrightnessWheelTests
         var oneSmallInput = immediate.Add(-30);
         var result = WindowsBrightnessWheelGesture.RunCaptured(capture, 2, 150, 18, 0, () => oneSmallInput, default, time, (delay, _) => time.Advance(delay));
         Assert.True(result.Success); Assert.Equal(78u, current); Assert.Equal(-1, result.ConsumedSteps);
+    }
+
+    [Fact(Timeout = 10000)]
+    public async Task CoordinatedWheelRetainsBaselineAndReusesOnlyMatchingUnexpiredPreference()
+    {
+        var time = new ManualTimeProvider(); uint current = 100; var context = Guid.NewGuid().ToString("N");
+        var parameters = new Dictionary<string, string> { ["percent"] = "50", ["target"] = "primary", ["context"] = context };
+        async Task<IRestorableSettingSession> Open() => await BrightnessRestoreSession.CreateAsync(_ =>
+            new([new(current, p => (uint)p, () => current, value => { current = value; return true; }, hardwareBurst: true)], 0, 0, _ => { }, () => { }),
+            "primary", TimeSpan.FromSeconds(5), default, time, (delay, _) => time.Advance(delay));
+        await using (var session = await Open())
+        {
+            Assert.True((await session.ApplyAsync(parameters, default)).Success); Assert.Equal(50u, current);
+            var wheel = await BrightnessNativeOwnership.Coordinate(new("primary", 5, 150, 18, 0, () => 3, 30, default))!;
+            Assert.True(wheel.Success); Assert.Equal(65u, current);
+            Assert.True((await session.ApplyAsync(parameters, default)).Success); Assert.Equal(65u, current);
+            // Expiry never fights a user who remains in this active scene.
+            time.Advance(TimeSpan.FromMinutes(31));
+            Assert.True((await session.ApplyAsync(parameters, default)).Success); Assert.Equal(65u, current);
+            Assert.True((await session.ReleaseAsync(default)).Success); Assert.Equal(100u, current);
+        }
+        await using (var expired = await Open())
+        {
+            Assert.True((await expired.ApplyAsync(parameters, default)).Success); Assert.Equal(50u, current);
+            Assert.True((await BrightnessNativeOwnership.Coordinate(new("primary", 5, 150, 18, 0, () => 3, 30, default))!).Success);
+            Assert.True((await expired.ReleaseAsync(default)).Success); Assert.Equal(100u, current);
+        }
+        for (var cycle = 0; cycle < 4; cycle++)
+        {
+            await using var repeated = await Open();
+            Assert.True((await repeated.ApplyAsync(parameters, default)).Success); Assert.Equal(65u, current);
+            Assert.True((await repeated.ReleaseAsync(default)).Success); Assert.Equal(100u, current);
+        }
+        // A different action or ordinary manual baseline does not inherit this correction.
+        current = 80;
+        await using (var ordinary = await Open())
+        {
+            Assert.True((await ordinary.ApplyAsync(parameters, default)).Success); Assert.Equal(50u, current);
+            Assert.True((await ordinary.ReleaseAsync(default)).Success); Assert.Equal(80u, current);
+        }
+        current = 100;
+        await using (var changed = await Open())
+        {
+            Assert.True((await changed.ApplyAsync(new Dictionary<string, string>(parameters) { ["percent"] = "40" }, default)).Success);
+            Assert.Equal(40u, current); Assert.True((await changed.ReleaseAsync(default)).Success); Assert.Equal(100u, current);
+        }
+    }
+
+    [Theory(Timeout = 10000)]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CoordinatedWheelRefusesOtherTargetsAndNeverOverwritesExternalBrightness(bool external)
+    {
+        var time = new ManualTimeProvider(); uint current = 100;
+        var parameters = new Dictionary<string, string> { ["percent"] = "50", ["target"] = "primary", ["context"] = Guid.NewGuid().ToString("N") };
+        await using var session = await BrightnessRestoreSession.CreateAsync(_ => new([new(100, p => (uint)p, () => current,
+            value => { current = value; return true; }, hardwareBurst: true)], 0, 0, _ => { }, () => { }),
+            "primary", TimeSpan.FromSeconds(5), default, time, (delay, _) => time.Advance(delay));
+        Assert.True((await session.ApplyAsync(parameters, default)).Success);
+        var mismatch = await BrightnessNativeOwnership.Coordinate(new("all", 5, 150, 18, 0, () => 1, 0, default))!;
+        Assert.False(mismatch.Success); Assert.Equal(50u, current);
+        if (external) current = 72;
+        var result = await BrightnessNativeOwnership.Coordinate(new("primary", 5, 150, 18, 0, () => 1, 0, default))!;
+        Assert.Equal(!external, result.Success);
+        await session.ReleaseAsync(default);
+        Assert.Equal(external ? 72u : 100u, current);
+    }
+
+    [Fact(Timeout = 10000)]
+    public async Task SceneExitCancelsInFlightManualInputAndRestoresOnOriginalWorker()
+    {
+        var time = new ManualTimeProvider(); uint current = 100; var owner = 0;
+        using var finish = new ManualResetEventSlim();
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var session = await BrightnessRestoreSession.CreateAsync(_ =>
+        {
+            owner = Environment.CurrentManagedThreadId;
+            return new([new(100, p => (uint)p, () => { Assert.Equal(owner, Environment.CurrentManagedThreadId); return current; }, value =>
+            {
+                Assert.Equal(owner, Environment.CurrentManagedThreadId); current = value;
+                if (value is > 50 and < 100) { entered.TrySetResult(); finish.Wait(); }
+                return true;
+            }, hardwareBurst: true)], 0, 0, _ => { }, () => { });
+        }, "primary", TimeSpan.FromSeconds(5), default, time, (delay, token) => { time.Advance(delay); token.ThrowIfCancellationRequested(); });
+        try
+        {
+            Assert.True((await session.ApplyAsync(new Dictionary<string, string> { ["percent"] = "50", ["target"] = "primary" }, default)).Success);
+            var gesture = BrightnessNativeOwnership.Coordinate(new("primary", 5, 500, 18, 0, () => 3, 0, default))!;
+            await entered.Task;
+            var release = session.ReleaseAsync(default);
+            Assert.False(release.IsCompleted); Assert.Null(BrightnessNativeOwnership.TryAcquire());
+            finish.Set();
+            try { Assert.False((await gesture).Success); } catch (OperationCanceledException) { }
+            Assert.True((await release).Success); Assert.Equal(100u, current);
+        }
+        finally { finish.Set(); }
     }
 
     [Fact(Timeout = 10000)]
@@ -287,9 +385,10 @@ public sealed class BrightnessWheelTests
     }
 
     [Theory(Timeout = 15000)]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task HostWaitsForMarkedAndCompleteAndDisableResumesOnlyAfterNativeCleanupConfirmed(bool resumeSucceeds)
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    public async Task HostWaitsForMarkedAndCompleteAndDisableResumesOnlyAfterNativeCleanupConfirmed(bool resumeSucceeds, bool coordinated)
     {
         var path = Path.Combine(Path.GetTempPath(), "axiom-wheel-pipe-synthetic-" + Guid.NewGuid().ToString("N"), "tasks.db");
         var sid = "wheel-test-" + Guid.NewGuid().ToString("N");
@@ -324,19 +423,21 @@ public sealed class BrightnessWheelTests
                 }
                 else if (request.Type == "abandon-brightness")
                 {
+                    Assert.False(coordinated);
                     await ProviderProtocol.WriteAsync(pipe, new(1, "brightness-abandon-marked", request.RequestId, Status: OutcomeStatus.Succeeded), limit.Token);
                     marked.TrySetResult(); await complete.Task.WaitAsync(limit.Token);
                     await ProviderProtocol.WriteAsync(pipe, new(1, "brightness-abandon-complete", request.RequestId, Status: OutcomeStatus.Succeeded), limit.Token);
                 }
                 else if (request.Type == "resume-brightness")
                 {
+                    Assert.False(coordinated);
                     await disconnected.Task.WaitAsync(limit.Token);
                     await ProviderProtocol.WriteAsync(pipe, new(1, "brightness-resumed", request.RequestId,
                         Status: resumeSucceeds ? OutcomeStatus.Succeeded : OutcomeStatus.Failed), limit.Token);
                 }
                 else
                 {
-                    Assert.True(complete.Task.IsCompletedSuccessfully); Assert.Equal("invoke", request.Type);
+                    if (!coordinated) Assert.True(complete.Task.IsCompletedSuccessfully); Assert.Equal("invoke", request.Type);
                     Assert.Equal(BrightnessWheelTool.Command, request.Invocation!.CapabilityId); Assert.NotNull(request.CommandId);
                     Assert.Equal(0, BrightnessWheelTool.ValidateGesture(request.Invocation).FromSteps);
                     await ProviderProtocol.WriteAsync(pipe, new(1, "result", request.RequestId, CommandId: request.CommandId,
@@ -362,17 +463,23 @@ public sealed class BrightnessWheelTests
         {
             using var activity = new AutomationFixture(); using var store = new SqliteAutomationTaskStore(path);
             await using var runtime = new PluginTaskRuntime([new BuiltInBrightnessPlugin(), new HardwareBrightnessPlugin()], store, sid, activity.Engine);
-            await runtime.InitializeAsync(); var visibleSettings = (await runtime.SaveBrightnessWheelAsync(new(Enabled: true), limit.Token)).Settings;
-            await ready.Task.WaitAsync(limit.Token); wheel.TrySetResult(); await marked.Task.WaitAsync(limit.Token);
-            Assert.False(invoked.Task.IsCompleted); Assert.True(runtime.ReadBrightnessWheel().ManualTakenOver);
-            complete.TrySetResult(); await invoked.Task.WaitAsync(limit.Token);
+            await runtime.InitializeAsync(); var visibleSettings = (await runtime.SaveBrightnessWheelAsync(new(Enabled: true, CoordinateAutomatic: coordinated), limit.Token)).Settings;
+            await ready.Task.WaitAsync(limit.Token); wheel.TrySetResult();
+            if (!coordinated)
+            {
+                await marked.Task.WaitAsync(limit.Token);
+                Assert.False(invoked.Task.IsCompleted); Assert.True(runtime.ReadBrightnessWheel().ManualTakenOver);
+                complete.TrySetResult();
+            }
+            await invoked.Task.WaitAsync(limit.Token);
+            Assert.Equal(!coordinated, runtime.ReadBrightnessWheel().ManualTakenOver);
             while (runtime.ReadBrightnessWheel().Running) await Task.Delay(5, limit.Token);
             var live = runtime.ReadBrightnessWheel(); Assert.Contains("synthetic strict", live.LastResult);
             if (resumeSucceeds)
             {
                 var disabled = await runtime.SaveBrightnessWheelAsync(visibleSettings with { Enabled = false }, limit.Token);
                 Assert.False(disabled.Listening); Assert.False(disabled.ManualTakenOver); Assert.False(disabled.Settings.Enabled);
-                Assert.Contains("恢复自动亮度", disabled.LastResult);
+                Assert.Contains(coordinated ? "synthetic strict" : "恢复自动亮度", disabled.LastResult);
                 await Assert.ThrowsAsync<InvalidOperationException>(() => runtime.SaveBrightnessWheelAsync(visibleSettings, limit.Token));
             }
             else

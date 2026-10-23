@@ -72,7 +72,8 @@ internal sealed class BrightnessWheelAgent(ShortcutAgent shortcuts, string sid)
             lifetime.CancelAfter(TimeSpan.FromSeconds(28));
             if (gesture.FromSteps != Interlocked.Read(ref current.Consumed)) throw new IOException("滚轮累计步数与授权起点不符。");
             var result = await WindowsHardwareBrightness.RunWheelGestureAsync(current.Settings.Target, sid, current.Settings.Step,
-                current.Settings.SmoothMilliseconds, current.Settings.WritesPerSecond, gesture.FromSteps, () => Interlocked.Read(ref current.Steps), lifetime.Token);
+                current.Settings.SmoothMilliseconds, current.Settings.WritesPerSecond, gesture.FromSteps, () => Interlocked.Read(ref current.Steps), lifetime.Token,
+                current.Settings.CoordinateAutomatic, current.Settings.PreferenceMinutes);
             Interlocked.Exchange(ref current.Consumed, result.ConsumedSteps);
             if (!result.Success) current.Lifetime.Cancel();
             return result;
