@@ -36,25 +36,21 @@ internal sealed partial class PluginTaskRuntime
     }
     private void SetRestorableAuthorization(ResourceKey key, long generation, bool authorized)
     {
-        SettingLease? release = null;
         lock (settingGate)
         {
             if (!settingAuthorizations.TryGetValue(key, out var item)) settingAuthorizations.Add(key, item = new(generation, authorized));
             item.Generation = generation; item.Authorized = authorized;
-            if (!authorized && item.Lease is { } lease) { item.Lease = null; release = lease; }
+            if (!authorized && item.Lease is { } lease) StartSettingRelease(key, lease);
         }
-        if (release is not null) StartSettingRelease(key, release);
     }
     private void ReleaseRestorableSettings()
     {
-        List<(ResourceKey Key, SettingLease Lease)> release = [];
         lock (settingGate)
             foreach (var pair in settingAuthorizations)
             {
                 pair.Value.Authorized = false;
-                if (pair.Value.Lease is { } lease) { pair.Value.Lease = null; release.Add((pair.Key, lease)); }
+                if (pair.Value.Lease is { } lease) StartSettingRelease(pair.Key, lease);
             }
-        foreach (var pair in release) StartSettingRelease(pair.Key, pair.Lease);
     }
     private async ValueTask<Outcome> ApplyRestorableAsync(DesiredState desired, CancellationToken token)
     {
@@ -76,12 +72,11 @@ internal sealed partial class PluginTaskRuntime
         lock (settingGate)
         {
             if (settingAuthorizations.TryGetValue(desired.Key, out var held) && held.Authorized && held.Generation == desired.Generation &&
-                held.Lease is { } old && old.CapturedSelection != selection)
-            { prior = old; held.Lease = null; }
+                held.Lease is { } old && (old.Release is not null || old.CapturedSelection != selection))
+            { prior = old; StartSettingRelease(desired.Key, old); }
         }
         if (prior is not null)
         {
-            StartSettingRelease(desired.Key, prior);
             try { await prior.Released.Task.WaitAsync(token); }
             catch (OperationCanceledException) { return new(OutcomeStatus.Failed, "原目标仍在释放，本次未捕获新范围；不自动重试。", id, FailureKind.Permanent); }
             if (!prior.ReleaseConfirmed)
@@ -107,12 +102,17 @@ internal sealed partial class PluginTaskRuntime
         try
         {
             await lease.Serial.WaitAsync(token); entered = true;
-            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token, lease.Lifetime.Token);
+            // Once an initial frame has been sent, drain its reply even if the condition ends.
+            // Canceling a partial pipe read loses framing and prevents a confirmed release.
+            using var deadline = first ? CancellationTokenSource.CreateLinkedTokenSource(lease.Lifetime.Token)
+                : CancellationTokenSource.CreateLinkedTokenSource(token, lease.Lifetime.Token);
             deadline.CancelAfter(first ? acquireTimeout : operationTimeout);
             ProviderMessage receipt;
             if (first)
             {
+                token.ThrowIfCancellationRequested();
                 await lease.Pipe.ConnectForUserAsync(2000, deadline.Token);
+                token.ThrowIfCancellationRequested();
                 await ProviderProtocol.WriteAsync(lease.Pipe, new(1, "lease-setting", id.ToString("N"), DateTimeOffset.UtcNow.Add(acquireTimeout), Invocation: invocation), deadline.Token);
                 receipt = await ProviderProtocol.ReadAsync(lease.Pipe, deadline.Token);
                 ValidateSettingReceipt(receipt, id.ToString("N"), 0);
@@ -133,7 +133,7 @@ internal sealed partial class PluginTaskRuntime
                 return new(receipt.Status!.Value, receipt.Reason!, id, FailureKind.Permanent);
             }
             lock (settingGate)
-                if (!settingAuthorizations.TryGetValue(desired.Key, out var current) || !current.Authorized || !ReferenceEquals(current.Lease, lease))
+                if (!settingAuthorizations.TryGetValue(desired.Key, out var current) || !current.Authorized || current.Generation != desired.Generation || !ReferenceEquals(current.Lease, lease))
                     throw new OperationCanceledException("设置条件已结束。");
             Record("条件设置已确认", receipt.Reason!, ActivityLevel.Success);
             return new(OutcomeStatus.Succeeded, receipt.Reason!, id);
@@ -196,7 +196,7 @@ internal sealed partial class PluginTaskRuntime
     {
         lock (settingGate)
             if (settingAuthorizations.TryGetValue(key, out var item) && ReferenceEquals(item.Lease, lease))
-            { item.FailedGeneration = generation ?? item.Generation; item.Lease = null; }
+            { item.FailedGeneration = generation ?? item.Generation; }
     }
     private void StartSettingRelease(ResourceKey key, SettingLease lease)
     {

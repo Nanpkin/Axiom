@@ -14,6 +14,88 @@ namespace Axiom.Engine.Tests;
 [System.Runtime.Versioning.SupportedOSPlatform("windows")]
 public sealed class WindowsConditionRestoreRuntimeTests
 {
+    [Theory(Timeout = 15000)]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CanceledInitialReplyIsDrainedAndNextGenerationWaitsForConfirmedRelease(bool partialReply)
+    {
+        var sid = "synthetic-handoff-" + Guid.NewGuid().ToString("N");
+        var user = System.Security.Principal.WindowsIdentity.GetCurrent().User!.Value;
+        var directory = Path.Combine(Path.GetTempPath(), "axiom-handoff-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(directory);
+        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+        using var canceled = new CancellationTokenSource();
+        using var activity = new AutomationFixture(); using var store = new SqliteAutomationTaskStore(Path.Combine(directory, "tasks.db"));
+        await using var runtime = new PluginTaskRuntime([new SyntheticHardwarePlugin()], store, sid, activity.Engine);
+        var key = new ResourceKey(HardwareBrightnessRestoreCapabilities.Set, "brightness", ResourceScope.Session(sid, System.Diagnostics.Process.GetCurrentProcess().SessionId));
+        var invocation = new TaskInvocation(key.CapabilityId, 1, ImmutableDictionary<string, string>.Empty.Add("target", "primary").Add("percent", "20").Add("delaySeconds", "0"));
+        DesiredState Desired(long generation) => new(key, StateValue.From(RestorableSettingInvocations.Schema, RestorableSettingInvocations.Encode(invocation)), "synthetic", 0, generation, "condition ended");
+        using var first = LocalPipeFactory.Create(ProviderProtocol.PipeName(sid), user, 8);
+        using var second = LocalPipeFactory.Create(ProviderProtocol.PipeName(sid), user, 8);
+        var initialEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var initialReply = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finishRelease = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var firstAccepted = first.WaitForConnectionAsync(stop.Token); var secondAccepted = second.WaitForConnectionAsync(stop.Token);
+        var released = false;
+        async Task ServeFirst()
+        {
+            await firstAccepted;
+            var request = await ProviderProtocol.ReadAsync(first, stop.Token);
+            using var frame = new MemoryStream(); await Reply(frame, request);
+            var bytes = frame.ToArray();
+            if (partialReply) await first.WriteAsync(bytes.AsMemory(0, 8), stop.Token);
+            initialEntered.TrySetResult(); await initialReply.Task.WaitAsync(stop.Token);
+            await first.WriteAsync(bytes.AsMemory(partialReply ? 8 : 0), stop.Token);
+            var release = await ProviderProtocol.ReadAsync(first, stop.Token);
+            Assert.Equal("lease-setting-release", release.Type); Assert.Equal(1, release.Sequence);
+            releaseEntered.TrySetResult(); await finishRelease.Task.WaitAsync(stop.Token);
+            released = true; await Reply(first, release);
+        }
+        async Task ServeSecond()
+        {
+            await secondAccepted;
+            var request = await ProviderProtocol.ReadAsync(second, stop.Token);
+            Assert.True(released, "A new baseline must not be captured before the previous release.");
+            await Reply(second, request);
+            var release = await ProviderProtocol.ReadAsync(second, stop.Token);
+            Assert.Equal("lease-setting-release", release.Type); await Reply(second, release);
+        }
+        Task Reply(Stream pipe, ProviderMessage message) => ProviderProtocol.WriteAsync(pipe,
+            new(1, "lease-setting-result", message.RequestId, Sequence: message.Sequence, Status: OutcomeStatus.Succeeded, Reason: "synthetic confirmed"), stop.Token);
+        var servingFirst = ServeFirst(); var servingSecond = ServeSecond();
+        try
+        {
+            runtime.SetDesiredAuthorization(key, 1, true);
+            var applyingFirst = runtime.ApplyDesiredAsync(Desired(1), canceled.Token).AsTask();
+            await initialEntered.Task.WaitAsync(stop.Token);
+            runtime.SetDesiredAuthorization(key, 2, false); canceled.Cancel();
+            runtime.SetDesiredAuthorization(key, 3, true);
+            var applyingSecond = runtime.ApplyDesiredAsync(Desired(3), stop.Token).AsTask();
+            initialReply.TrySetResult();
+            // Await either the requested release or the pipe server's concrete framing failure.
+            await Task.WhenAny(releaseEntered.Task, servingFirst).WaitAsync(stop.Token);
+            if (servingFirst.IsCompleted) await servingFirst;
+            Assert.True(releaseEntered.Task.IsCompleted);
+            Assert.False(secondAccepted.IsCompleted);
+            finishRelease.TrySetResult(); await servingFirst;
+            Assert.NotEqual(OutcomeStatus.Succeeded, (await applyingFirst).Status);
+            Assert.Equal(OutcomeStatus.Succeeded, (await applyingSecond).Status);
+            runtime.SetDesiredAuthorization(key, 4, false);
+            await servingSecond;
+            await runtime.EnsureSafeToStopAsync(stop.Token);
+            Assert.Equal("条件设置已释放", (await runtime.ReadAsync(stop.Token)).State);
+        }
+        finally
+        {
+            initialReply.TrySetResult(); finishRelease.TrySetResult();
+            stop.Cancel(); first.Dispose(); second.Dispose();
+            using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+            await runtime.EnsureSafeToStopAsync(cleanup.Token);
+            try { await Task.WhenAll(servingFirst, servingSecond); } catch (Exception error) when (error is IOException or OperationCanceledException or ObjectDisposedException) { }
+            store.Dispose(); Directory.Delete(directory, true);
+        }
+    }
+
     [Fact(Timeout = 15000)]
     public async Task HostSharesLeaseUpdatesWinnerWithoutRecapturingAndStopReportsActualOriginalBaseline()
     {
