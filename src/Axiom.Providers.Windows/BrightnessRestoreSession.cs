@@ -227,7 +227,7 @@ internal sealed class BrightnessRestoreSession : IRestorableSettingSession
         confirmed += transitions.Count(t => t.Target.Transaction.Owned);
         failed += transitions.Count(t => !t.Target.Transaction.Owned);
         var owned = confirmed > 0 && failed == 0 && relinquished == 0;
-        return new(owned, $"亮度条件设置{(owned ? "已确认" : confirmed > 0 ? "部分完成" : "未确认")}：{confirmed}块确认，{capture.Unsupported}块已知不支持跳过，{failed}个目标未知或失败，{relinquished}块已让出；外部改变或未确认不覆盖，本次基线保留。", owned);
+        return new(owned, $"亮度条件设置{(owned ? "已确认" : confirmed > 0 ? "部分完成" : "未确认")}：{confirmed}块确认，{capture.Unsupported}块已知不支持跳过，{failed}个目标未知或失败，{relinquished}块已让出；{Levels(capture)}；外部改变或未确认不覆盖，本次基线保留。", owned);
     }
     private RestorableSettingResult Restore(BrightnessRestoreCapture capture, BrightnessFadeOptions settings, CancellationToken token)
     {
@@ -248,6 +248,12 @@ internal sealed class BrightnessRestoreSession : IRestorableSettingSession
             else if (receipt.Success) restored++;
             else failed++;
         }
-        return new(failed == 0, $"亮度结束恢复：{restored}块基线读回确认，{skipped}块其他来源改变/设备未知/未确认值未覆盖，{failed}块恢复未确认；不重试、不改控新屏幕。", false);
+        return new(failed == 0, $"亮度结束恢复：{restored}块基线读回确认，{skipped}块其他来源改变/设备未知/未确认值未覆盖，{failed}块恢复未确认；{Levels(capture)}；不重试、不改控新屏幕。", false);
     }
+    private static string Levels(BrightnessRestoreCapture capture) => string.Join("；", capture.Targets.Take(8).Select((t, i) =>
+    {
+        string Percent(uint value) => t.Map(0) is { } min && t.Map(100) is { } max && max > min
+            ? ((double)(value - min) * 100 / (max - min)).ToString("0.#", CultureInfo.InvariantCulture) + "%" : "未知";
+        return $"屏幕{i + 1}原亮度{Percent(t.Baseline)}、最后读回{(t.LastRead is { } read ? Percent(read) : "未知")}";
+    }));
 }

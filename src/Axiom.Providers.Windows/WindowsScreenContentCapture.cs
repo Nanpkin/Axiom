@@ -95,7 +95,15 @@ public sealed unsafe class WindowsScreenContentCapture : IDisposable
                 stop.Token.WaitHandle.WaitOne(250);
             }
         }
-        catch (Exception) { if (!stop.IsCancellationRequested) publish(new(null, "主屏捕获或GPU统计已失效，等待显示或会话恢复通知后重建。", CaptureLost: true)); }
+        catch (Exception error)
+        {
+            if (!stop.IsCancellationRequested)
+            {
+                var recreate = error.HResult is unchecked((int)0x887A0026) or unchecked((int)0x887A0005) or unchecked((int)0x887A0007);
+                publish(new(null, recreate ? "主屏捕获在桌面或图形设备切换后失效，正在释放并有限重建。" :
+                    "主屏捕获或GPU统计已失效，等待显示或会话恢复通知后重建。", CaptureLost: true, CanRecreate: recreate));
+            }
+        }
         finally { Cleanup(); }
     }
     private ScreenContentReading ReadFrame(nint texture)

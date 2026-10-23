@@ -40,8 +40,12 @@ public sealed class BrightnessRestoreTests
         try
         {
             Assert.True((await session.ApplyAsync(Parameters(30), default)).Owned); Assert.Null(BrightnessNativeOwnership.TryAcquire());
-            Assert.True((await session.ApplyAsync(Parameters(50), default)).Owned); Assert.Equal(1, captures); Assert.Equal(50u, target.Current);
-            Assert.True((await session.ReleaseAsync(default)).Success); Assert.Equal(80u, target.Current); Assert.Equal(new uint[] { 30, 50, 80 }, target.Writes); Assert.Equal(1, closed);
+            var applied = await session.ApplyAsync(Parameters(50), default);
+            Assert.True(applied.Owned); Assert.Equal(1, captures); Assert.Equal(50u, target.Current);
+            Assert.Contains("原亮度80%、最后读回50%", applied.Reason);
+            var released = await session.ReleaseAsync(default);
+            Assert.True(released.Success); Assert.Contains("原亮度80%、最后读回80%", released.Reason);
+            Assert.Equal(80u, target.Current); Assert.Equal(new uint[] { 30, 50, 80 }, target.Writes); Assert.Equal(1, closed);
         }
         finally { await session.DisposeAsync(); }
         using var next = BrightnessNativeOwnership.TryAcquire(); Assert.NotNull(next);

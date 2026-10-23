@@ -1,5 +1,7 @@
 # ADR 0011：低频画面明亮面积检测
 
+2026-10-23故障恢复补充：DXGI明确报告ACCESS_LOST、DEVICE_REMOVED或DEVICE_RESET后必须释放旧接口并重建；不保证另有显示通知。允许该故障触发0.5、2、8秒最多三次重建（创建暂时失败沿本预算），用现有单deadline合并调度，无健康轮询；屏幕关、锁屏、时段外不启动重建，三次耗尽后等系统通知，收到有效帧或相关通知才重置预算。其他未知故障仍不自动重试。依据：[AcquireNextFrame错误处理](https://learn.microsoft.com/en-us/windows/win32/api/dxgi1_2/nf-dxgi1_2-idxgioutputduplication-acquirenextframe)。恢复期间Unknown沿既有租约释放保护，不当暗画面；不宣称性能数值达标。
+
 2026-10-17，Accepted（实现与数值验收另记）。用户要求大面积浅色画面自动降亮，低开销优先，可限定夜间；HDR开启时不需要此功能。
 
 ## 决策

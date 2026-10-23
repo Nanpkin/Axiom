@@ -2,7 +2,7 @@ using System.Threading.Channels;
 
 namespace Axiom.Providers.Windows;
 
-public sealed record ScreenContentReading(double? AreaPercent, string? Reason = null, bool CaptureLost = false, ScreenBrightRegionMetrics? Regions = null);
+public sealed record ScreenContentReading(double? AreaPercent, string? Reason = null, bool CaptureLost = false, ScreenBrightRegionMetrics? Regions = null, bool CanRecreate = false);
 public interface IScreenContentSource : IDisposable
 {
     ChannelReader<ScreenContentReading> Readings { get; }

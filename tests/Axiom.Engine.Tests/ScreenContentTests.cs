@@ -182,6 +182,40 @@ public sealed class ScreenContentTests
     }
 
     [Fact(Timeout = 15000)]
+    public async Task RecoverableCaptureLossRecreatesWithBoundedBackoffAndCancelsAllDeadlinesOnScreenOff()
+    {
+        var time = Clock(21); using var env = new FakeEnvironment(); using var stop = new CancellationTokenSource();
+        var updates = Channel.CreateUnbounded<ProviderUpdate>();
+        var provider = new ScreenContentCapabilityProvider(() => env, time, () => TimeZoneInfo.Utc);
+        var spec = ScreenContentCapabilities.Validate(Detection() with { Parameters = Detection().Parameters.SetItem("stableSeconds", "0") });
+        var run = provider.ObserveAsync([new(ScreenContentCapabilities.Bright, spec.Resource)], u => updates.Writer.TryWrite(u), stop.Token);
+        try
+        {
+            await Until(() => env.Captures.Count == 1);
+            foreach (var delay in new[] { 0.5, 2, 8 })
+            {
+                var count = env.Captures.Count;
+                var reason = "recoverable" + count;
+                env.Captures[^1].Emit(new(null, reason, CaptureLost: true, CanRecreate: true));
+                await Sample(updates.Reader, s => s.Quality == StateQuality.Unknown && s.Reason == reason);
+                await Until(() => time.Timers.Any(t => t.At == time.GetTimestamp() + TimeSpan.FromSeconds(delay).Ticks));
+                time.Advance(TimeSpan.FromSeconds(delay)); await Until(() => env.Captures.Count == count + 1);
+            }
+            env.Captures[^1].Emit(new(null, "exhausted", CaptureLost: true, CanRecreate: true));
+            await Sample(updates.Reader, s => s.Reason == "exhausted");
+            time.Advance(TimeSpan.FromMinutes(1)); Assert.Equal(4, env.Captures.Count);
+            env.Emit("display-color-changed"); await Until(() => env.Captures.Count == 5);
+            env.Captures[^1].Emit(new(90)); await Sample(updates.Reader, s => s.Boolean == true);
+            env.Captures[^1].Emit(new(null, "again", CaptureLost: true, CanRecreate: true));
+            await Sample(updates.Reader, s => s.Reason == "again");
+            env.Emit("screen-off"); await Sample(updates.Reader, s => s.Reason!.Contains("屏幕关闭"));
+            time.Advance(TimeSpan.FromMinutes(1)); Assert.Equal(5, env.Captures.Count);
+            Assert.All(time.Timers, t => Assert.Null(t.At));
+        }
+        finally { stop.Cancel(); await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run); }
+    }
+
+    [Fact(Timeout = 15000)]
     public async Task LockPowerHdrAndCaptureLossReleaseResourcesAndRecoverOnlyFromRelevantEvents()
     {
         var time = Clock(21); using var env = new FakeEnvironment(); using var stop = new CancellationTokenSource();

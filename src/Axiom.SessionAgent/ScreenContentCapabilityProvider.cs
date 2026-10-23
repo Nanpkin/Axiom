@@ -41,6 +41,8 @@ internal sealed class ScreenContentCapabilityProvider(Func<IScreenContentEnviron
             var locked = environment.ReadLocked(token);
             bool? screenOn = null;
             var captureFailed = false;
+            var recreateAttempts = 0;
+            DateTimeOffset? recreateAt = null;
             string? failureReason = null;
             var changed = environment.Events.ReadAsync(lifetime.Token).AsTask();
             while (true)
@@ -57,6 +59,8 @@ internal sealed class ScreenContentCapabilityProvider(Func<IScreenContentEnviron
                     }
                 }
                 var needed = entries.Any(e => e.Active);
+                if (recreateAt is { } retry && needed && locked == false && screenOn == true && now >= retry)
+                { recreateAt = null; captureFailed = false; }
                 if (!needed || locked != false || screenOn != true || captureFailed)
                 {
                     StopCapture();
@@ -69,6 +73,8 @@ internal sealed class ScreenContentCapabilityProvider(Func<IScreenContentEnviron
                     catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
                     {
                         captureFailed = true; failureReason = SafeReason(error);
+                        if (recreateAttempts is > 0 and < 3 && error is not NotSupportedException)
+                            recreateAt = time.GetUtcNow().AddSeconds(new[] { 0.5, 2, 8 }[recreateAttempts++]);
                         foreach (var e in entries.Where(e => e.Active)) e.State.Unknown(failureReason);
                     }
                 }
@@ -82,6 +88,8 @@ internal sealed class ScreenContentCapabilityProvider(Func<IScreenContentEnviron
                         var until = pending - Elapsed();
                         if (remaining == Timeout.InfiniteTimeSpan || until < remaining) remaining = until;
                     }
+                if (recreateAt is { } next && needed && locked == false && screenOn == true &&
+                    (remaining == Timeout.InfiniteTimeSpan || next - now < remaining)) remaining = next - now;
                 if (remaining != Timeout.InfiniteTimeSpan && remaining < TimeSpan.Zero) remaining = TimeSpan.Zero;
                 using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
                 var due = Task.Delay(remaining, time, deadline.Token);
@@ -101,6 +109,7 @@ internal sealed class ScreenContentCapabilityProvider(Func<IScreenContentEnviron
                                 StopCapture();
                                 locked = environment.ReadLocked(token);
                                 captureFailed = false; failureReason = null;
+                                recreateAt = null; recreateAttempts = 0;
                                 foreach (var e in entries.Where(e => e.Active)) e.State.Unknown("系统显示或会话已变化，正在重新核验主屏。");
                             }
                             if (kind is "clock-changed" or "resumed") zone = Zone();
@@ -113,12 +122,18 @@ internal sealed class ScreenContentCapabilityProvider(Func<IScreenContentEnviron
                         if (reading.AreaPercent is null)
                         {
                             failureReason = reading.Reason ?? "主屏捕获不可用，等待显示或会话恢复通知。";
-                            if (reading.CaptureLost) { captureFailed = true; StopCapture(); }
+                            if (reading.CaptureLost)
+                            {
+                                captureFailed = true; StopCapture();
+                                if (reading.CanRecreate && recreateAttempts < 3)
+                                    recreateAt = time.GetUtcNow().AddSeconds(new[] { 0.5, 2, 8 }[recreateAttempts++]);
+                            }
                             else frame = capture!.Readings.ReadAsync(lifetime.Token).AsTask();
                             foreach (var e in entries.Where(e => e.Active)) e.State.Unknown(failureReason);
                         }
                         else
                         {
+                            recreateAttempts = 0; recreateAt = null;
                             foreach (var e in entries.Where(e => e.Active)) e.State.Read(reading, Elapsed());
                             frame = capture!.Readings.ReadAsync(lifetime.Token).AsTask();
                         }
