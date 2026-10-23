@@ -106,11 +106,15 @@ public sealed partial class WorkbenchWindow
         var step = Number("每格调整（百分点，1–20）", original.Step);
         var smooth = Number("平滑时长（毫秒，50–1000）", original.SmoothMilliseconds);
         var writes = Number("写入请求上限（次/秒，1–60）", original.WritesPerSecond);
+        var inputMode = new ComboBox { Header = "滚轮输入方式", ItemsSource = new[] { "即时响应（鼠标滚轮）", "累计标准刻度（高精度滚轮 / 触控板）" },
+            SelectedIndex = original.ImmediateResponse ? 0 : 1, HorizontalAlignment = HorizontalAlignment.Stretch };
         var body = Column(12); body.MaxWidth = 620;
         body.Children.Add(Help("仅调整支持 DDC/CI 的硬件显示器，请在显示器菜单中开启 DDC/CI。主显示器不支持时不会自动改用其他屏幕。"));
         body.Children.Add(enabled); body.Children.Add(Text("按住的修饰键（至少选择一项）", 14, Ink, true)); body.Children.Add(modifiers); body.Children.Add(key);
         body.Children.Add(Help("可选 Ctrl + Alt + 滚轮，或 Ctrl + Shift + B + 滚轮等组合。向上调亮，向下调暗。"));
-        body.Children.Add(target); body.Children.Add(step); body.Children.Add(smooth); body.Children.Add(writes);
+        body.Children.Add(target); body.Children.Add(inputMode);
+        body.Children.Add(Help("即时响应会让每条非零滚轮输入至少调整一次，不等攒满标准刻度；连续输入过于敏感时，改用累计标准刻度。大幅输入仍合并为相应步数。"));
+        body.Children.Add(step); body.Children.Add(smooth); body.Children.Add(writes);
         body.Children.Add(Help("写入次数是后台亮度请求的上限，不是面板帧率；实际变化受显示器响应与亮度粒度影响。连续滚动由后台合并。"));
         body.Children.Add(Text("滚轮调整会接管自动亮度；关闭工具后按当前规则恢复自动调节，不强制设为100%。关闭窗口不停止工具。", 12, Muted));
         var error = Text("", 12, Amber); body.Children.Add(error);
@@ -134,9 +138,9 @@ public sealed partial class WorkbenchWindow
                         ? value : throw new ArgumentException(label + "须填写整数。");
                     var flags = (ctrl.IsChecked == true ? ShortcutModifiers.Control : 0) | (alt.IsChecked == true ? ShortcutModifiers.Alt : 0) |
                         (shift.IsChecked == true ? ShortcutModifiers.Shift : 0) | (win.IsChecked == true ? ShortcutModifiers.Windows : 0);
-                    if (key.SelectedItem is not string selectedKey || target.SelectedIndex < 0) throw new ArgumentException("请选择主键和调整范围。");
+                    if (key.SelectedItem is not string selectedKey || target.SelectedIndex < 0 || inputMode.SelectedIndex < 0) throw new ArgumentException("请选择主键、调整范围和滚轮输入方式。");
                     var proposed = new BrightnessWheelSettings(original.Version, enabled.IsOn, flags, selectedKey == "无主键" ? "" : selectedKey,
-                        target.SelectedIndex == 1 ? "all" : "primary", Parse(step, "每格调整"), Parse(smooth, "平滑时长"), Parse(writes, "写入请求上限"));
+                        target.SelectedIndex == 1 ? "all" : "primary", Parse(step, "每格调整"), Parse(smooth, "平滑时长"), Parse(writes, "写入请求上限"), inputMode.SelectedIndex == 0);
                     BrightnessWheelTool.Validate(proposed);
                     SetBusy(true); editorPanel.IsEnabled = false; dialog.IsPrimaryButtonEnabled = false; dialog.IsSecondaryButtonEnabled = false; dialog.CloseButtonText = "请稍候";
                     var response = await WorkbenchClient.RequestAsync(new(1, "save-brightness-wheel", Guid.NewGuid().ToString("N"), WheelSettings: proposed));
@@ -162,6 +166,7 @@ public sealed partial class WorkbenchWindow
             if (brightnessWheel is not null)
             {
                 original = brightnessWheel.Settings; enabled.IsOn = original.Enabled;
+                inputMode.SelectedIndex = original.ImmediateResponse ? 0 : 1;
                 ctrl.IsChecked = original.Modifiers.HasFlag(ShortcutModifiers.Control); alt.IsChecked = original.Modifiers.HasFlag(ShortcutModifiers.Alt);
                 shift.IsChecked = original.Modifiers.HasFlag(ShortcutModifiers.Shift); win.IsChecked = original.Modifiers.HasFlag(ShortcutModifiers.Windows);
                 key.SelectedItem = original.Key.Length == 0 ? "无主键" : original.Key; target.SelectedIndex = original.Target == "all" ? 1 : 0;

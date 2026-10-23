@@ -25,7 +25,7 @@ internal sealed class BrightnessWheelAgent(ShortcutAgent shortcuts, string sid)
         using var subscription = new Subscription(request.RequestId, settings, token);
         lock (gate) { if (active is not null) throw new IOException("旧滚轮监听仍在清理，请稍后启用。"); active = subscription; }
         WindowsBrightnessWheelHook? hook = null;
-        var remainder = new BrightnessWheelDelta();
+        var remainder = new BrightnessWheelDelta(settings.ImmediateResponse);
         var disconnected = ProviderProtocol.ReadAsync(pipe, subscription.Lifetime.Token);
         try
         {

@@ -7,7 +7,7 @@ namespace Axiom.Contracts;
 
 public sealed record BrightnessWheelSettings(long Version = 0, bool Enabled = false,
     ShortcutModifiers Modifiers = ShortcutModifiers.Control | ShortcutModifiers.Alt, string Key = "",
-    string Target = "primary", int Step = 2, int SmoothMilliseconds = 150, int WritesPerSecond = 18);
+    string Target = "primary", int Step = 2, int SmoothMilliseconds = 150, int WritesPerSecond = 18, bool ImmediateResponse = true);
 public sealed record BrightnessWheelSnapshot(BrightnessWheelSettings Settings, string State,
     bool Listening = false, bool ManualTakenOver = false, bool Running = false, string? LastResult = null);
 
@@ -43,11 +43,13 @@ public static class BrightnessWheelTool
 }
 
 // Pure high-resolution wheel accounting. The hook owns this on its message thread.
-public sealed class BrightnessWheelDelta
+public sealed class BrightnessWheelDelta(bool immediateResponse = false)
 {
     private int remainder;
     public int Add(int delta)
     {
+        if (immediateResponse)
+            return delta == 0 ? 0 : (int)(Math.Sign(delta) * Math.Max(1, Math.Abs((long)delta) / 120));
         remainder += delta; var steps = remainder / 120; remainder %= 120; return steps;
     }
     public void Reset() => remainder = 0;

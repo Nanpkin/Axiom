@@ -55,6 +55,26 @@ public sealed class BrightnessWheelTests
     }
 
     [Fact(Timeout = 10000)]
+    public async Task ImmediateInputRespondsToOneSmallMessageAndKeepsPrecisionModeAvailable()
+    {
+        await Task.Yield();
+        var old = JsonSerializer.Deserialize<BrightnessWheelSettings>("{\"Version\":1}")!;
+        Assert.True(old.ImmediateResponse);
+        var immediate = new BrightnessWheelDelta(old.ImmediateResponse);
+        foreach (var delta in new[] { 1, 30, 60, 90, 120, -1, -30, -60, -90, -120 })
+            Assert.Equal(Math.Sign(delta), immediate.Add(delta));
+        Assert.Equal(0, immediate.Add(0)); Assert.Equal(3, immediate.Add(360)); Assert.Equal(-2, immediate.Add(-240));
+        var precision = new BrightnessWheelDelta(false);
+        Assert.Equal(0, precision.Add(60)); Assert.Equal(1, precision.Add(60));
+        var time = new ManualTimeProvider(); uint current = 80;
+        var target = new BrightnessRestoreTarget(80, p => (uint)p, () => current, value => { current = value; return true; }, hardwareBurst: true);
+        using var capture = new BrightnessRestoreCapture([target], 0, 0, _ => { }, () => { });
+        var oneSmallInput = immediate.Add(-30);
+        var result = WindowsBrightnessWheelGesture.RunCaptured(capture, 2, 150, 18, 0, () => oneSmallInput, default, time, (delay, _) => time.Advance(delay));
+        Assert.True(result.Success); Assert.Equal(78u, current); Assert.Equal(-1, result.ConsumedSteps);
+    }
+
+    [Fact(Timeout = 10000)]
     public async Task ExplicitHandoffCancelsPendingFadeWithoutRestoringAndRetainsAdmissionUntilNativeCleanup()
     {
         uint current = 73; var writes = new List<uint>(); var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
