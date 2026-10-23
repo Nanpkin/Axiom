@@ -7,13 +7,13 @@
 - codex/responsive-window：关闭主窗改为隐藏并保留界面，释放观察租约和规则状态订阅；快捷键直接恢复同一窗口，启动器也识别隐藏窗口。未保存确认保持，停止后台并退出仍真正关闭。
 - 初次/隐藏后显示居中，内容160ms淡入，遵从系统动画设置；显示后异步刷新后台状态，无新增轮询。
 - WinUI、SessionAgent、Launcher Release构建零警告；KeyboardShortcutTests 8例通过。尚未进行真实快捷键/动画观感验收，不能宣称延迟数值达标。
-- 本机更新预检无法读取运行Host路径（当前权限返回null），来源未确认，未请求停止或替换固定预览；本地证据artifacts/responsive-window。待完成来源核对后安全更新并验收。
+- 本机已通过管理员来源核对及正常停止/恢复，统一发布固定预览0.1.0-local.20261023.1（干净30079ab）。重启路径/版本/后台连接、9任务指纹/托盘及登录启动设置保持；真实关闭隐藏→启动器唤回复用同一PID/HWND通过。本地证据artifacts/responsive-window；真实键盘输入和动画观感仍待所有者确认。
 
 ## 当前任务：进程组包含已有组
 
 - 新建/编辑组可折叠多选绑定已有组（含Steam自动组），按ID多层引用、成员去重，来源更新在读取时展开。循环/失效引用和被引用组删除拒绝；来源变更与所有父组容量同事务检查。规则/游戏模式已选名单仍独立，无轮询。
 - 058adcc已提交并推送codex/linked-process-groups；schema 3原库事务升级，直接成员和引用持久化，展开结果派生。ProcessGroupTests/SteamToolTests共17例通过，WinUI x64 Release零警告；真实草稿选择/数量预览/未保存退出及正常关闭通过，未保存测试组或改用户配置。
-- 本机安全停止返回“有游戏正在使用Axiom的HDR自动恢复”，已保留现场、未替换运行预览；本轮功能尚未应用到固定入口，待游戏正常退出后更新及核对来源/原配置。仅本机证据artifacts/linked-groups-smoke；沿[计划](../exec-plans/active/linked-process-groups.md)，不重验亮度。
+- 已随快捷键批次更新到固定预览，来源/原配置核对通过；此前拒停现场未强杀。组功能验收仍复用artifacts/linked-groups-smoke；沿[计划](../exec-plans/active/linked-process-groups.md)，不重验亮度。
 
 ## 当前任务：亮度滚轮可用性与关闭交接
 
