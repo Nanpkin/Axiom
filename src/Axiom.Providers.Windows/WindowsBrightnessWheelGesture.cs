@@ -57,7 +57,7 @@ public static class WindowsBrightnessWheelGesture
                     if (tx.HasPendingFadeWrite && Math.Sign((long)end - tx.FadeExpected) != Math.Sign((long)state.End - state.Initial))
                     {
                         WaitUntil(state.LastWrite + TimeSpan.FromMilliseconds(100));
-                        if (!tx.ConfirmHardwareBurst(token, time, (delay, _) => Wait(delay))) return new(false, consumed, "方向切换前结果未确认；已停止，不重试。");
+                        if (!tx.CheckpointHardwareBurst(token)) return new(false, consumed, "方向切换前结果未确认；已停止，不重试。");
                         state.Verified = true; state.Closing = false;
                     }
                 }
@@ -77,7 +77,10 @@ public static class WindowsBrightnessWheelGesture
                 var elapsed = time.GetElapsedTime(start);
                 if (tx.HasPendingFadeWrite && (tx.FadeExpected == state.End || state.Closing || tx.HardwareBurstFull || elapsed - state.BurstStarted >= TimeSpan.FromSeconds(1)))
                 {
-                    if (!tx.ConfirmHardwareBurst(token, time, (delay, _) => Wait(delay))) return new(false, consumed, "亮度段末结果未确认；不重试。");
+                    var confirmed = tx.FadeExpected == state.End
+                        ? tx.ConfirmHardwareBurst(token, time, (delay, _) => Wait(delay))
+                        : tx.CheckpointHardwareBurst(token);
+                    if (!confirmed) return new(false, consumed, "亮度段末结果未确认；不重试。");
                     state.Verified = true; state.Closing = false;
                 }
                 if (!tx.HasPendingFadeWrite && tx.Confirmed == state.End) continue;
@@ -99,7 +102,7 @@ public static class WindowsBrightnessWheelGesture
                     elapsed = time.GetElapsedTime(start);
                     if (tx.HasPendingFadeWrite && elapsed - state.BurstStarted >= TimeSpan.FromSeconds(1))
                     {
-                        if (!tx.ConfirmHardwareBurst(token, time, (delay, _) => Wait(delay))) return new(false, consumed, "亮度段末结果未确认；不重试。");
+                        if (!tx.CheckpointHardwareBurst(token)) return new(false, consumed, "亮度段末结果未确认；不重试。");
                         state.Verified = true; state.Closing = false;
                         continue;
                     }
@@ -124,7 +127,9 @@ public static class WindowsBrightnessWheelGesture
                     // closely spaced writes while keeping only the first value until a read fence.
                     if (tx.HasPendingFadeWrite && (value == state.End || closing))
                     {
-                        if (!tx.ConfirmHardwareBurst(token, time, (delay, _) => Wait(delay))) return new(false, consumed, "终点前亮度段未确认；不重试。");
+                        // Intermediate writes may be coalesced by the display. Rebase only on a value
+                        // accepted in this segment; the final endpoint still requires exact confirmation.
+                        if (!tx.CheckpointHardwareBurst(token)) return new(false, consumed, "终点前亮度段未确认；不重试。");
                         state.Verified = true; state.Closing = false;
                         continue;
                     }

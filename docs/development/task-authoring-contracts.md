@@ -200,6 +200,12 @@ SQLite无需新配置表：schema3树JSON保存/读回，首次保存3时在同�
 
 “非锁定”使用独立`session.lock-state`，state=locked|unlocked，资源current-session为锁定bool；只读WTSInfoEx当前Active会话及锁元数据，未知/非活动不假未锁定，不读取用户名等内容。WindowsSessionEvents(lockStateOnly:true)先订阅后初读；7/8仅提示查询，1/3/5/9及恢复先Unknown再重查建基线，2/4/6及挂起只失效等待报告。64有界合并保留reset，队列失败立即标记并清缓存，新kind不进旧租约；没有轮询、锁屏请求或自动解锁。允许提醒、播放设置/应用音量及保持唤醒，排除锁屏/显示动作反馈。
 
+## 亮度滚轮接管与关闭（2026-10-23）
+
+工具仅在组合键与滚轮命中后接管，不因启用监听暂停自动亮度。滚轮中间连续写入可被显示器合并：仅以本段已接受写值的读回作为checkpoint继续，方向切换及段边界沿同一规则；最终目标仍须精确读回，不重发失败写入、不把中间值当完成。未知或外部值仍让出。
+
+关闭工具先停止监听、取消/等待手势，再由Agent确认原生工作清理并解除manual门禁，持久化关闭与manual=false后释放Engine覆盖；随后按当前规则重算，不强设100%或回放旧Command。失败保留接管并明确提示，不假报关闭成功。单独“恢复自动亮度”沿同一流程但保持启用设置。内部接管元数据更新不使当前界面设置版本失效；真正用户配置更改仍拒绝旧版本，版本检查在停止监听之前。
+
 ## 任务级自动暂停
 
 `AutomationTask.RunConditions`使用schema4，包含主屏`Hdr=any|on|off`与可选`WeeklyTimeWindow`，两者均须满足；不改旧`TimeWindow`动作执行门禁。schema4也可保留组合树。Snapshot.RunConditionsVersion=1协商，未支持的编译器、旧schema夹带或旧数据库版本不能静默忽略。SQLite首次保存4原地升user_version4，不批量改旧配置；导入Version3可携运行条件，旧导入1/2拒绝夹带。

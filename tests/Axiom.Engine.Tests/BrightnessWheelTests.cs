@@ -117,6 +117,32 @@ public sealed class BrightnessWheelTests
     }
 
     [Fact]
+    public void CoalescedIntermediateWritesRebaseBeforeEndpointButNeverConfirmAnUnreachedEndpoint()
+    {
+        foreach (var dropEndpoint in new[] { false, true })
+        {
+            var time = new ManualTimeProvider(); uint current = 97; var awaitingRead = false; var coalesced = false;
+            var writes = new List<uint>();
+            var target = new BrightnessRestoreTarget(97, p => (uint)p,
+                () => { awaitingRead = false; return current; }, value =>
+                {
+                    writes.Add(value);
+                    if (awaitingRead) coalesced = true;
+                    if (!awaitingRead && !(dropEndpoint && value == 77)) current = value;
+                    awaitingRead = true; time.Advance(TimeSpan.FromMilliseconds(55)); return true;
+                }, hardwareBurst: true);
+            using var capture = new BrightnessRestoreCapture([target], 0, 0, _ => { }, () => { });
+            var result = WindowsBrightnessWheelGesture.RunCaptured(capture, 2, 500, 60, 0, () => -10, default, time,
+                (delay, _) => time.Advance(delay));
+            Assert.True(coalesced);
+            Assert.Equal(!dropEndpoint, result.Success);
+            if (!dropEndpoint) Assert.Equal(77u, current);
+            else Assert.NotEqual(77u, current);
+            Assert.Single(writes, value => value == 77);
+        }
+    }
+
+    [Fact]
     public void ContinuousInputRetargetsOneCaptureClampsBoundsAndConfirmsLatestEndpoint()
     {
         var time = new ManualTimeProvider(); uint current = 73; long latest = -1;
@@ -240,13 +266,16 @@ public sealed class BrightnessWheelTests
         }
     }
 
-    [Fact(Timeout = 15000)]
-    public async Task HostWaitsForMarkedAndCompleteBeforeEngineGestureAndDisableEndsTheSubscription()
+    [Theory(Timeout = 15000)]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task HostWaitsForMarkedAndCompleteAndDisableResumesOnlyAfterNativeCleanupConfirmed(bool resumeSucceeds)
     {
         var path = Path.Combine(Path.GetTempPath(), "axiom-wheel-pipe-synthetic-" + Guid.NewGuid().ToString("N"), "tasks.db");
         var sid = "wheel-test-" + Guid.NewGuid().ToString("N");
         var owner = WindowsIdentity.GetCurrent().User!.Value;
         using var limit = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+        using var serverStop = CancellationTokenSource.CreateLinkedTokenSource(limit.Token);
         var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var wheel = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var marked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -260,7 +289,13 @@ public sealed class BrightnessWheelTests
             {
                 var request = await ProviderProtocol.ReadAsync(pipe, limit.Token);
                 ProviderProtocol.Validate(request, DateTimeOffset.UtcNow);
-                if (request.Type == "observe-brightness-wheel")
+                if (request.Type == "observe")
+                {
+                    await ProviderProtocol.WriteAsync(pipe, new(1, "snapshot", request.RequestId, Sequence: 0, Samples: []), limit.Token);
+                    try { await ProviderProtocol.ReadAsync(pipe, serverStop.Token); }
+                    catch (Exception error) when (error is IOException or OperationCanceledException) { }
+                }
+                else if (request.Type == "observe-brightness-wheel")
                 {
                     await ProviderProtocol.WriteAsync(pipe, new(1, "brightness-wheel-state", request.RequestId, Sequence: 0, Status: OutcomeStatus.Succeeded, WheelSteps: 0), limit.Token);
                     ready.TrySetResult(); await wheel.Task.WaitAsync(limit.Token);
@@ -272,6 +307,12 @@ public sealed class BrightnessWheelTests
                     await ProviderProtocol.WriteAsync(pipe, new(1, "brightness-abandon-marked", request.RequestId, Status: OutcomeStatus.Succeeded), limit.Token);
                     marked.TrySetResult(); await complete.Task.WaitAsync(limit.Token);
                     await ProviderProtocol.WriteAsync(pipe, new(1, "brightness-abandon-complete", request.RequestId, Status: OutcomeStatus.Succeeded), limit.Token);
+                }
+                else if (request.Type == "resume-brightness")
+                {
+                    await disconnected.Task.WaitAsync(limit.Token);
+                    await ProviderProtocol.WriteAsync(pipe, new(1, "brightness-resumed", request.RequestId,
+                        Status: resumeSucceeds ? OutcomeStatus.Succeeded : OutcomeStatus.Failed), limit.Token);
                 }
                 else
                 {
@@ -286,10 +327,14 @@ public sealed class BrightnessWheelTests
         }
         async Task Accept()
         {
-            for (var i = 0; i < 3; i++)
+            while (!serverStop.IsCancellationRequested)
             {
                 var pipe = LocalPipeFactory.Create(ProviderProtocol.PipeName(sid), owner);
-                await pipe.WaitForConnectionAsync(limit.Token); clients.Add(Handle(pipe));
+                try { await pipe.WaitForConnectionAsync(serverStop.Token); }
+                catch (OperationCanceledException) { pipe.Dispose(); return; }
+                var client = Handle(pipe); clients.Add(client);
+                _ = client.ContinueWith(failed => invoked.TrySetException(failed.Exception!.InnerExceptions),
+                    CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
             }
         }
         var server = Accept();
@@ -297,17 +342,29 @@ public sealed class BrightnessWheelTests
         {
             using var activity = new AutomationFixture(); using var store = new SqliteAutomationTaskStore(path);
             await using var runtime = new PluginTaskRuntime([new BuiltInBrightnessPlugin(), new HardwareBrightnessPlugin()], store, sid, activity.Engine);
-            await runtime.InitializeAsync(); await runtime.SaveBrightnessWheelAsync(new(Enabled: true), limit.Token);
+            await runtime.InitializeAsync(); var visibleSettings = (await runtime.SaveBrightnessWheelAsync(new(Enabled: true), limit.Token)).Settings;
             await ready.Task.WaitAsync(limit.Token); wheel.TrySetResult(); await marked.Task.WaitAsync(limit.Token);
             Assert.False(invoked.Task.IsCompleted); Assert.True(runtime.ReadBrightnessWheel().ManualTakenOver);
             complete.TrySetResult(); await invoked.Task.WaitAsync(limit.Token);
             while (runtime.ReadBrightnessWheel().Running) await Task.Delay(5, limit.Token);
             var live = runtime.ReadBrightnessWheel(); Assert.Contains("synthetic strict", live.LastResult);
-            var disabled = await runtime.SaveBrightnessWheelAsync(live.Settings with { Enabled = false }, limit.Token);
-            Assert.False(disabled.Listening); Assert.True(disabled.ManualTakenOver); Assert.False(disabled.Settings.Enabled);
-            await disconnected.Task.WaitAsync(limit.Token); await server; await Task.WhenAll(clients);
+            if (resumeSucceeds)
+            {
+                var disabled = await runtime.SaveBrightnessWheelAsync(visibleSettings with { Enabled = false }, limit.Token);
+                Assert.False(disabled.Listening); Assert.False(disabled.ManualTakenOver); Assert.False(disabled.Settings.Enabled);
+                Assert.Contains("恢复自动亮度", disabled.LastResult);
+                await Assert.ThrowsAsync<InvalidOperationException>(() => runtime.SaveBrightnessWheelAsync(visibleSettings, limit.Token));
+            }
+            else
+            {
+                await Assert.ThrowsAsync<IOException>(() => runtime.SaveBrightnessWheelAsync(visibleSettings with { Enabled = false }, limit.Token));
+                Assert.True(runtime.ReadBrightnessWheel().ManualTakenOver);
+                Assert.True(runtime.ReadBrightnessWheel().Settings.Enabled);
+            }
+            await disconnected.Task.WaitAsync(limit.Token);
             Assert.Empty((await runtime.ReadAsync(default)).Tasks);
             await runtime.EnsureSafeToStopAsync(limit.Token);
+            serverStop.Cancel(); await server; await Task.WhenAll(clients);
         }
         finally
         {

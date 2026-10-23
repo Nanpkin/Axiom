@@ -47,7 +47,7 @@ public sealed partial class WorkbenchWindow
         var refresh = Action("刷新结果"); refresh.IsEnabled = reachable;
         refresh.Click += async (_, _) => { if (busy) return; SetBusy(true); try { await ReadBrightnessWheelAsync(); } finally { SetBusy(false); Render(); } };
         actions.Children.Add(refresh); body.Children.Add(actions);
-        body.Children.Add(Help("滚轮调整会接管自动亮度。关闭工具保留当前手动亮度和接管状态，可另行恢复自动亮度；关闭 Axiom 窗口后仍可使用。"));
+        body.Children.Add(Help("命中组合键并滚动后才接管自动亮度。关闭工具会等待手势结束并恢复自动亮度；也可单独点击恢复按钮。关闭 Axiom 窗口后仍可使用。"));
         content.Children.Add(Card(body));
     }
 
@@ -112,7 +112,7 @@ public sealed partial class WorkbenchWindow
         body.Children.Add(Help("可选 Ctrl + Alt + 滚轮，或 Ctrl + Shift + B + 滚轮等组合。向上调亮，向下调暗。"));
         body.Children.Add(target); body.Children.Add(step); body.Children.Add(smooth); body.Children.Add(writes);
         body.Children.Add(Help("写入次数是后台亮度请求的上限，不是面板帧率；实际变化受显示器响应与亮度粒度影响。连续滚动由后台合并。"));
-        body.Children.Add(Text("滚轮调整会接管自动亮度，关闭工具保留当前亮度与接管。恢复自动亮度需单独点击工具卡片上的按钮；关闭窗口不停止工具。", 12, Amber));
+        body.Children.Add(Text("滚轮调整会接管自动亮度；关闭工具后按当前规则恢复自动调节，不强制设为100%。关闭窗口不停止工具。", 12, Muted));
         var error = Text("", 12, Amber); body.Children.Add(error);
         var editorPanel = new ContentControl { Content = body, HorizontalContentAlignment = HorizontalAlignment.Stretch };
         var resultUnknown = false;

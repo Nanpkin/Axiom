@@ -17,6 +17,10 @@ internal sealed partial class PluginTaskRuntime
     private long wheelObservedSteps, wheelConsumedSteps;
     private bool wheelListening, wheelRunning, wheelHandoffReady;
     private volatile bool wheelTakenOver;
+    // Runtime takeover metadata also increments the stored task revision. Keep the last settings
+    // revision valid until a user actually changes settings, so the visible switch still works.
+    private long? wheelConfigurationVersion;
+    private bool WheelVersionMatches(long version) => version == WheelSettings().Version || version == wheelConfigurationVersion;
     private ResourceKey WheelKey => new(BrightnessWheelTool.Command, "manual-wheel", scope);
     private static bool IsBrightness(string id) => id is BuiltInBrightnessCapabilities.Set or BuiltInBrightnessAdjustCapabilities.Adjust or BuiltInBrightnessRestoreCapabilities.Set
         or HardwareBrightnessCapabilities.Set or HardwareBrightnessAdjustCapabilities.Adjust or HardwareBrightnessRestoreCapabilities.Set;
@@ -52,18 +56,27 @@ internal sealed partial class PluginTaskRuntime
         wheelTakenOver = task?.Detection.Parameters.GetValueOrDefault("manual") == "true";
         if (wheelTakenOver) foreach (var key in BrightnessKeys()) engine.TakeOverride(key, sid, "持久化的滚轮手动亮度接管");
     }
-    private async Task PersistWheelAsync(BrightnessWheelSettings settings, bool manual, CancellationToken token)
+    private async Task PersistWheelAsync(BrightnessWheelSettings settings, bool manual, CancellationToken token, bool runtimeOnly = false)
     {
         BrightnessWheelTool.Validate(settings);
         await gate.WaitAsync(token);
         try
         {
-            lock (statusGate) if ((WheelTask()?.Version ?? 0) != settings.Version) throw new InvalidOperationException("亮度工具已在别处更改，请刷新后重试。");
+            lock (statusGate)
+            {
+                if (!WheelVersionMatches(settings.Version)) throw new InvalidOperationException("亮度工具已在别处更改，请刷新后重试。");
+                if (runtimeOnly) wheelConfigurationVersion ??= settings.Version;
+                settings = settings with { Version = WheelTask()?.Version ?? 0 };
+            }
             var task = new AutomationTask(BrightnessWheelTool.TaskId, settings.Version, BrightnessWheelTool.Name, !settings.Enabled,
                 new(BrightnessWheelTool.Trigger, 1, ImmutableDictionary<string, string>.Empty.Add("settings", JsonSerializer.Serialize(settings)).Add("manual", manual ? "true" : "false")),
                 new(BrightnessWheelTool.Command, 1, ImmutableDictionary<string, string>.Empty));
             var saved = await database.SaveAsync(task, token);
-            lock (statusGate) { tasks = [.. tasks.Where(t => t.Id != saved.Id), saved]; wheelTakenOver = manual; }
+            lock (statusGate)
+            {
+                tasks = [.. tasks.Where(t => t.Id != saved.Id), saved]; wheelTakenOver = manual;
+                if (!runtimeOnly) wheelConfigurationVersion = saved.Version;
+            }
         }
         finally { gate.Release(); }
     }
@@ -73,8 +86,10 @@ internal sealed partial class PluginTaskRuntime
         try
         {
             if (stopping) throw new InvalidOperationException("后台正在停止，未启用滚轮工具。");
+            if (!WheelVersionMatches(settings.Version)) throw new InvalidOperationException("亮度工具已在别处更改，请刷新后重试。");
             await StopWheelMonitorAsync(token);
-            await PersistWheelAsync(settings, wheelTakenOver, token);
+            if (!settings.Enabled && wheelTakenOver) await ResumeAutomaticBrightnessCoreAsync(settings, token);
+            else await PersistWheelAsync(settings, wheelTakenOver, token);
             StartWheelMonitor(); return ReadBrightnessWheel();
         }
         finally { wheelToolGate.Release(); }
@@ -84,21 +99,27 @@ internal sealed partial class PluginTaskRuntime
         await wheelToolGate.WaitAsync(token);
         try
         {
-            if (WheelSettings().Version != version) throw new InvalidOperationException("亮度工具已变化，请刷新后重试。");
+            if (!WheelVersionMatches(version)) throw new InvalidOperationException("亮度工具已变化，请刷新后重试。");
             foreach (var key in BrightnessKeys()) if (!Authorize(sid, key, CapabilityOperation.ReleaseOverride).Allowed) throw new UnauthorizedAccessException();
             await StopWheelMonitorAsync(token);
-            using var pipe = Client(); await pipe.ConnectForUserAsync(2000, token);
-            var id = Guid.NewGuid().ToString("N");
-            await ProviderProtocol.WriteAsync(pipe, new(1, "resume-brightness", id, DateTimeOffset.UtcNow.AddSeconds(12)), token);
-            var result = await ProviderProtocol.ReadAsync(pipe, token);
-            if (result.RequestId != id || result.Type != "brightness-resumed" || result.Status != OutcomeStatus.Succeeded) throw new IOException("亮度资源释放未确认，自动亮度仍保持接管。");
-            await PersistWheelAsync(WheelSettings(), false, token);
-            wheelHandoffReady = false;
-            foreach (var key in BrightnessKeys().Append(WheelKey)) engine.ReleaseOverride(key, sid);
-            wheelLastResult = "已恢复自动亮度；按当前有效规则重新判断，不回放旧动作。";
+            await ResumeAutomaticBrightnessCoreAsync(WheelSettings(), token);
             StartWheelMonitor(); return ReadBrightnessWheel();
         }
         finally { wheelToolGate.Release(); }
+    }
+    private async Task ResumeAutomaticBrightnessCoreAsync(BrightnessWheelSettings settings, CancellationToken token)
+    {
+        foreach (var key in BrightnessKeys()) if (!Authorize(sid, key, CapabilityOperation.ReleaseOverride).Allowed) throw new UnauthorizedAccessException();
+        using var pipe = Client(); await pipe.ConnectForUserAsync(2000, token);
+        var id = Guid.NewGuid().ToString("N");
+        await ProviderProtocol.WriteAsync(pipe, new(1, "resume-brightness", id, DateTimeOffset.UtcNow.AddSeconds(12)), token);
+        var result = await ProviderProtocol.ReadAsync(pipe, token);
+        if (result.RequestId != id || result.Type != "brightness-resumed" || result.Status != OutcomeStatus.Succeeded)
+            throw new IOException("亮度资源释放未确认，自动亮度仍保持接管；请刷新后重试关闭或恢复自动亮度。");
+        await PersistWheelAsync(settings, false, token);
+        wheelHandoffReady = false;
+        foreach (var key in BrightnessKeys().Append(WheelKey)) engine.ReleaseOverride(key, sid);
+        wheelLastResult = "已恢复自动亮度；按当前有效规则重新判断，不回放旧动作。";
     }
     private void StartWheelMonitor()
     {
@@ -151,7 +172,7 @@ internal sealed partial class PluginTaskRuntime
     {
         if (wheelHandoffReady) return;
         foreach (var key in BrightnessKeys().Append(WheelKey)) if (!Authorize(sid, key, CapabilityOperation.Override).Allowed) throw new UnauthorizedAccessException();
-        if (!wheelTakenOver) await PersistWheelAsync(WheelSettings(), true, token);
+        if (!wheelTakenOver) await PersistWheelAsync(WheelSettings(), true, token, runtimeOnly: true);
         using var pipe = Client(); await pipe.ConnectForUserAsync(2000, token);
         var id = Guid.NewGuid().ToString("N");
         await ProviderProtocol.WriteAsync(pipe, new(1, "abandon-brightness", id, DateTimeOffset.UtcNow.AddSeconds(40)), token);
