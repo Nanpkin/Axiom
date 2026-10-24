@@ -7,6 +7,7 @@ using Axiom.Domain;
 using Axiom.Infrastructure;
 using Axiom.Providers.Windows;
 using Axiom.ServiceHost;
+using Axiom.SessionAgent;
 
 namespace Axiom.Engine.Tests;
 
@@ -56,24 +57,87 @@ public sealed class BrightnessWheelTests
     }
 
     [Fact(Timeout = 10000)]
-    public async Task ImmediateInputRespondsToOneSmallMessageAndKeepsPrecisionModeAvailable()
+    public async Task StandardWheelInputAccumulatesFragmentsAndReadsLegacySettings()
     {
         await Task.Yield();
-        var old = JsonSerializer.Deserialize<BrightnessWheelSettings>("{\"Version\":1}")!;
-        Assert.True(old.ImmediateResponse);
+        var old = JsonSerializer.Deserialize<BrightnessWheelSettings>("{\"Version\":1,\"ImmediateResponse\":true}")!;
         Assert.True(old.CoordinateAutomatic); Assert.Equal(30, old.PreferenceMinutes);
-        var immediate = new BrightnessWheelDelta(old.ImmediateResponse);
-        foreach (var delta in new[] { 1, 30, 60, 90, 120, -1, -30, -60, -90, -120 })
-            Assert.Equal(Math.Sign(delta), immediate.Add(delta));
-        Assert.Equal(0, immediate.Add(0)); Assert.Equal(3, immediate.Add(360)); Assert.Equal(-2, immediate.Add(-240));
-        var precision = new BrightnessWheelDelta(false);
+        var precision = new BrightnessWheelDelta();
         Assert.Equal(0, precision.Add(60)); Assert.Equal(1, precision.Add(60));
+        Assert.Equal(0, precision.Add(0)); Assert.Equal(3, precision.Add(360)); Assert.Equal(-2, precision.Add(-240));
         var time = new ManualTimeProvider(); uint current = 80;
         var target = new BrightnessRestoreTarget(80, p => (uint)p, () => current, value => { current = value; return true; }, hardwareBurst: true);
         using var capture = new BrightnessRestoreCapture([target], 0, 0, _ => { }, () => { });
-        var oneSmallInput = immediate.Add(-30);
+        Assert.Equal(0, precision.Add(-30)); Assert.Equal(0, precision.Add(-30)); Assert.Equal(0, precision.Add(-30));
+        var oneSmallInput = precision.Add(-30);
         var result = WindowsBrightnessWheelGesture.RunCaptured(capture, 2, 150, 18, 0, () => oneSmallInput, default, time, (delay, _) => time.Advance(delay));
         Assert.True(result.Success); Assert.Equal(78u, current); Assert.Equal(-1, result.ConsumedSteps);
+    }
+
+    [Fact(Timeout = 10000)]
+    public async Task EmptyCaptureWithFailedCleanupDoesNotClaimSafeRelease()
+    {
+        var error = await Assert.ThrowsAsync<IOException>(() => BrightnessRestoreSession.CreateAsync(_ =>
+            new([], 1, 0, _ => { }, () => throw new IOException("synthetic cleanup failure")), "primary", TimeSpan.FromSeconds(3), default));
+        Assert.IsNotType<RestorableSettingNotAcquiredException>(error);
+        await BrightnessNativeOwnership.DrainAsync();
+    }
+
+    [Fact(Timeout = 10000)]
+    public async Task EmptyCaptureReceivesConfirmedEmptyReleaseAndNextConditionCanDimAndRestore()
+    {
+        var sid = "empty-capture-" + Guid.NewGuid().ToString("N");
+        var owner = WindowsIdentity.GetCurrent().User!.Value;
+        var directory = Path.Combine(Path.GetTempPath(), "axiom-empty-capture-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+        using var activity = new AutomationFixture();
+        using var store = new SqliteAutomationTaskStore(Path.Combine(directory, "tasks.db"));
+        await using var runtime = new PluginTaskRuntime([new HardwareBrightnessPlugin()], store, sid, activity.Engine);
+        var key = new ResourceKey(HardwareBrightnessRestoreCapabilities.Set, "brightness", ResourceScope.Session(sid, System.Diagnostics.Process.GetCurrentProcess().SessionId));
+        var invocation = new TaskInvocation(key.CapabilityId, 1, ImmutableDictionary<string, string>.Empty.Add("target", "primary").Add("percent", "50").Add("delaySeconds", "0"));
+        DesiredState Desired(long generation) => new(key, StateValue.From(RestorableSettingInvocations.Schema, RestorableSettingInvocations.Encode(invocation)), "synthetic", 0, generation, "condition ended");
+        var captures = 0; var emptyClosed = false; uint current = 100;
+        var provider = new RestorableSettingCapabilityProvider(key.CapabilityId,
+            (_, token) => BrightnessRestoreSession.CreateAsync(_ =>
+            {
+                if (++captures == 1) return new([], 1, 0, _ => { }, () => emptyClosed = true);
+                Assert.True(emptyClosed);
+                return new([new(100, p => (uint)p, () => current, value => { current = value; return true; })], 0, 0, _ => { }, () => { });
+            }, "primary", TimeSpan.FromSeconds(3), token),
+            i => HardwareBrightnessCapabilities.Validate(i with { CapabilityId = HardwareBrightnessCapabilities.Set }), _ => "brightness");
+        using var first = LocalPipeFactory.Create(ProviderProtocol.PipeName(sid), owner, 8);
+        using var second = LocalPipeFactory.Create(ProviderProtocol.PipeName(sid), owner, 8);
+        async Task Serve(NamedPipeServerStream pipe)
+        {
+            await pipe.WaitForConnectionAsync(stop.Token);
+            var request = await ProviderProtocol.ReadAsync(pipe, stop.Token);
+            await SessionRestorableLeaseStream.RunAsync(pipe, request, provider, stop.Token);
+        }
+        var servingFirst = Serve(first); var servingSecond = Serve(second);
+        try
+        {
+            runtime.SetDesiredAuthorization(key, 1, true);
+            Assert.Equal(OutcomeStatus.Failed, (await runtime.ApplyDesiredAsync(Desired(1), stop.Token)).Status);
+            await servingFirst.WaitAsync(stop.Token);
+            Assert.True(emptyClosed); Assert.Equal(100u, current);
+            Assert.Equal(OutcomeStatus.Failed, (await runtime.ApplyDesiredAsync(Desired(1), stop.Token)).Status);
+            Assert.Equal(1, captures); // No automatic retries in the failed generation.
+            runtime.SetDesiredAuthorization(key, 2, false);
+            runtime.SetDesiredAuthorization(key, 3, true);
+            Assert.Equal(OutcomeStatus.Succeeded, (await runtime.ApplyDesiredAsync(Desired(3), stop.Token)).Status);
+            Assert.Equal(50u, current); Assert.Equal(2, captures);
+            runtime.SetDesiredAuthorization(key, 4, false);
+            await servingSecond.WaitAsync(stop.Token);
+            Assert.Equal(100u, current);
+            await runtime.EnsureSafeToStopAsync(stop.Token);
+        }
+        finally
+        {
+            stop.Cancel(); first.Dispose(); second.Dispose();
+            try { await servingFirst; await servingSecond; } catch (OperationCanceledException) { }
+            store.Dispose(); Directory.Delete(directory, true);
+        }
     }
 
     [Fact(Timeout = 10000)]

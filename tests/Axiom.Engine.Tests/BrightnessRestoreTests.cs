@@ -33,7 +33,7 @@ public sealed class BrightnessRestoreTests
             }
             finally { foreach (var f in Directory.GetFiles(Path.GetDirectoryName(path)!, Path.GetFileName(path) + "*")) File.Delete(f); }
         }
-        await Assert.ThrowsAsync<IOException>(() => BrightnessRestoreSession.CreateAsync(_ => Capture([], () => { }), "primary", TimeSpan.FromSeconds(10), default));
+        await Assert.ThrowsAsync<RestorableSettingNotAcquiredException>(() => BrightnessRestoreSession.CreateAsync(_ => Capture([], () => { }), "primary", TimeSpan.FromSeconds(10), default));
         await BrightnessNativeOwnership.DrainAsync().WaitAsync(TimeSpan.FromSeconds(3)); // unknown/empty baseline never owns a write target
         var target = new Target(80); var captures = 0; var closed = 0; var captureThread = 0;
         var session = await BrightnessRestoreSession.CreateAsync(_ => { captures++; captureThread = Environment.CurrentManagedThreadId; return Capture([target], () => { closed++; Assert.Equal(captureThread, Environment.CurrentManagedThreadId); }); }, "primary", TimeSpan.FromSeconds(10), default);

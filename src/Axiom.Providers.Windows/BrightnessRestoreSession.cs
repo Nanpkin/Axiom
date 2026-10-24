@@ -121,7 +121,22 @@ internal sealed class BrightnessRestoreSession : IRestorableSettingSession
         try { new Thread(() => session.Run(capture, ownership)) { IsBackground = true, Name = "Axiom owned brightness restoration" }.Start(); }
         catch { ownership.Dispose(); session.captureStop.Dispose(); session.abandonStop.Dispose(); throw; }
         try { await session.ready.Task.WaitAsync(timeout, session.time, token); return session; }
-        catch { session.RequestClose(); throw; } // the actual worker keeps ownership/resources until it returns and cleans up
+        catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
+        {
+            session.RequestClose();
+            // A failed capture has never accepted Apply. Only a completed, successful cleanup
+            // can prove that this failed acquisition needs no physical restoration.
+            if (session.ready.Task.IsFaulted)
+            {
+                try
+                {
+                    var cleanup = await session.stopped.Task.WaitAsync(timeout, session.time, CancellationToken.None);
+                    if (cleanup.Success) throw new RestorableSettingNotAcquiredException(error.Message, error);
+                }
+                catch (TimeoutException) { } // unknown cleanup retains the existing conservative failure path
+            }
+            throw;
+        }
     }
     public async Task<RestorableSettingResult> ApplyAsync(IReadOnlyDictionary<string, string> parameters, CancellationToken token)
     {

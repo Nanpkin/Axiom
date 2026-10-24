@@ -1,5 +1,6 @@
 using Axiom.Contracts;
 using Axiom.Domain;
+using Axiom.Providers.Windows;
 
 namespace Axiom.SessionAgent;
 
@@ -9,13 +10,19 @@ internal static class SessionRestorableLeaseStream
     {
         RestorableSettingCapabilityProvider.Lease? lease = null;
         var released = false;
+        var notAcquired = false;
         try
         {
             using (var acquire = CancellationTokenSource.CreateLinkedTokenSource(stopping))
             {
                 acquire.CancelAfter(request.DeadlineUtc!.Value - DateTimeOffset.UtcNow);
-                lease = await provider.AcquireAsync(request.Invocation!, acquire.Token);
-                await Reply(request, lease.Initial.Success, lease.Initial.Reason, acquire.Token);
+                try { lease = await provider.AcquireAsync(request.Invocation!, acquire.Token); }
+                catch (RestorableSettingNotAcquiredException error)
+                {
+                    notAcquired = true;
+                    await Reply(request, false, "初始亮度暂不可读；本轮未写入，原生资源已清理，等待结束本轮。 " + error.Message, acquire.Token);
+                }
+                if (lease is not null) await Reply(request, lease.Initial.Success, lease.Initial.Reason, acquire.Token);
             }
             while (!stopping.IsCancellationRequested)
             {
@@ -28,13 +35,15 @@ internal static class SessionRestorableLeaseStream
                 operation.CancelAfter(next.DeadlineUtc!.Value - DateTimeOffset.UtcNow);
                 if (next.Type == "lease-setting-update")
                 {
-                    var result = await lease.UpdateAsync(next.Invocation!, operation.Token);
+                    if (notAcquired) { await Reply(next, false, "本轮未建立租约；不在本轮重新捕获，等待结束后新的条件。", operation.Token); continue; }
+                    var result = await lease!.UpdateAsync(next.Invocation!, operation.Token);
                     await Reply(next, result.Success, result.Reason, operation.Token);
                 }
                 else if (next.Type == "lease-setting-release")
                 {
+                    if (notAcquired) { released = true; await Reply(next, true, "本轮未写入，原生资源已清理；无需恢复，可以结束本轮。", operation.Token); return; }
                     // The release token must outlive the ended condition/Host pipe.
-                    using var cleanup = new CancellationTokenSource(lease.CleanupTimeout);
+                    using var cleanup = new CancellationTokenSource(lease!.CleanupTimeout);
                     var result = await lease.ReleaseAsync(cleanup.Token); released = true;
                     await Reply(next, result.Success, result.Reason, operation.Token); return;
                 }
