@@ -13,7 +13,15 @@ public static partial class WindowsHardwareBrightness
     internal static bool AuthorizedUser(string sid, CancellationToken token) => new Api(sid, token).IsAuthorized();
     internal static BrightnessRestoreCapture Capture(string selection, string sid, CancellationToken token, bool directVcp = false)
     {
-        var topology = new BrightnessRestoreTopology(); var api = new Api(sid, token, directVcp);
+        var topology = new BrightnessRestoreTopology(() =>
+        {
+            var screens = WindowsHdrDisplayProbe.ReadActiveDisplays();
+            // Revalidation is unambiguous only for one active physical connection. Preserve
+            // the conservative topology fence for multi-display/unknown arrangements.
+            return screens.Count == 1 && !string.IsNullOrWhiteSpace(screens[0].DevicePath)
+                ? screens[0].Id + "|" + screens[0].DevicePath : null;
+        });
+        var api = new Api(sid, token, directVcp);
         var leases = new List<IHardwareMonitorLease>(); var handedOff = false;
         try
         {

@@ -10,6 +10,29 @@ namespace Axiom.Engine.Tests;
 [Collection("Brightness native ownership")]
 public sealed class BrightnessRestoreTests
 {
+    [Fact(Timeout = 10000)]
+    public async Task SameConnectedScreenModeChangeRetainsBaselineButReplacementAndUnknownNeverRestore()
+    {
+        foreach (var change in new[] { "mode", "replacement", "unknown" })
+        {
+            string? connected = "synthetic-physical-connection"; var queries = 0;
+            var guard = new BrightnessTopologyGuard(() => { queries++; return connected; });
+            uint current = 100; var writes = new List<uint>();
+            await using var session = await BrightnessRestoreSession.CreateAsync(_ => new([new(100, p => (uint)p,
+                () => guard.Valid ? current : null, value => { if (!guard.Valid) return false; current = value; writes.Add(value); return true; })],
+                0, 0, _ => { }, () => { }), "primary", TimeSpan.FromSeconds(3), default);
+            Assert.True((await session.ApplyAsync(Parameters(50), default)).Success);
+            Assert.Equal(1, queries); // All ordinary reads/writes share the unchanged identity.
+            connected = change == "mode" ? connected : change == "unknown" ? null : "different-connection";
+            guard.Changed();
+            var released = await session.ReleaseAsync(default);
+            Assert.Equal(change == "mode", current == 100);
+            if (change == "mode") Assert.True(released.Success);
+            else Assert.DoesNotContain(100u, writes);
+            Assert.Equal(2, queries);
+        }
+    }
+
     private static Dictionary<string, string> Parameters(int percent) => new() { ["percent"] = percent.ToString(System.Globalization.CultureInfo.InvariantCulture), ["delaySeconds"] = "0", ["target"] = "primary" };
     [Fact(Timeout = 10000)]
     public async Task RegisteredDesiredTemplatesSaveAndImportUseOneCapturedBaselineAcrossUpdatesAndNativeOwnershipUntilRelease()

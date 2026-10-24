@@ -19,3 +19,9 @@
 ## 当前限制
 
 管理员 Agent 通过共享 Win32_ProcessStartTrace 检测无窗口进程，无 WITHIN、窗口提示降级或周期枚举；退出等待精确句柄。创建提示不保证早于游戏读取 HDR；极短进程可能在核对前已退出。订阅故障/队列溢出标 Unknown，不猜测退出或补发命令；源故障可重新打开后台建立基线。当前预览由 `Axiom.exe` 同账户 UAC 提权，不安装 Windows Service。设置的 `read-startup/set-startup` 管理当前用户最高权限交互登录任务，固定 `Axiom.exe --background`，不打开 UI、不保存密码；旧 Run 启用项迁移，关闭状态不新增登记。路径由宿主交付目录确定，要求四入口齐备；重复引导由当前会话用户 mutex 串行化。Windows 可延迟或禁用任务，搬动后更新位置，实际注销/重新登录未实测。后台入口失败写 `%USERPROFILE%\.axiom\startup-error.txt`。UI 退出后后台继续；进程挂起未启用。真实活动保存到 `activity.db`，可分页查看、清理七天前记录；旧内存结果无法补回。数值 CPU 验收按 [性能政策](performance.md)。
+
+## 2026-10-24：显示模式与名称选择
+
+HDR选择与Windows执行地址分离：单一设备名称保存为display-name选择，Agent每次执行解析到当前ConnectionPath，再由原API核对HDR预期状态并写入。旧路径只在当前型号唯一时解析，观察基线建立且无恢复控制时原地转换为名称目标；同名或旧型号多候选不猜测，已有游戏不补执行。Host与Agent共享HdrDisplayTargets，避免观察与执行选屏不一致。缺失连接、系统明确不支持、读取未知与开关未生效分别解释，不再笼统称不支持，也不立即用“检测到游戏”盖掉失败提示。
+
+名称策略表示用户选择同名设备，不是序列号绑定；重名时按连接选择，名称改变需重选。它解决正常连接实例变化，不保证辨别名称相同且无法报告唯一身份的实体设备。[Windows设备实例ID](https://learn.microsoft.com/en-us/windows-hardware/drivers/install/device-instance-ids)由总线设备信息生成；[目标名称结构](https://learn.microsoft.com/en-us/windows/win32/api/wingdi/ns-wingdi-displayconfig_target_device_name)区分设备名称与连接路径。游戏模式本身的开关/规则影响不变，Wiki正文核对仍适用。

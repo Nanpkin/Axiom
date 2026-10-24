@@ -7,6 +7,32 @@ namespace Axiom.Engine.Tests;
 public sealed class GameHdrPersistenceTests
 {
     [Fact]
+    public async Task NamedDisplaySurvivesConnectionChangesAndLegacyRulesResolveOnlyOneMatchingModel()
+    {
+        const string old = @"\\?\DISPLAY#SYN1234#old-instance#{synthetic}";
+        const string current = @"\\?\DISPLAY#SYN1234#new-instance#{synthetic}";
+        GameHdrDisplayDto Display(string path, string name = "Synthetic HDR") => new(name, path, true, false, false, null);
+        var displays = HdrDisplayTargets.NameSelections([Display(current)]);
+        var resolved = HdrDisplayTargets.Resolve(displays, old);
+        Assert.NotNull(resolved); Assert.Equal(current, resolved.ConnectionPath);
+        Assert.Equal(HdrDisplayTargets.Named("Synthetic HDR"), resolved.Path);
+        var moved = HdrDisplayTargets.NameSelections([Display(@"\\?\DISPLAY#SYN1234#another-port#{synthetic}")]);
+        Assert.Equal(resolved.Path, HdrDisplayTargets.Resolve(moved, resolved.Path)!.Path);
+        var duplicate = HdrDisplayTargets.NameSelections([Display(current), Display(old)]);
+        Assert.Null(HdrDisplayTargets.Resolve(duplicate, resolved.Path));
+        Assert.Null(HdrDisplayTargets.Resolve(duplicate, @"\\?\DISPLAY#SYN1234#missing-instance#{synthetic}"));
+        Assert.Equal(current, HdrDisplayTargets.Resolve(duplicate, current)!.Path);
+        Assert.Null(HdrDisplayTargets.Resolve(HdrDisplayTargets.NameSelections([Display(@"\\?\DISPLAY#OTHER00#port#{synthetic}")]), old));
+        Assert.Contains("连接", GameHdrTaskPresentation.UnavailableDisplayReason(null));
+        Assert.Contains("不支持", GameHdrTaskPresentation.UnavailableDisplayReason(Display(current) with { Supported = false }));
+        Assert.Contains("不表示", GameHdrTaskPresentation.UnavailableDisplayReason(Display(current) with { Supported = null }));
+        Assert.Null(GameHdrTaskPresentation.UnavailableDisplayReason(Display(current)));
+        using var wire = new MemoryStream();
+        await GameHdrProtocol.WriteAsync(wire, new(1, "displays", "synthetic", Displays: displays), default); wire.Position = 0;
+        Assert.Equal(current, (await GameHdrProtocol.ReadAsync(wire, default))!.Displays![0].ConnectionPath);
+    }
+
+    [Fact]
     public async Task SavedRuleSurvivesRestartAndVersionConflictDoesNotOverwrite()
     {
         var path = Path.Combine(Path.GetTempPath(), "axiom-game-hdr-test-" + Guid.NewGuid().ToString("N") + ".db");

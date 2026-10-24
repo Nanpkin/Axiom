@@ -8,7 +8,7 @@ public sealed record GameHdrRuleDto(string Id, long Version, string Title, strin
     string DisplayPath, bool HdrEnabled, bool Paused, string? ProcessNamesText = null);
 
 public sealed record GameHdrDisplayDto(string Name, string Path, bool? Supported, bool? Enabled,
-    bool? Active, string? Error);
+    bool? Active, string? Error, string? ConnectionPath = null);
 
 public sealed record GameHdrStatusDto(string State, string Reason, DateTimeOffset AtUtc,
     bool AgentConnected, GameHdrDisplayDto[] Displays, GameHdrRuleDto[] Rules);

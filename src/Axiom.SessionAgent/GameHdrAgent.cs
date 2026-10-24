@@ -106,8 +106,10 @@ internal sealed class GameHdrAgent : IAsyncDisposable
                 else
                 {
                     UsageObservationStream.MarkAction();
-                    var result = WindowsHdrDisplayProbe.Apply(request.DisplayPath!, request.Enabled!.Value,
-                        request.ExpectedEnabled!.Value);
+                    var target = HdrDisplayTargets.Resolve(ReadDisplays(), request.DisplayPath!);
+                    var result = target is null
+                        ? new WindowsHdrDisplayProbe.HdrApplyResult(false, null, "所选显示器未连接或有同名/同型号多屏，无法唯一确认；未切换其他屏幕。")
+                        : WindowsHdrDisplayProbe.Apply(target.ConnectionPath ?? target.Path, request.Enabled!.Value, request.ExpectedEnabled!.Value);
                     reply = new(1, "applied", request.RequestId, Displays: ReadDisplays(),
                         Reason: result.Reason, Error: result.Confirmed ? null : result.Reason);
                 }
@@ -203,8 +205,8 @@ internal sealed class GameHdrAgent : IAsyncDisposable
         }
     }
 
-    private static GameHdrDisplayDto[] ReadDisplays() => WindowsHdrDisplayProbe.ReadActiveDisplays()
-        .Select(x => new GameHdrDisplayDto(x.FriendlyName, x.DevicePath, x.Supported, x.UserEnabled, x.Active, x.Error)).ToArray();
+    private static GameHdrDisplayDto[] ReadDisplays() => HdrDisplayTargets.NameSelections(WindowsHdrDisplayProbe.ReadActiveDisplays()
+        .Select(x => new GameHdrDisplayDto(x.FriendlyName, x.DevicePath, x.Supported, x.UserEnabled, x.Active, x.Error)));
 
     public async ValueTask DisposeAsync()
     {

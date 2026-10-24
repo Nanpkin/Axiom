@@ -1,7 +1,18 @@
+using Axiom.Contracts;
+
 namespace Axiom.Infrastructure;
 
 public static class GameHdrTaskPresentation
 {
+    public static string? UnavailableDisplayReason(GameHdrDisplayDto? display) => display switch
+    {
+        null => "任务保存的显示器连接已不在当前活动屏幕中，请编辑任务重新选择显示器；没有切换到其他屏幕。",
+        { Supported: false } => "Windows报告所选显示器当前不支持 HDR；请检查当前连接和显示模式。",
+        { Supported: not true } => "所选显示器的 HDR 支持状态暂时无法读取；这不表示屏幕不支持 HDR。",
+        { Enabled: null } or { Active: null } => "所选显示器的 HDR 开关状态暂未确认，本次未切换。",
+        _ when display.Enabled != display.Active => "所选显示器 HDR 开关与实际生效状态不一致，本次未切换。",
+        _ => null
+    };
     public static string ResultTitle(string? state) => state switch
     {
         null => "尚无结果",
