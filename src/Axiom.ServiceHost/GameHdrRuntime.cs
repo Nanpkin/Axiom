@@ -286,15 +286,15 @@ internal sealed class GameHdrRuntime : ICapabilityExecutor, IAuthorizationPolicy
         // Reconnect is a new observation baseline, never an in-game rebinding. Persist the
         // named target once, so later connection-instance changes cannot orphan these rules.
         if (baselines.Count != 0) return;
-        var updated = new List<GameHdrRuleDto>();
-        foreach (var rule in rules)
+        for (var index = 0; index < rules.Length; index++)
         {
+            var rule = rules[index];
             var target = HdrDisplayTargets.Resolve(latest, rule.DisplayPath)?.Path;
-            updated.Add(target is not null && target != rule.DisplayPath
-                ? await database.SaveAsync(rule with { DisplayPath = target }, token) : rule);
+            if (target is null || target == rule.DisplayPath) continue;
+            var saved = await database.SaveAsync(rule with { DisplayPath = target }, token);
+            RegisterRule(saved);
+            rules[index] = saved;
         }
-        rules = updated.ToArray();
-        foreach (var rule in rules) RegisterRule(rule);
     }
 
     public async Task ProcessEventAsync(GameHdrMessage message, CancellationToken token)
@@ -506,6 +506,7 @@ internal sealed class GameHdrRuntime : ICapabilityExecutor, IAuthorizationPolicy
 
     private async Task<GameHdrMessage> AgentRequestAsync(GameHdrMessage request, CancellationToken token)
     {
+        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException();
         using var pipe = new NamedPipeClientStream(".", GameHdrProtocol.AgentPipe(sid), PipeDirection.InOut,
             PipeOptions.Asynchronous);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);

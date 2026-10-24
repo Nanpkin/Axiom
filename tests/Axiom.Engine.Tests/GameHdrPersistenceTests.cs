@@ -6,6 +6,48 @@ namespace Axiom.Engine.Tests;
 
 public sealed class GameHdrPersistenceTests
 {
+    [Fact(Timeout = 10000)]
+    public async Task DisplayMigrationWithUnchangedAndMissingTargetsSurvivesReconnectAndRestart()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "axiom-hdr-restart-" + Guid.NewGuid().ToString("N") + ".db");
+        const string legacy = @"\\?\DISPLAY#SYN1234#old-instance#{synthetic}";
+        var named = HdrDisplayTargets.Named("Synthetic HDR");
+        var latest = HdrDisplayTargets.NameSelections([new GameHdrDisplayDto("Synthetic HDR",
+            @"\\?\DISPLAY#SYN1234#new-instance#{synthetic}", true, false, false, null)]);
+        try
+        {
+            using var store = new SqliteGameHdrStore(path);
+            foreach (var target in new[] { legacy, named, "missing-display" })
+                await store.SaveAsync(new(Guid.NewGuid().ToString("D"), 0, "synthetic", "synthetic.exe", target, true, false));
+            var originals = await store.ListAsync();
+            for (var start = 0; start < 2; start++)
+            {
+                var clock = new FakeClock();
+                using var engine = new EngineHost(clock, new FakeScheduler(clock), new FakeExecutor());
+                engine.Start();
+                using var runtime = new Axiom.ServiceHost.GameHdrRuntime(engine, store, "synthetic-owner");
+                await runtime.InitializeAsync();
+                var normalize = typeof(Axiom.ServiceHost.GameHdrRuntime).GetMethod("NormalizeDisplaySelectionsAsync",
+                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+                for (var reconnect = 0; reconnect < 2; reconnect++)
+                {
+                    await (Task)normalize.Invoke(runtime, [latest, CancellationToken.None])!;
+                    var current = (await runtime.StatusAsync(default)).Rules;
+                    foreach (var original in originals)
+                    {
+                        var saved = Assert.Single(current, rule => rule.Id == original.Id);
+                        var migrated = original.DisplayPath == legacy;
+                        Assert.Equal(migrated ? named : original.DisplayPath, saved.DisplayPath);
+                        Assert.Equal(original.Version + (migrated ? 1 : 0), saved.Version);
+                        Assert.Equal(saved.Version, engine.GetRuleEvaluation(saved.Id).Version);
+                    }
+                    Assert.Equal(current, await store.ListAsync());
+                }
+            }
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
+
     [Fact]
     public async Task NamedDisplaySurvivesConnectionChangesAndLegacyRulesResolveOnlyOneMatchingModel()
     {
