@@ -38,7 +38,7 @@ public static class GameHdrTaskPresentation
         {
             (true, true) => "HDR 已开启并生效",
             (false, false) => "HDR 已关闭",
-            (true, false) => "HDR 已开启，但尚未生效",
+            (true, false) => "HDR 设置为开启，当前实际未生效",
             _ => "HDR 状态未确认"
         };
     }
