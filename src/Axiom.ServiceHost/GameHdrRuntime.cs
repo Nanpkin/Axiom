@@ -151,7 +151,7 @@ internal sealed class GameHdrRuntime : ICapabilityExecutor, IAuthorizationPolicy
                 var inactive = current.FirstOrDefault(display => display.Enabled == true && display.Active == false &&
                     rules.Any(rule => !rule.Paused && HdrDisplayTargets.Resolve(current, rule.DisplayPath) == display));
                 if (inactive is not null)
-                    return new("HDR 未生效", $"{inactive.Name} 的 HDR 设置为开启，但当前实际输出不是 HDR；此前切换成功不代表当前仍生效。",
+                    return new("HDR 未生效", $"{inactive.Name} 当前输出是 SDR；系统仍保留 HDR 启用标记，但这不能证明当前 HDR 已打开。",
                         DateTimeOffset.UtcNow, true, current, rules);
                 foreach (var (path, expected) in lastApplied)
                 {
