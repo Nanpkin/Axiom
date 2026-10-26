@@ -7,6 +7,7 @@ public interface IActivityHistory
     // Fast, bounded enqueue only; must not perform storage I/O on the caller.
     void Record(ActivityEvent entry);
     Task<ActivityPage> ReadAsync(long? beforeId, int pageSize, CancellationToken token);
+    Task<ActivityRecord?> ReadDetailAsync(long id, CancellationToken token);
     Task<ActivityCleanupResult> ClearBeforeAsync(DateTimeOffset beforeUtc, CancellationToken token);
 }
 
@@ -38,6 +39,12 @@ public sealed partial class EngineHost
 
     public Task<ActivityPage> ReadActivityAsync(string principal, long? beforeId, CancellationToken token) =>
         ReadActivityAsync(principal, beforeId, 30, token);
+
+    public Task<ActivityRecord?> ReadActivityDetailAsync(string principal, long id, CancellationToken token)
+    {
+        if (id <= 0) throw new ArgumentOutOfRangeException(nameof(id));
+        return AuthorizedHistory(principal).ReadDetailAsync(id, token);
+    }
 
     public Task<ActivityCleanupResult> ClearOldActivityAsync(string principal, DateTimeOffset nowUtc, CancellationToken token) =>
         AuthorizedHistory(principal).ClearBeforeAsync(nowUtc.AddDays(-7), token);

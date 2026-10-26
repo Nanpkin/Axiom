@@ -421,7 +421,7 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
     }
     private void Record(string title, string detail, ActivityLevel level)
     {
-        var now = DateTimeOffset.UtcNow; lock (statusGate) { state = title; reason = detail; at = now; }
+        var now = DateTimeOffset.UtcNow; lock (statusGate) { state = title; reason = ActivityText.Summary(detail); at = now; }
         activity.RecordActivity(new(now, "自动化任务", title, detail, level));
     }
     public async Task EnsureSafeToStopAsync(CancellationToken token)

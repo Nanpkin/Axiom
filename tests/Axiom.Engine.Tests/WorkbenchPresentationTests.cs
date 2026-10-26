@@ -65,4 +65,13 @@ public sealed class WorkbenchPresentationTests
         Assert.Equal(time.AddSeconds(2), group.LastAtUtc);
         Assert.Equal(3, group.Latest.Id);
     }
+    [Fact]
+    public void ActivityListSummariesNeverExpandBodiesOrMergeDifferentFullDetails()
+    {
+        Assert.Equal("完成 1 个。", WorkbenchPresentation.ActivitySummary("完成 1 个。\n\n【完成】\nC:\\Synthetic\\App.exe"));
+        Assert.True(WorkbenchPresentation.ActivitySummary(new string('错', 500)).Length <= 120);
+        var item = new ActivityEvent(DateTimeOffset.UtcNow, "托盘", "检查完成", "相同摘要", ActivityLevel.Success);
+        var groups = WorkbenchPresentation.GroupActivity([new ActivityRecord(2, item, "detail-a"), new ActivityRecord(1, item, "detail-b")]);
+        Assert.Equal(2, groups.Length);
+    }
 }

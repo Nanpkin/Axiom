@@ -178,11 +178,13 @@ public sealed class TrayActionTests
             (_, _) => Task.FromResult(new ProgramControlResult(true, "未发现图标，无需处理。") { Skipped = true }), default);
         Assert.True(absent.Success); Assert.True(absent.Skipped);
         Assert.Contains("无需处理 8 个目标", absent.Reason); Assert.DoesNotContain("0/8", absent.Reason);
-        Assert.DoesNotContain(paths[0], absent.Reason);
+        Assert.DoesNotContain(paths[0], absent.Reason.Split('\n')[0]);
+        Assert.All(paths, path => Assert.Contains(path, absent.Reason));
         var mixed = await WindowsProgramBatch.ExecuteAsync(paths, (path, _) => Task.FromResult(path == paths[0]
             ? new ProgramControlResult(false, "权限不足") : new ProgramControlResult(true, "未发现图标") { Skipped = true }), default);
         Assert.False(mixed.Success); Assert.Contains("失败 1 个", mixed.Reason); Assert.Contains("无需处理 7 个", mixed.Reason);
-        Assert.Contains(paths[0], mixed.Reason); Assert.DoesNotContain(paths[1], mixed.Reason);
+        Assert.Contains(paths[0], mixed.Reason); Assert.Contains(paths[1], mixed.Reason);
+        Assert.Contains("【失败】权限不足", mixed.Reason); Assert.Contains("【无需处理】", mixed.Reason);
         var denied = await WindowsProgramBatch.ExecuteAsync(paths,
             (_, _) => Task.FromResult(new ProgramControlResult(false, "权限不足")), default);
         Assert.False(denied.Success); Assert.Equal(1, denied.Reason.Split("权限不足").Length - 1);

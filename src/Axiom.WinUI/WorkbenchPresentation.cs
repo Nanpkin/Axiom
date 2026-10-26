@@ -17,7 +17,7 @@ internal static class WorkbenchPresentation
             {
                 var previous = groups[^1]; var last = previous.Latest.Event;
                 if (entry.Category == last.Category && entry.Title == last.Title && entry.Detail == last.Detail &&
-                    entry.Subject == last.Subject && entry.Level == last.Level &&
+                    entry.Subject == last.Subject && entry.Level == last.Level && record.DetailFingerprint == previous.Latest.DetailFingerprint &&
                     entry.AtUtc.ToLocalTime().Date == last.AtUtc.ToLocalTime().Date)
                 {
                     groups[^1] = previous with { Count = previous.Count + 1,
@@ -29,6 +29,12 @@ internal static class WorkbenchPresentation
             groups.Add(new(record, entry.AtUtc, entry.AtUtc, 1));
         }
         return [.. groups];
+    }
+
+    public static string ActivitySummary(string detail)
+    {
+        var line = ActivityText.Summary(detail, 120);
+        return line.Length == 0 ? "查看详情" : line;
     }
 
     public static string SaveError(string? error)

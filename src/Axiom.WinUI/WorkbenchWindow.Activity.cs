@@ -8,6 +8,11 @@ namespace Axiom.WinUI;
 
 public sealed partial class WorkbenchWindow
 {
+    private WorkbenchPresentation.ActivityGroup? selectedActivity;
+    private ActivityRecord? activityDetail;
+    private string? activityDetailError;
+    private double activityListOffset;
+    private bool activityRestoreScroll;
     private ActivityPage? activity;
     private string? activityError;
     private long? activityBeforeId;
@@ -30,7 +35,7 @@ public sealed partial class WorkbenchWindow
 
     private void QueueActivityViewportRefresh()
     {
-        if (!loaded || closed || page != Page.Activity || busy || activityResizeQueued) return;
+        if (!loaded || closed || page != Page.Activity || selectedActivity is not null || busy || activityResizeQueued) return;
         var next = CalculateActivityPageSize();
         if (activityPageSize == 0 || next == activityPageSize) return;
         activityResizeQueued = true;
@@ -45,6 +50,7 @@ public sealed partial class WorkbenchWindow
 
     private void BuildActivity()
     {
+        if (selectedActivity is not null) { BuildActivityDetail(); return; }
         var toolbar = Column(12);
         var actions = new Grid { ColumnSpacing = 12 };
         actions.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -114,27 +120,88 @@ public sealed partial class WorkbenchWindow
                 var time = Text($"{local:HH:mm:ss}", 11, Muted); time.VerticalAlignment = VerticalAlignment.Center;
                 ToolTipService.SetToolTip(time, $"{local:yyyy-MM-dd HH:mm:ss} · {entry.Category}");
                 Grid.SetColumn(time, 2); heading.Children.Add(time); body.Children.Add(heading);
-                if (!string.IsNullOrEmpty(entry.Subject) && entry.Subject != entry.Detail) body.Children.Add(Preview(entry.Subject, 12, Accent));
-                if (!string.IsNullOrWhiteSpace(entry.Detail))
-                {
-                    if (warning) body.Children.Add(Text(entry.Detail, 13, Amber));
-                    else
-                    {
-                        var detail = new Grid { ColumnSpacing = 8 };
-                        detail.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                        detail.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                        var preview = Preview(entry.Detail, 13, Muted); preview.VerticalAlignment = VerticalAlignment.Center;
-                        detail.Children.Add(preview);
-                        var help = Help(entry.Detail, "活动详情"); Grid.SetColumn(help, 1); detail.Children.Add(help);
-                        body.Children.Add(detail);
-                    }
-                }
+                var summary = WorkbenchPresentation.ActivitySummary(entry.Detail);
+                if (!string.IsNullOrWhiteSpace(entry.Subject) && entry.Subject != entry.Detail) summary = entry.Subject + " · " + summary;
+                body.Children.Add(Preview(summary, 12, warning ? Amber : Muted));
                 Grid.SetColumn(body, 1); row.Children.Add(body);
-                rows!.Children.Add(new Border { Child = row, BorderBrush = Line,
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(18) });
+                var arrow = new FontIcon { Glyph = "\uE76C", FontSize = 12, Foreground = Muted, VerticalAlignment = VerticalAlignment.Center };
+                Grid.SetColumn(arrow, 2); row.Children.Add(arrow);
+                var open = new Button { Content = row, Padding = new Thickness(0), MinHeight = 56,
+                    Background = Surface, BorderThickness = new Thickness(0), CornerRadius = new CornerRadius(0),
+                    HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch };
+                open.Resources["ButtonBackgroundPointerOver"] = Hover;
+                AutomationProperties.SetName(open, "查看活动详情：" + entry.Title + $" {local:HH:mm:ss}");
+                AutomationProperties.SetAutomationId(open, "Activity.Record." + record.Id);
+                open.Click += async (_, _) => await OpenActivityDetailAsync(group);
+                rows!.Children.Add(new Border { Child = open, BorderBrush = Line,
                     BorderThickness = new Thickness(0, rows.Children.Count == 0 ? 0 : 1, 0, 0) });
             }
         }
         if (activity is not null && (activityPositions.Count > 0 || activity.BeforeId is not null)) content.Children.Add(ActivityPager());
+    }
+
+    private async Task OpenActivityDetailAsync(WorkbenchPresentation.ActivityGroup group)
+    {
+        if (busy || closed) return;
+        activityListOffset = pageScroll.VerticalOffset;
+        selectedActivity = group; activityDetail = null; activityDetailError = null;
+        pageScrollToTop = true; Render();
+        await LoadActivityDetailAsync();
+    }
+
+    private async Task LoadActivityDetailAsync()
+    {
+        if (busy || closed || selectedActivity is not { } selection) return;
+        SetBusy(true);
+        try
+        {
+            var response = await WorkbenchClient.RequestAsync(new(1, "read-activity-detail", Guid.NewGuid().ToString("N"),
+                Id: selection.Latest.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+            if (response.Type != "activity-detail" || response.ActivityDetail is { } item && item.Id != selection.Latest.Id)
+                throw new InvalidDataException();
+            if (!ReferenceEquals(selectedActivity, selection) || closed) return;
+            activityDetail = response.ActivityDetail;
+            activityDetailError = activityDetail is null ? "这条记录已清理，或已不在当前记录库中。" : null;
+        }
+        catch (Exception) { activityDetailError = "详情读取未确认，请重试。"; }
+        finally { SetBusy(false); Render(); }
+    }
+
+    private void BuildActivityDetail()
+    {
+        var group = selectedActivity!;
+        var entry = activityDetail?.Event ?? group.Latest.Event;
+        pageTitle.Text = "活动详情"; pageSubtitle.Text = "活动记录 / " + entry.Category;
+        content.MaxWidth = 940;
+        var actions = Row(8);
+        var back = Action("← 返回活动记录");
+        back.Click += (_, _) =>
+        {
+            selectedActivity = null; activityDetail = null; activityDetailError = null;
+            pageScrollToTop = activityScrollToTop = false; activityRestoreScroll = true; Render();
+        };
+        actions.Children.Add(back);
+        var retry = Action("刷新详情"); retry.Click += async (_, _) => await LoadActivityDetailAsync(); actions.Children.Add(retry);
+        pageTools.Children.Add(actions);
+        var heading = Column(8); heading.Children.Add(Text(entry.Title, 20, Ink, true));
+        heading.Children.Add(Badge(entry.Level switch { ActivityLevel.Success => "完成", ActivityLevel.Warning => "提醒", ActivityLevel.Error => "异常", _ => "信息" },
+            entry.Level is not ActivityLevel.Success));
+        if (!string.IsNullOrWhiteSpace(entry.Subject)) heading.Children.Add(Text(entry.Subject, 14, Accent));
+        heading.Children.Add(Text(group.Count > 1
+            ? $"本页连续 {group.Count} 次 · {group.FirstAtUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss} – {group.LastAtUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss}"
+            : $"{entry.AtUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss}", 12, Muted));
+        content.Children.Add(Card(heading));
+        if (activityDetailError is not null) content.Children.Add(Card(Text(activityDetailError, 14, Amber), PaleAmber));
+        if (activityDetail is null)
+        {
+            if (activityDetailError is null) content.Children.Add(Text("正在读取详情…", 14, Muted));
+            return;
+        }
+        var detail = Text(string.IsNullOrWhiteSpace(entry.Detail) ? "此记录没有额外说明。" : entry.Detail, 14);
+        detail.IsTextSelectionEnabled = true;
+        AutomationProperties.SetName(detail, "活动完整详情");
+        content.Children.Add(Card(detail));
     }
 
     private Grid ActivityPager()

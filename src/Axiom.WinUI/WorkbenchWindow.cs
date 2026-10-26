@@ -324,7 +324,7 @@ public sealed partial class WorkbenchWindow : Window
         button.Click += async (_, _) =>
         {
             if (busy || !await ConfirmDiscardAsync()) return;
-            editing = false; groupEditing = false; detailPage = null; page = target; pageScrollToTop = true; notice.IsOpen = false; Render(); await RefreshAsync();
+            editing = false; groupEditing = false; detailPage = null; selectedActivity = null; activityDetail = null; page = target; pageScrollToTop = true; notice.IsOpen = false; Render(); await RefreshAsync();
         };
         navigation[target] = button; panel.Children.Add(button);
     }
@@ -382,6 +382,11 @@ public sealed partial class WorkbenchWindow : Window
         {
             pageScrollToTop = false; activityScrollToTop = false;
             DispatcherQueue.TryEnqueue(() => pageScroll.ChangeView(null, 0, null, true));
+        }
+        else if (activityRestoreScroll && page == Page.Activity)
+        {
+            activityRestoreScroll = false;
+            DispatcherQueue.TryEnqueue(() => { pageScroll.UpdateLayout(); pageScroll.ChangeView(null, activityListOffset, null, true); });
         }
     }
     private void ShowNotice(string message, bool success = false)

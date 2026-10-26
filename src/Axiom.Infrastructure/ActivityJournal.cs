@@ -6,7 +6,9 @@ namespace Axiom.Infrastructure;
 
 public sealed class ActivityJournal : IActivityHistory, IAsyncDisposable
 {
+    public const int MaximumDetailLength = 40000; // Worst-case JSON escaping still fits one existing IPC frame.
     private abstract record Work;
+    private sealed record DetailWork(long Id, CancellationToken Token, TaskCompletionSource<ActivityRecord?> Done) : Work;
     private sealed record AppendWork(ActivityEvent Entry) : Work;
     private sealed record ReadWork(long? BeforeId, int PageSize, CancellationToken Token, TaskCompletionSource<ActivityPage> Done) : Work;
     private sealed record ClearWork(DateTimeOffset BeforeUtc, CancellationToken Token, TaskCompletionSource<ActivityCleanupResult> Done) : Work;
@@ -22,8 +24,10 @@ public sealed class ActivityJournal : IActivityHistory, IAsyncDisposable
     public void Record(ActivityEvent entry)
     {
         static string Limit(string value, int length) => value.Length <= length ? value : value[..(length - 1)] + "…";
+        var detail = entry.Detail.Trim();
+        if (detail.Length > MaximumDetailLength) detail = detail[..(MaximumDetailLength - 32)] + "\n（详情超过记录上限，后续未保存）";
         entry = entry with { Category = Limit(entry.Category, 40), Title = Limit(entry.Title, 120),
-            Detail = Limit(entry.Detail.Trim(), 1000), Subject = entry.Subject is null ? null : Limit(entry.Subject, 120) };
+            Detail = detail, Subject = entry.Subject is null ? null : Limit(entry.Subject, 120) };
         if (!queue.Writer.TryWrite(new AppendWork(entry))) Interlocked.Increment(ref missed);
     }
 
@@ -36,6 +40,13 @@ public sealed class ActivityJournal : IActivityHistory, IAsyncDisposable
 
     public Task<ActivityPage> ReadAsync(long? beforeId, CancellationToken token) =>
         ReadAsync(beforeId, SqliteActivityStore.DefaultPageSize, token);
+
+    public async Task<ActivityRecord?> ReadDetailAsync(long id, CancellationToken token)
+    {
+        var done = new TaskCompletionSource<ActivityRecord?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        await queue.Writer.WriteAsync(new DetailWork(id, token, done), token);
+        return await done.Task.WaitAsync(token);
+    }
 
     public async Task<ActivityCleanupResult> ClearBeforeAsync(DateTimeOffset beforeUtc, CancellationToken token)
     {
@@ -64,6 +75,11 @@ public sealed class ActivityJournal : IActivityHistory, IAsyncDisposable
                         catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
                         { writeError = error.Message; Interlocked.Add(ref missed, batch.Count); }
                         break;
+                    case DetailWork detail:
+                        detail.Token.ThrowIfCancellationRequested();
+                        if (store is null) throw new InvalidOperationException("活动记录存储不可用。");
+                        detail.Done.SetResult(store.ReadDetail(detail.Id));
+                        break;
                     case ReadWork read:
                         read.Token.ThrowIfCancellationRequested();
                         var page = store?.Read(read.BeforeId, read.PageSize) ?? new ActivityPage([], null);
@@ -81,6 +97,7 @@ public sealed class ActivityJournal : IActivityHistory, IAsyncDisposable
             catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
             {
                 if (work is ReadWork read) read.Done.TrySetException(error);
+                if (work is DetailWork detail) detail.Done.TrySetException(error);
                 if (work is ClearWork clear) clear.Done.TrySetException(error);
             }
         }

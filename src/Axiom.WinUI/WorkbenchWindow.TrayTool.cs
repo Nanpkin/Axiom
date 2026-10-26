@@ -25,7 +25,7 @@ public sealed partial class WorkbenchWindow
         {
             body.Children.Add(Text($"{trayTool.Settings.Executables.Length} 个程序 · {TrayModeText(trayTool.Settings.Mode)} · 最多等待 {trayTool.Settings.WaitSeconds} 秒", 13, Muted));
             body.Children.Add(Text(trayTool.State, 13, trayTool.LastStatus is OutcomeStatus.Failed or OutcomeStatus.Unknown or OutcomeStatus.Rejected ? Amber : Muted));
-            if (trayTool.LastRunUtc is { } at) body.Children.Add(Text($"上次结果：{TrayResultText(trayTool.LastStatus)} · {at.ToLocalTime():MM-dd HH:mm:ss}（详情见工具设置）", 12, Muted));
+            if (trayTool.LastRunUtc is { } at) body.Children.Add(Text($"上次结果：{TrayResultText(trayTool.LastStatus)} · {at.ToLocalTime():MM-dd HH:mm:ss}（详情见活动记录）", 12, Muted));
         }
         if (trayToolError is not null) body.Children.Add(Text(trayToolError, 12, Amber));
         body.Children.Add(Help("开启或启用时保存名单，会先处理当前图标一次；之后按所选模式运行。关闭窗口不影响，关闭工具会停止未来操作。"));

@@ -24,7 +24,8 @@ public sealed record AutomationMessage(int Version, string Type, string RequestI
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TaskRunStatus[]? RunStates = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? RunStatesSequence = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] GameModeSettings? GameModeSettings = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] GameModeSnapshot? GameMode = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] GameModeSnapshot? GameMode = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ActivityRecord? ActivityDetail = null);
 
 public sealed record LoginStartupStatus(bool Registered, bool CurrentLocation, bool LauncherAvailable, string? Error = null);
 
@@ -37,6 +38,15 @@ public static class AutomationProtocol
         Encoder = JavaScriptEncoder.Create(UnicodeRanges.All) };
     public static void ValidateRequest(AutomationMessage request, DateTimeOffset now, bool shortcutAgent = false)
     {
+        if (request.ActivityDetail is not null) throw new InvalidDataException("活动详情只用于后台回执。");
+        if (request.Type == "read-activity-detail")
+        {
+            if (shortcutAgent || !long.TryParse(request.Id, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var recordId) ||
+                recordId <= 0 || recordId.ToString(System.Globalization.CultureInfo.InvariantCulture) != request.Id)
+                throw new InvalidDataException("活动记录编号无效。");
+            ValidateRequest(request with { Type = "read-tray-tool", Id = null }, now);
+            return;
+        }
         if (request.GameMode is not null || request.GameModeSettings is not null && request.Type != "save-game-mode") throw new InvalidDataException("游戏模式字段不属于此操作。");
         if (request.Type is "read-game-mode" or "save-game-mode")
         {

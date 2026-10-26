@@ -164,7 +164,7 @@ internal sealed partial class PluginTaskRuntime
             var task = tasks.SingleOrDefault(t => t.Id == TrayTool.TaskId);
             if (origin is not null && task is not null && !task.Paused && IsTrayToolTask(task) && task.Version == origin.RuleVersion && trayRunVersion == task.Version)
             {
-                trayRunning = false; trayLastRun = DateTimeOffset.UtcNow; trayLastStatus = outcome.Status; trayResult = outcome.Reason;
+                trayRunning = false; trayLastRun = DateTimeOffset.UtcNow; trayLastStatus = outcome.Status; trayResult = ActivityText.Summary(outcome.Reason);
                 trayState = outcome.Status == OutcomeStatus.Succeeded ? task.Detection.Parameters["mode"] == TrayTool.Continuous
                     ? trayMonitoring ? "托盘检查已完成；正在监听图标重新出现。" : "托盘检查已完成；持续监听尚未就绪。"
                     : "托盘检查已完成；等待下次 Axiom 后台启动。" : "本次隐藏未完成或未确认；可查看结果并重试。";

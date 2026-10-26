@@ -7,6 +7,78 @@ namespace Axiom.Engine.Tests;
 public sealed class ActivityHistoryTests
 {
     [Fact]
+    public async Task CompleteDetailsAreDurableAuthorizedAndFetchedIndependentlyOfListSummaries()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "axiom-detail-" + Guid.NewGuid().ToString("N") + ".db");
+        var at = DateTimeOffset.UtcNow;
+        var prefix = "完成 1 个，无需处理 1 个。";
+        var text = prefix + "\n\n【完成】已隐藏\nC:\\Synthetic\\One.exe\n" + new string('详', 5000) + "\n【无需处理】\nC:\\Synthetic\\Last.exe";
+        long id;
+        try
+        {
+            using (var store = new SqliteActivityStore(path))
+            {
+                await using var journal = new ActivityJournal(store);
+                using var fixture = new Fixture(); fixture.Engine.ConfigureActivityHistory(journal, "owner");
+                journal.Record(new(at, "托盘", "检查完成", text));
+                journal.Record(new(at, "托盘", "检查完成", text + "不同详情"));
+                var page = await fixture.Engine.ReadActivityAsync("owner", null, 64, default);
+                id = page.Records[1].Id;
+                Assert.All(page.Records, row => Assert.Equal(prefix, row.Event.Detail));
+                Assert.NotEqual(page.Records[0].DetailFingerprint, page.Records[1].DetailFingerprint);
+                await Assert.ThrowsAsync<UnauthorizedAccessException>(() => fixture.Engine.ReadActivityDetailAsync("other", id, default));
+                Assert.Equal(text, (await fixture.Engine.ReadActivityDetailAsync("owner", id, default))!.Event.Detail);
+            }
+            using (var reopened = new SqliteActivityStore(path))
+            {
+                Assert.Equal(text, reopened.ReadDetail(id)!.Event.Detail);
+                reopened.ClearBefore(at.AddSeconds(1)); Assert.Null(reopened.ReadDetail(id));
+            }
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public async Task DetailRequestsRejectUnrelatedFieldsAndMaximumEscapedBodiesFitOneFrame()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var request = new AutomationMessage(1, "read-activity-detail", "detail", now.AddSeconds(10), Id: "12");
+        AutomationProtocol.ValidateRequest(request, now);
+        foreach (var id in new[] { "", "0", "-1", "01", "+1", "x", "18446744073709551615" })
+            Assert.Throws<InvalidDataException>(() => AutomationProtocol.ValidateRequest(request with { Id = id }, now));
+        Assert.Throws<InvalidDataException>(() => AutomationProtocol.ValidateRequest(request, now, true));
+        Assert.Throws<InvalidDataException>(() => AutomationProtocol.ValidateRequest(request with { ActivityPageSize = 1 }, now));
+        var record = new ActivityRecord(12, new(now, "测试", "完整详情", new string('\u0001', ActivityJournal.MaximumDetailLength)));
+        Assert.Throws<InvalidDataException>(() => AutomationProtocol.ValidateRequest(request with { ActivityDetail = record }, now));
+        using var stream = new MemoryStream();
+        await AutomationProtocol.WriteAsync(stream, new(1, "activity-detail", "detail", ActivityDetail: record), default);
+        Assert.True(stream.Length <= AutomationProtocol.MaximumFrame + 4);
+        stream.Position = 0;
+        Assert.Equal(record, (await AutomationProtocol.ReadAsync(stream, default)).ActivityDetail);
+    }
+
+    [Fact]
+    public async Task MaximumSummaryPageStaysBoundedAndUnavailableDetailsAreExplicit()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "axiom-summary-" + Guid.NewGuid().ToString("N") + ".db");
+        try
+        {
+            using var store = new SqliteActivityStore(path); await using var journal = new ActivityJournal(store);
+            var entry = new ActivityEvent(DateTimeOffset.UtcNow, new string('\u0001', 40), new string('\u0001', 120),
+                new string('\u0001', ActivityJournal.MaximumDetailLength), Subject: new string('\u0001', 120));
+            for (var i = 0; i < 64; i++) journal.Record(entry);
+            var page = await journal.ReadAsync(null, 64, default);
+            Assert.Equal(64, page.Records.Length); Assert.All(page.Records, r => Assert.True(r.Event.Detail.Length <= 256));
+            using var stream = new MemoryStream();
+            await AutomationProtocol.WriteAsync(stream, new(1, "activity", "summary", Activity: page), default);
+            Assert.True(stream.Length <= AutomationProtocol.MaximumFrame + 4);
+        }
+        finally { File.Delete(path); }
+        await using var missing = new ActivityJournal(null, "不可用");
+        await Assert.ThrowsAsync<InvalidOperationException>(() => missing.ReadDetailAsync(1, default));
+    }
+
+    [Fact]
     public async Task DurablePagesIncludeAllEventsAndNewAppendsDoNotShiftOlderPages()
     {
         var path = Path.Combine(Path.GetTempPath(), "axiom-activity-" + Guid.NewGuid().ToString("N") + ".db");

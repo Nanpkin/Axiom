@@ -4,6 +4,7 @@
 
 | 改动范围 | 代码入口 / 检索词 | 相关测试定位 |
 |---|---|---|
+| 活动摘要/二级详情与批量结果 | [Activity UI](../../src/Axiom.WinUI/WorkbenchWindow.Activity.cs)、[授权接口](../../src/Axiom.Engine/EngineHost.Activity.cs)、[日志队列](../../src/Axiom.Infrastructure/ActivityJournal.cs)、[存储](../../src/Axiom.Infrastructure/SqliteActivityStore.cs)、WindowsProgramBatch；契约见[UI说明](../product/workbench-ui.md#活动记录详情契约) | ActivityHistoryTests及WorkbenchPresentation日志方法、TrayAction批量结果用例 |
 | 工具箱图标入口 / 设置紧凑列表与二级导航 | [CompactPages](../../src/Axiom.WinUI/WorkbenchWindow.CompactPages.cs)；详情复用原Toolbox/Theme/Shortcuts/Views/GameMode | WorkbenchPresentationTests；真实入口/返回/窄窗检查 |
 | 游戏模式用户Wiki | [唯一正文](../user/game-mode-wiki.md)、[离线阅读页](../../src/Axiom.WinUI/WorkbenchWindow.GameModeWiki.cs)；行为变化同步正文 | 本轮入口/返回/滚动实际检查 |
 | 游戏模式设置与可组合状态检测 | [声明](../../src/Axiom.Contracts/GameMode.cs)、[注册](../../src/Axiom.Infrastructure/GameModePlugin.cs)、[Host状态](../../src/Axiom.ServiceHost/PluginTaskRuntime.GameMode.cs)、[设置UI](../../src/Axiom.WinUI/WorkbenchWindow.GameMode.cs)、[产品约定](../product/game-mode.md) | GameModeTests / GameModeCompositionTests；组合不代表实际停采 |

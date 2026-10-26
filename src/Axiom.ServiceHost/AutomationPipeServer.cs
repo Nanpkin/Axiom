@@ -141,6 +141,12 @@ internal sealed class AutomationPipeServer(ImmutableArray<IAutomationTaskBackend
                         request.Type == "save-group" ? "进程组已保存" : "进程组已删除", request.Group?.Name ?? "组已移除，已有任务保持原进程名单。", ActivityLevel.Success));
                     await AutomationProtocol.WriteAsync(pipe, result, deadline.Token); return;
                 }
+                if (request.Type == "read-activity-detail")
+                {
+                    var record = await engine.ReadActivityDetailAsync(actualSid!, long.Parse(request.Id!, System.Globalization.CultureInfo.InvariantCulture), deadline.Token);
+                    await AutomationProtocol.WriteAsync(pipe, new(1, "activity-detail", request.RequestId, ActivityDetail: record), deadline.Token);
+                    return;
+                }
                 if (request.Type == "read-activity")
                 {
                     var activity = await engine.ReadActivityAsync(actualSid!, request.ActivityBeforeId, request.ActivityPageSize ?? SqliteActivityStore.DefaultPageSize, deadline.Token);
