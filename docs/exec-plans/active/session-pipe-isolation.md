@@ -10,3 +10,5 @@
 不回退旧端点，不自动重试命令，不强杀或绕过恢复保护。
 
 证据：artifacts/session-pipe-smoke/confirmed-fault.txt确认旧管理监听Win32 231故障；未强杀，待系统正常重启后应用。
+
+统一publish-preview已生成完整local.20261026.3，干净a7004d3，四角色/Contracts版本与SHA256核对，暂存artifacts/package-stage。脚本在最终替换处因旧进程在运行而正确拒绝；未应用。初次构建被开发UI文件锁阻止，核对无草稿后正常退出其消息循环，重试构建通过。待所有者保存工作并批准正常重启Windows，再继续本机替换/连接/配置验收。
