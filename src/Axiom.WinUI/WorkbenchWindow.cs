@@ -248,7 +248,6 @@ public sealed partial class WorkbenchWindow : Window
         shellGrid.Children.Add(side);
         var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         pageScroll = scroll;
-        pageScroll.SizeChanged += (_, _) => QueueActivityViewportRefresh();
         var body = Column(18);
         body.Padding = new Thickness(32, 0, 32, 24);
         var heading = new Grid { ColumnSpacing = 14, Margin = new Thickness(0, 0, 0, 4) };

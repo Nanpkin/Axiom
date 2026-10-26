@@ -16,10 +16,8 @@ public sealed partial class WorkbenchWindow
     private ActivityPage? activity;
     private string? activityError;
     private long? activityBeforeId;
-    private int activityPageSize;
     private readonly Stack<long?> activityPositions = [];
     private bool activityScrollToTop;
-    private bool activityResizeQueued;
 
     private int CalculateActivityPageSize()
     {
@@ -31,21 +29,6 @@ public sealed partial class WorkbenchWindow
         var rowHeight = width < 600 ? 82 : 66;
         var available = Math.Max(200, height - 50);
         return Math.Clamp((int)Math.Floor(available / rowHeight), 1, 64);
-    }
-
-    private void QueueActivityViewportRefresh()
-    {
-        if (!loaded || closed || page != Page.Activity || selectedActivity is not null || busy || activityResizeQueued) return;
-        var next = CalculateActivityPageSize();
-        if (activityPageSize == 0 || next == activityPageSize) return;
-        activityResizeQueued = true;
-        DispatcherQueue.TryEnqueue(async () =>
-        {
-            activityResizeQueued = false;
-            if (closed || page != Page.Activity || busy) return;
-            activityPositions.Clear();
-            await ReadActivityCoreAsync(null, reset: true);
-        });
     }
 
     private void BuildActivity()
@@ -221,12 +204,11 @@ public sealed partial class WorkbenchWindow
     {
         try
         {
-            var pageSize = beforeId is null || activityPageSize == 0 ? CalculateActivityPageSize() : activityPageSize;
+            var pageSize = CalculateActivityPageSize();
             var response = await WorkbenchClient.RequestAsync(new(1, "read-activity", Guid.NewGuid().ToString("N"),
                 ActivityBeforeId: beforeId, ActivityPageSize: pageSize));
             if (response.Type != "activity" || response.Activity is null) throw new InvalidDataException(response.Error ?? "活动记录回复未确认。");
             activity = response.Activity; activityBeforeId = beforeId; activityError = null;
-            activityPageSize = pageSize;
             activityScrollToTop = true;
             if (reset) activityPositions.Clear();
             Render(); return true;
