@@ -11,7 +11,8 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value.Replace('-', '_')
-$pipe = [System.IO.Pipes.NamedPipeClientStream]::new('.', "axiom-game-hdr-host-v1-$sid", [System.IO.Pipes.PipeDirection]::InOut,
+$sessionId = (Get-Process -Id $PID).SessionId
+$pipe = [System.IO.Pipes.NamedPipeClientStream]::new('.', "axiom-game-hdr-host-v1-${sid}-s$sessionId", [System.IO.Pipes.PipeDirection]::InOut,
     [System.IO.Pipes.PipeOptions]::Asynchronous -bor [System.IO.Pipes.PipeOptions]::CurrentUserOnly)
 try {
     $pipe.Connect(3000)

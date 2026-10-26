@@ -1,6 +1,7 @@
 $ErrorActionPreference = 'Stop'
 $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value.Replace('-', '_')
-$name = "axiom-status-v1-$sid"
+$sessionId = (Get-Process -Id $PID).SessionId
+$name = "axiom-status-v1-${sid}-s$sessionId"
 $pipe = [System.IO.Pipes.NamedPipeClientStream]::new('.', $name,
     [System.IO.Pipes.PipeDirection]::InOut,
     ([System.IO.Pipes.PipeOptions]::Asynchronous -bor [System.IO.Pipes.PipeOptions]::CurrentUserOnly))

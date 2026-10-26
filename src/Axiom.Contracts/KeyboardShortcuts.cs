@@ -24,7 +24,7 @@ public static class KeyboardShortcuts
     public const int MaximumBindings = 32;
     public static ImmutableArray<string> Keys { get; } = [.. Enumerable.Range('A', 26).Select(x => ((char)x).ToString()),
         .. Enumerable.Range('0', 10).Select(x => ((char)x).ToString()), .. Enumerable.Range(1, 11).Select(x => "F" + x)];
-    public static string AgentPipe(string sid) => "axiom-shortcuts-agent-v1-" + sid.Replace('-', '_');
+    public static string AgentPipe(string sid, int? sessionId = null) => SessionPipeName.Create("axiom-shortcuts-agent-v1-", sid, sessionId);
     public static void Validate(ShortcutBinding binding)
     {
         if (!Guid.TryParseExact(binding.Id, "D", out _) || binding.Version < 0 ||

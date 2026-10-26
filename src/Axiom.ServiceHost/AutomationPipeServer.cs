@@ -12,17 +12,18 @@ internal sealed class AutomationPipeServer(ImmutableArray<IAutomationTaskBackend
     IAutomationRuntimeLifetime lifetime, string sid, CancellationTokenSource exit, LoginStartupRegistration startup, ShortcutCoordinator shortcuts,
     EngineHost engine, WorkbenchUtilities utilities, UsageObservationController usage)
 {
+    private const int MaximumClients = LocalPipeFactory.AutomationMaximumClients;
     private readonly AutomationTaskRouter router = new(backends);
     private readonly HashSet<Task> clients = [];
     public async Task RunAsync()
     {
         while (!exit.IsCancellationRequested)
         {
-            var pipe = LocalPipeFactory.Create(AutomationProtocol.PipeName(sid), sid);
+            var pipe = LocalPipeFactory.Create(AutomationProtocol.PipeName(sid), sid, LocalPipeFactory.AutomationMaximumInstances);
             try { await pipe.WaitForConnectionAsync(exit.Token); }
             catch (OperationCanceledException) { pipe.Dispose(); break; }
             clients.RemoveWhere(t => t.IsCompleted);
-            if (clients.Count >= 8) { pipe.Dispose(); continue; }
+            if (clients.Count >= MaximumClients) { pipe.Dispose(); continue; }
             clients.Add(HandleAsync(pipe));
         }
         await Task.WhenAll(clients);

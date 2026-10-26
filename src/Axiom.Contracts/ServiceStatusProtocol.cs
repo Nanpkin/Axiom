@@ -13,7 +13,7 @@ public static class ServiceStatusProtocol
     public const string ServiceName = "EventLog";
     public const string Scope = "machine";
     public const int MaximumFrame = 4096;
-    public static string PipeName(string sid) => "axiom-status-v1-" + sid.Replace('-', '_');
+    public static string PipeName(string sid, int? sessionId = null) => SessionPipeName.Create("axiom-status-v1-", sid, sessionId);
 
     public static async Task<ServiceMessage?> ReadAsync(Stream stream, CancellationToken cancellationToken)
     {

@@ -20,7 +20,7 @@ public sealed record ProviderMessage(int Version, string Type, string RequestId,
 public static class ProviderProtocol
 {
     private static readonly JsonSerializerOptions Options = new() { UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow };
-    public static string PipeName(string sid) => "axiom-providers-v1-" + sid.Replace('-', '_');
+    public static string PipeName(string sid, int? sessionId = null) => SessionPipeName.Create("axiom-providers-v1-", sid, sessionId);
     public static void Validate(ProviderMessage message, DateTimeOffset now)
     {
         var maximumDeadlineSeconds = 45;

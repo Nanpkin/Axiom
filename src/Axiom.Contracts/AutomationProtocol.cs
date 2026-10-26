@@ -32,7 +32,7 @@ public sealed record LoginStartupStatus(bool Registered, bool CurrentLocation, b
 public static class AutomationProtocol
 {
     public const int MaximumFrame = 262144;
-    public static string PipeName(string sid) => "axiom-tasks-v1-" + sid.Replace('-', '_');
+    public static string PipeName(string sid, int? sessionId = null) => SessionPipeName.Create("axiom-tasks-v1-", sid, sessionId);
     // Local UTF-8 pipe payloads need no ASCII-only escaping; retain the same frame bound and strict reader.
     private static readonly JsonSerializerOptions Options = new() { UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
         Encoder = JavaScriptEncoder.Create(UnicodeRanges.All) };

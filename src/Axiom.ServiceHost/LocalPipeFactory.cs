@@ -6,6 +6,8 @@ namespace Axiom.ServiceHost;
 
 internal static class LocalPipeFactory
 {
+    internal const int AutomationMaximumClients = 8;
+    internal const uint AutomationMaximumInstances = AutomationMaximumClients + 1;
     // Explicitly rejects remote clients. The DACL grants only SYSTEM and the launch user's SID.
     internal static NamedPipeServerStream Create(string name, string sid, uint maximumInstances = 8)
     {

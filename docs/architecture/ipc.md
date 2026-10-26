@@ -12,6 +12,12 @@ Service account、ACL 精确 SDDL、安装与身份验证 API 属后续安全里
 
 当前管理员预览的 Host/Agent 本机 Pipe 明确指定 `O:用户SIDD:P(A;;GA;;;SY)(A;;GA;;;用户SID)`，客户端在发送任何帧之前用 `LocalUserPipe.ConnectForUserAsync` 核对实际 User SID。不能使用 .NET CurrentUserOnly 代替此检查：其 Windows 实现比较 WindowsIdentity.Owner，管理员令牌的默认 Owner 可是管理员组。保留远程拒绝、服务端 SID/会话/角色核对；不接受管理员组所有者作为任意用户的替代。平台相关安全传输帮助函数局限于 Contracts/Host/Agent/UI，Domain/Engine 不依赖这些实现。
 
+## 当前预览的会话路由
+
+同一用户的不同Windows会话可以各自启动Host/Agent。Named Pipes名称是机器范围，当前7条端点(Automation、Provider、HDR Host/Agent、Shortcuts Agent、Status、RuleDraft)统一在SID后追加`-s{实际OS会话编号}`。编号默认读取当前进程，不能从请求正文选择目标会话；ACL、实际User SID、对端会话和角色校验继续执行，命名隔离不替代鉴权。
+
+整包更新四角色，不回退旧无会话端点、不因路由失败重发命令。数据仍共用当前用户原目录，不复制或迁移。Automation管理通道最多8个处理客户端，额外保留第9个监听实例；超额连接关闭后，后续客户端仍能正常接入。
+
 ## 消息与流量语义
 
 消息封套含协议 major/minor、message type、request/correlation id、payload schema version、deadline、scope。length-prefixed framing 必须有最大帧大小；序列化格式和大小具体数值在 IPC 计划确定。未知 major 拒绝；minor 兼容行为有测试。拒绝未知操作、不合法字段、超限消息。
@@ -32,7 +38,7 @@ Request/Reply 负责配置与操作；Subscription/Delta 负责订阅；Snapshot
 
 0008 游戏 HDR 开发预览的宿主/Agent 两条专用本机 Pipe、会话身份、帧、限制和当前未验收边界见 [游戏 HDR contract](../development/game-hdr-preview-contracts.md)。它仅授权结构化游戏进程观察和指定显示器绝对 HDR 设置，不是通用 Agent 执行接口。
 
-2026-10-04 新增 `ProviderProtocol` 的会话能力管道 `axiom-providers-v1-{SID}`，由 Agent Provider 注册表分发；Host 负责 Engine 授权和调度。请求 `observe`（观察资源 + 必需能力 ID）/ `invoke`（版本化调用 + commandId + deadline），观察回复包含序号、完整初始快照与后续更新；输出资源不能冒充观察资源。仅本机 OS SID/同会话 Host 可调用，Agent 再校验参数。帧上限 256 KiB、请求读期限十秒、命令期限最多四十五秒、每观察最多 128 个资源；有界队列溢出断连，Host 置 Unknown，命令不自动重试。2026-10-06 将该通道改为最多 136 个异步客户端（128 条任务 + 观察/短读取余量），原生实例上限 137 含一个监听实例，避免在途等待阻塞其他规则；其他 Agent 管道仍维持原有实例限制。当前为显式注册内置模块，不是任意代码/外部 DLL 执行入口。
+2026-10-04 新增 `ProviderProtocol` 的会话能力管道 `axiom-providers-v1-{SID}-s{SessionId}`，由 Agent Provider 注册表分发；Host 负责 Engine 授权和调度。请求 `observe`（观察资源 + 必需能力 ID）/ `invoke`（版本化调用 + commandId + deadline），观察回复包含序号、完整初始快照与后续更新；输出资源不能冒充观察资源。仅本机 OS SID/同会话 Host 可调用，Agent 再校验参数。帧上限 256 KiB、请求读期限十秒、命令期限最多四十五秒、每观察最多 128 个资源；有界队列溢出断连，Host 置 Unknown，命令不自动重试。2026-10-06 将该通道改为最多 136 个异步客户端（128 条任务 + 观察/短读取余量），原生实例上限 137 含一个监听实例，避免在途等待阻塞其他规则；其他 Agent 管道仍维持原有实例限制。当前为显式注册内置模块，不是任意代码/外部 DLL 执行入口。
 
 工作台 `AutomationProtocol` 支持 `read-groups/save-group/delete-group/scan-steam`；2026-10-05 新增 `read-steam-tool/save-steam-settings/refresh-steam-tool`。仍经过实际 User SID 与同会话核对，不接受 UI 指定 Steam 根目录或任意扫描路径。组写入和 Steam 设置各自携带预期版本；自动组禁止手工编辑/删除，保留名不能创建为手工组。工具设置最多 128 个合法 exe 文件名排除项，不接受路径。工具结果每页 64 个进程、最多 4096，后续页必须携带同一 scanId，结果变化拒绝拼接旧页；旧 scan-steam 安装项目分页最多 40、超大内容按序列化大小缩小，帧上限 256 KiB 不增加。新字段严格限定请求类型，Agent 快捷键通道拒绝这些字段。四入口一起更新，旧严格 AutomationProtocol 客户端不能读取新增字段，诊断工具需同步重编。
 

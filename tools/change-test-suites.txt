@@ -1,1 +1,1 @@
-Axiom.Engine.Tests.RuleCollectionsTests
+Axiom.Engine.Tests.LocalUserPipeTests
