@@ -37,115 +37,105 @@ public sealed partial class WorkbenchWindow
     }
     private void BuildRules()
     {
-        var toolbar = new Grid { ColumnSpacing = 12, RowSpacing = 10 };
-        toolbar.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        toolbar.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        LoadRuleCollections();
+        var toolbar = new Grid { ColumnSpacing = 8, RowSpacing = 8 };
         toolbar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         toolbar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var counts = Column(6);
-        counts.Children.Add(Text(status is null ? "你的任务会显示在这里" : $"{status.Tasks.Length} 个任务  ·  {status.Tasks.Count(x => TaskStateLabel(x) == "已启用")} 个已启用  ·  {status.Tasks.Count(x => TaskStateLabel(x) == "自动暂停")} 个自动暂停", 14, Muted));
-        ToolTipService.SetToolTip(counts, readAt is null ? "尚未读取后台" : $"状态读取于 {readAt:HH:mm:ss}");
-        toolbar.Children.Add(counts);
-        var buttons = Row(8); buttons.Children.Add(RefreshButton());
-        var add = Action("＋  新建任务", true); add.IsEnabled = status is not null;
-        add.Click += (_, _) => SelectRule(null); buttons.Children.Add(add);
-        Grid.SetColumn(buttons, 1); toolbar.Children.Add(buttons); pageTools.Children.Add(toolbar);
-        var template = Action("常用场景"); template.IsEnabled = reachable && status is not null;
-        template.Click += async (_, _) => await ChooseTaskTemplateAsync(); buttons.Children.Insert(0, template);
-        void FitToolbar()
+        toolbar.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        toolbar.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        var search = new TextBox { PlaceholderText = "搜索规则、条件或动作", Text = ruleSearch, MaxLength = 200, MinWidth = 120 };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(search, "查找规则");
+        toolbar.Children.Add(search);
+        var actions = Row(6);
+        var state = new ComboBox { ItemsSource = new[] { "所有状态", "已启用", "自动暂停", "手动暂停" }, SelectedIndex = ruleStateFilter, MinWidth = 112 };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(state, "规则状态筛选"); actions.Children.Add(state);
+        var add = Action("＋ 新建", true); add.MinHeight = 34; add.Padding = new Thickness(12, 5, 12, 5); add.IsEnabled = status is not null;
+        add.Click += (_, _) => SelectRule(null); actions.Children.Add(add);
+        var more = RuleIconButton("\uE712", "规则库选项"); var menu = new MenuFlyout(); more.Flyout = menu;
+        var template = new MenuFlyoutItem { Text = "从常用场景创建", IsEnabled = reachable && status is not null };
+        template.Click += async (_, _) => await ChooseTaskTemplateAsync(); menu.Items.Add(template);
+        var refresh = new MenuFlyoutItem { Text = "刷新", Icon = new SymbolIcon(Symbol.Refresh) };
+        refresh.Click += async (_, _) => await RefreshAsync(); menu.Items.Add(refresh);
+        var activity = new MenuFlyoutItem { Text = "查看活动记录" };
+        activity.Click += async (_, _) => { page = Page.Activity; Render(); await RefreshAsync(); }; menu.Items.Add(activity);
+        actions.Children.Add(more); Grid.SetColumn(actions, 1); toolbar.Children.Add(actions);
+        toolbar.SizeChanged += (_, _) =>
         {
-            var narrow = toolbar.ActualWidth < 620;
-            Grid.SetRow(buttons, narrow ? 1 : 0); Grid.SetColumn(buttons, narrow ? 0 : 1);
-            Grid.SetColumnSpan(buttons, narrow ? 2 : 1); Grid.SetColumnSpan(counts, narrow ? 2 : 1);
-        }
-        toolbar.SizeChanged += (_, _) => FitToolbar();
+            var narrow = toolbar.ActualWidth < 500;
+            Grid.SetColumnSpan(search, narrow ? 2 : 1);
+            Grid.SetRow(actions, narrow ? 1 : 0); Grid.SetColumn(actions, narrow ? 0 : 1);
+            Grid.SetColumnSpan(actions, narrow ? 2 : 1);
+        };
+        pageTools.Children.Add(BuildCollectionStrip()); pageTools.Children.Add(toolbar);
+        if (collectionsError is not null) content.Children.Add(Text(collectionsError, 12, Amber));
         if (!reachable || status?.DetectionAvailable != true)
-            content.Children.Add(Card(Text(reachable ? "检测暂不可用。请重新打开 Axiom，然后刷新状态。" : "后台状态未确认，显示上次读取的内容。", 13, Amber), PaleAmber, 16));
-        if (status?.Tasks.Length is not > 0)
+            content.Children.Add(Text(reachable ? "检测暂不可用。请重新打开 Axiom，然后刷新状态。" : "后台状态未确认，显示上次读取的内容。", 13, Amber));
+        var cards = Column(0); content.Children.Add(Card(cards, Surface, 0));
+        search.TextChanged += (_, _) => { ruleSearch = search.Text; ShowRules(); };
+        state.SelectionChanged += (_, _) => { ruleStateFilter = Math.Max(0, state.SelectedIndex); ShowRules(); };
+        ShowRules();
+        void ShowRules()
         {
-            var empty = Column(14);
-            empty.Children.Add(Text("创建你的第一个后台任务", 23, Ink, true));
-            empty.Children.Add(Text("选择一种检测条件，配上要执行的动作。保存后，Axiom 在后台等待条件并完成任务。", 14, Muted));
-            empty.Children.Add(Text("检测条件  →  执行动作  →  查看结果", 16, Accent, true));
-            content.Children.Add(Card(empty, Surface, 32));
-        }
-        if (status?.Tasks.Length is > 0)
-        {
-            var filter = new Grid { ColumnSpacing = 12 };
-            filter.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            filter.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            var search = new TextBox { PlaceholderText = "任务名称、检测或动作名称", Text = ruleSearch, MaxLength = 200 };
-            var state = new ComboBox { ItemsSource = new[] { "全部任务", "仅已启用", "仅自动暂停", "仅手动暂停" }, SelectedIndex = ruleStateFilter, MinWidth = 150 };
-            filter.Children.Add(search); Grid.SetColumn(state, 1); filter.Children.Add(state); pageTools.Children.Add(filter);
-            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(search, "查找任务");
-            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(state, "任务状态筛选");
-            var shown = Text("", 12, Muted); var cards = Column(0); pageTools.Children.Add(shown); content.Children.Add(Card(cards, Surface, 0));
-            search.TextChanged += (_, _) => { ruleSearch = search.Text; ShowRules(); };
-            state.SelectionChanged += (_, _) => { ruleStateFilter = Math.Max(0, state.SelectedIndex); ShowRules(); };
-            ShowRules();
-            void ShowRules()
+            var query = ruleSearch.Trim();
+            var visible = (status?.Tasks ?? []).Where(task => ruleCollections.Includes(task.Id) &&
+                (ruleStateFilter == 0 || TaskStateLabel(task) == (ruleStateFilter == 1 ? "已启用" : ruleStateFilter == 2 ? "自动暂停" : "手动暂停")) &&
+                (query.Length == 0 || task.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                 TaskDetections(task).Any(d => FindCapability(d, TaskCapabilityKind.Detection)?.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                 (FindCapability(task.Action, TaskCapabilityKind.Action)?.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false))).ToArray();
+            var collectionName = ruleCollections.Selected.Length == 0 ? "全部规则" : ruleCollections.Selected == RuleCollections.Unfiled ? "未分类" :
+                ruleCollections.Collections.FirstOrDefault(x => x.Id == ruleCollections.Selected)?.Name ?? "全部规则";
+            pageSubtitle.Text = $"{collectionName} · {visible.Length} 条规则";
+            cards.Children.Clear();
+            if (visible.Length == 0)
             {
-                var query = ruleSearch.Trim();
-                var visible = (status?.Tasks ?? []).Where(task => (ruleStateFilter == 0 || TaskStateLabel(task) == (ruleStateFilter == 1 ? "已启用" : ruleStateFilter == 2 ? "自动暂停" : "手动暂停")) &&
-                    (query.Length == 0 || task.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                     TaskDetections(task).Any(d => FindCapability(d, TaskCapabilityKind.Detection)?.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
-                     (FindCapability(task.Action, TaskCapabilityKind.Action)?.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false))).ToArray();
-                shown.Text = $"显示 {visible.Length} / {status?.Tasks.Length ?? 0} 个任务";
-                cards.Children.Clear();
-                if (visible.Length == 0) cards.Children.Add(new Border { Padding = new Thickness(18), Child = Text("没有匹配的任务，换个关键词或筛选试试。", 14, Muted) });
-                foreach (var task in visible)
-                {
-                    var row = new Grid { ColumnSpacing = 12, Padding = new Thickness(16, 12, 16, 12) };
-                    row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(36) });
-                    row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                    row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                    var body = Column(5);
-                    var heading = new Grid { ColumnSpacing = 10 };
-                    heading.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                    heading.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                    heading.Children.Add(Preview(task.Title, 16, Ink, true));
-                    var badge = Badge(TaskStateLabel(task), TaskStateLabel(task) != "已启用");
-                    Grid.SetColumn(badge, 1); heading.Children.Add(badge); body.Children.Add(heading);
-                    var detection = task.DetectionExpression is null ? FindCapability(task.Detection, TaskCapabilityKind.Detection)?.Name ?? "检测暂不可用" : DetectionSummary(task);
-                    var action = FindCapability(task.Action, TaskCapabilityKind.Action)?.Name ?? "动作暂不可用";
-                    body.Children.Add(Preview(detection + "  →  " + action, 12, Muted));
-                    if (!task.Paused && RunState(task) is { AutomaticallyPaused: true } runState)
-                        body.Children.Add(Text(runState.Reason ?? "等待运行条件满足", 12, Amber));
-                    if (TaskStateLabel(task) == "状态未确认") body.Children.Add(Text("刷新以确认运行条件", 12, Amber));
-                    row.Children.Add(CategoryTile(FindCapability(task.Action, TaskCapabilityKind.Action)?.Category));
-                    Grid.SetColumn(body, 1); row.Children.Add(body);
-                    var actions = Row(6); actions.VerticalAlignment = VerticalAlignment.Center;
-                    var edit = Action("编辑"); edit.MinHeight = 32; edit.Padding = new Thickness(10, 4, 10, 4); edit.Click += (_, _) => SelectRule(task);
-                    var toggle = Action(task.Paused ? "启用" : "暂停"); toggle.MinHeight = 32; toggle.Padding = new Thickness(10, 4, 10, 4);
-                    toggle.IsEnabled = reachable; toggle.Click += async (_, _) => await ToggleRuleAsync(task);
-                    Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(edit, "编辑 " + task.Title);
-                    Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(toggle, (task.Paused ? "启用 " : "暂停 ") + task.Title);
-                    actions.Children.Add(edit); actions.Children.Add(toggle);
-                    var detail = DetectionSummary(task) + "\n" + Summary(task.Action, TaskCapabilityKind.Action);
-                    if (task.RunConditions is { } gates)
-                    {
-                        if (gates.Hdr != "any") detail += gates.Hdr == "off" ? "\n主屏 HDR 关闭时运行" : "\n主屏 HDR 开启时运行";
-                        if (gates.TimeWindow is { } allowed) detail += "\n" + TimeWindowLabel(allowed).Replace("接受新触发", "允许运行");
-                    }
-                    if (task.TimeWindow is { } window)
-                    {
-                        detail += "\n" + TimeWindowLabel(window);
-                        if (status?.Observations.FirstOrDefault(o => o.TaskId == task.Id)?.Value is { } admission) detail += "\n" + admission;
-                    }
-                    actions.Children.Add(Help(detail, "任务详情：" + task.Title));
-                    Grid.SetColumn(actions, 2); row.Children.Add(actions);
-                    var item = new Border { Child = row, Background = Surface, BorderBrush = Line,
-                        BorderThickness = new Thickness(0, cards.Children.Count == 0 ? 0 : 1, 0, 0) };
-                    item.PointerEntered += (_, _) => item.Background = Hover;
-                    item.PointerExited += (_, _) => item.Background = Surface;
-                    cards.Children.Add(item);
-                }
+                var empty = Column(8);
+                empty.Children.Add(Text(status?.Tasks.Length is > 0 ? "这里还没有规则" : "让日常自动一点", 20, Ink, true));
+                empty.Children.Add(Text(query.Length > 0 || ruleStateFilter != 0 ? "换个关键词或状态筛选试试。" :
+                    ruleCollections.Selected.Length > 0 ? "在“全部”中找到规则，用行尾的更多菜单移到这个分类。" : "新建一条规则，或从常用场景开始。", 13, Muted));
+                cards.Children.Add(new Border { Padding = new Thickness(24), Child = empty });
             }
-        }
-        if (status is not null)
-        {
-            var details = Action("查看活动记录 →"); details.Click += async (_, _) => { page = Page.Activity; Render(); await RefreshAsync(); };
-            content.Children.Add(details);
+            foreach (var task in visible)
+            {
+                var row = new Grid { ColumnSpacing = 10, Padding = new Thickness(14, 9, 10, 9), MinHeight = 64 };
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(32) });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                row.Children.Add(CategoryTile(FindCapability(task.Action, TaskCapabilityKind.Action)?.Category, 32));
+                var body = Column(3);
+                body.Children.Add(Preview(task.Title, 14, Ink, true));
+                var detection = task.DetectionExpression is null ? FindCapability(task.Detection, TaskCapabilityKind.Detection)?.Name ?? "检测暂不可用" : DetectionSummary(task);
+                var action = FindCapability(task.Action, TaskCapabilityKind.Action)?.Name ?? "动作暂不可用";
+                body.Children.Add(Preview(detection + "  →  " + action, 12, Muted));
+                if (!task.Paused && RunState(task) is { AutomaticallyPaused: true } runState)
+                    body.Children.Add(Text(runState.Reason ?? "等待运行条件满足", 12, Amber));
+                if (TaskStateLabel(task) == "状态未确认") body.Children.Add(Text("刷新以确认运行条件", 12, Amber));
+                var edit = new Button { Content = body, HorizontalAlignment = HorizontalAlignment.Stretch,
+                    HorizontalContentAlignment = HorizontalAlignment.Stretch, Padding = new Thickness(0), BorderThickness = new Thickness(0),
+                    Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent) };
+                Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(edit, "编辑 " + task.Title);
+                edit.Click += (_, _) => SelectRule(task); Grid.SetColumn(edit, 1); row.Children.Add(edit);
+                var controls = Row(6); controls.VerticalAlignment = VerticalAlignment.Center;
+                var label = Text(TaskStateLabel(task), 12, task.Paused ? Muted : TaskStateLabel(task) == "已启用" ? Accent : Amber);
+                label.VerticalAlignment = VerticalAlignment.Center; controls.Children.Add(label);
+                var toggle = RuleIconButton(task.Paused ? "\uE768" : "\uE769", (task.Paused ? "启用 " : "暂停 ") + task.Title);
+                toggle.IsEnabled = reachable; toggle.Click += async (_, _) => await ToggleRuleAsync(task); controls.Children.Add(toggle);
+                var detail = DetectionSummary(task) + "\n" + Summary(task.Action, TaskCapabilityKind.Action);
+                if (task.RunConditions is { } gates)
+                {
+                    if (gates.Hdr != "any") detail += gates.Hdr == "off" ? "\n主屏 HDR 关闭时运行" : "\n主屏 HDR 开启时运行";
+                    if (gates.TimeWindow is { } allowed) detail += "\n" + TimeWindowLabel(allowed).Replace("接受新触发", "允许运行");
+                }
+                if (task.TimeWindow is { } window)
+                {
+                    detail += "\n" + TimeWindowLabel(window);
+                    if (status?.Observations.FirstOrDefault(o => o.TaskId == task.Id)?.Value is { } admission) detail += "\n" + admission;
+                }
+                controls.Children.Add(BuildRuleMenu(task, detail)); Grid.SetColumn(controls, 2); row.Children.Add(controls);
+                var item = new Border { Child = row, Background = Surface, BorderBrush = Line,
+                    BorderThickness = new Thickness(0, cards.Children.Count == 0 ? 0 : 1, 0, 0) };
+                item.PointerEntered += (_, _) => item.Background = Hover; item.PointerExited += (_, _) => item.Background = Surface;
+                cards.Children.Add(item);
+            }
         }
     }
     private void BuildEditor()
