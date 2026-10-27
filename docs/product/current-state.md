@@ -1,6 +1,8 @@
 # 当前交接
 
-更新：2026-10-26。分支codex/rule-library，[PR39](https://github.com/Starvan/Axiom/pull/39)叠于activity-details；未合并/发Release，私有配置/诊断不提交。
+更新：2026-10-28。功能分支codex/rule-library，[PR39](https://github.com/Nanpkin/Axiom/pull/39)叠于activity-details；未合并/发Release，私有配置/诊断不提交。
+
+GitHub用户名已由Starvan改为Nanpkin（账号ID63274913不变），新旧检出origin与新提交noreply邮箱已同步；通用作者名及旧检出禁止推送保护保持。开发使用本检出，身份设置见[提交身份说明](../development/commit-identity-repair.md)。
 
 ## 本机已更新：规则库与会话连接修复
 
