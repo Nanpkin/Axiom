@@ -1,5 +1,7 @@
 # 当前交接
 
+维护更新（2026-10-28）：GitHub用户名已由Starvan改为Nanpkin（账号ID63274913不变）；本机新旧检出origin、新提交邮箱与当前仓库登录账号配置已同步，读取及推送验证通过。通用作者名和旧检出禁止推送保护保持；身份规则见[提交身份说明](../development/commit-identity-repair.md)。本次仅修改三份开发文档，以下功能状态为此前记录。
+
 更新：2026-10-19。仓库公开；开始开发按AGENTS设置固定提交身份。
 
 ## 仓库维护
@@ -11,9 +13,9 @@
 ## 当前开发状态
 
 - main仍是已发布亮度渐变批次，以下PR保持开放，没有借本轮维护合并功能。
-- [PR28](https://github.com/Starvan/Axiom/pull/28)：响应式亮度渐变及多键组合+滚轮；[PR29](https://github.com/Starvan/Axiom/pull/29)叠于其上，新增任务外层HDR/时段自动暂停与事件推送。
-- [PR30](https://github.com/Starvan/Axiom/pull/30)：工作台视觉/导航和紧凑任务行，基于PR29；浅深色/窄窗及8项呈现测试此前通过。
-- [PR31](https://github.com/Starvan/Axiom/pull/31)基于PR29修复晚启动托盘等待；[PR32](https://github.com/Starvan/Axiom/pull/32)叠于其上修复无关观察重建误取消启动动作。分支名保持。
+- [PR28](https://github.com/Nanpkin/Axiom/pull/28)：响应式亮度渐变及多键组合+滚轮；[PR29](https://github.com/Nanpkin/Axiom/pull/29)叠于其上，新增任务外层HDR/时段自动暂停与事件推送。
+- [PR30](https://github.com/Nanpkin/Axiom/pull/30)：工作台视觉/导航和紧凑任务行，基于PR29；浅深色/窄窗及8项呈现测试此前通过。
+- [PR31](https://github.com/Nanpkin/Axiom/pull/31)基于PR29修复晚启动托盘等待；[PR32](https://github.com/Nanpkin/Axiom/pull/32)叠于其上修复无关观察重建误取消启动动作。分支名保持。
 
 ## 本机与验收边界
 
