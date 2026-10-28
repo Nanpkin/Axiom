@@ -326,10 +326,9 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
                         lock (statusGate) ObserveGameProcesses(observations, baseline: true);
                         // A live subscription can legitimately contain an unavailable individual resource.
                         // Keep unrelated rules working; Engine retains Unknown for that resource.
-                        connected = true;
-                        lastWatchError = null;
                         var plan = engine.GetObservationPlan();
-                        if (engine.AcknowledgeObservationPlan(plan.Version, plan.References.Keys, guarantees: plan.Requirements))
+                        var acknowledged = engine.AcknowledgeObservationPlan(plan.Version, plan.References.Keys, guarantees: plan.Requirements);
+                        if (acknowledged)
                         {
                             token.ThrowIfCancellationRequested();
                             lock (statusGate)
@@ -355,6 +354,14 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
                                     }
                                 }
                             }
+                        }
+                        // Publish readiness after plan acknowledgement and startup dispatch.
+                        // A concurrent refresh must not acknowledge this snapshot first and
+                        // make the first connection silently skip eligible startup edges.
+                        lastWatchError = null;
+                        connected = true;
+                        if (acknowledged)
+                        {
                             lock (statusGate) FlushTrayTrigger();
                             await RefreshKnownWindowTasksAsync(currentWatch, token);
                         }
