@@ -45,6 +45,26 @@ public sealed class ProgramPluginTests
         Assert.Throws<ArgumentException>(() => ProgramCapabilities.Validate(task.Action with { Parameters = task.Action.Parameters.Add("shell", "true") }));
     }
     [Fact]
+    public void StartupProtectionIsExplicitPreservesOldLaunchesAndRejectsFractionalOrUnboundedDurations()
+    {
+        var (compiler, task) = Configure();
+        Assert.Equal("normal", ProgramCapabilities.Value(task.Action, "window"));
+        Assert.Equal("15", ProgramCapabilities.Value(task.Action, "startupProtectionSeconds"));
+        var guarded = task with { Action = task.Action with { Parameters = task.Action.Parameters
+            .SetItem("window", "startup-hidden").SetItem("startupProtectionSeconds", "20") } };
+        compiler.Compile(guarded, "owner", Scope);
+        foreach (var seconds in new[] { "0", "21", "1.5", "NaN", "" })
+            Assert.ThrowsAny<ArgumentException>(() => ProgramCapabilities.Validate(guarded.Action with
+                { Parameters = guarded.Action.Parameters.SetItem("startupProtectionSeconds", seconds) }));
+        var editor = new TaskEditorState(); editor.Load(guarded);
+        var rebuilt = editor.Build();
+        Assert.Equal("startup-hidden", rebuilt.Action.Parameters["window"]);
+        Assert.Equal("20", rebuilt.Action.Parameters["startupProtectionSeconds"]);
+        // Existing hidden launches keep their original mode and do not silently opt into injection.
+        Assert.Equal("hidden", ProgramCapabilities.Value(task.Action with
+            { Parameters = task.Action.Parameters.SetItem("window", "hidden") }, "window"));
+    }
+    [Fact]
     public async Task GenericStorageSurvivesReopenPreservesParametersAndRejectsStaleEdits()
     {
         var (_, task) = Configure(); task = task with { Action = task.Action with { Parameters = task.Action.Parameters.SetItem("arguments", "--profile \"two words\"") } };

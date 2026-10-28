@@ -15,7 +15,7 @@ public sealed record ProgramControlResult(bool Success, string Reason)
 [SupportedOSPlatform("windows")]
 public static class WindowsProgramControl
 {
-    public static ProgramControlResult Start(string path, string arguments, string workingDirectory, string window, bool skipRunning, CancellationToken token = default)
+    public static ProgramControlResult Start(string path, string arguments, string workingDirectory, string window, bool skipRunning, CancellationToken token = default, int startupProtectionSeconds = 15)
     {
         token.ThrowIfCancellationRequested();
         if (!File.Exists(path)) return new(false, "目标程序不存在，请重新选择路径。");
@@ -26,6 +26,7 @@ public static class WindowsProgramControl
         {
             token.ThrowIfCancellationRequested();
             if (skipRunning && existing.Count > 0) return new(true, "程序已运行，按配置跳过启动。") { Skipped = true };
+            if (window == "startup-hidden") return WindowsStartupWindowGuard.Start(path, arguments, directory, startupProtectionSeconds, token);
             using var started = Process.Start(new ProcessStartInfo(path, arguments)
             {
                 UseShellExecute = false, WorkingDirectory = directory,

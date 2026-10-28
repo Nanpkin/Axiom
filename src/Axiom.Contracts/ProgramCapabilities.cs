@@ -13,8 +13,9 @@ public static class ProgramCapabilities
         start ? [Executable, Delay,
             new("arguments", "启动参数", TaskFieldKind.Text, false, "直接传给程序，例如 --profile work；不执行命令脚本。", "", 4096, [], Group: "更多选项"),
             new("workingDirectory", "工作目录", TaskFieldKind.DirectoryPath, false, "留空使用程序所在目录。", "", 1024, [], Group: "更多选项"),
-            new("window", "窗口状态", TaskFieldKind.Choice, true, "由目标程序决定是否接受窗口状态。", "normal", 16,
-                [new("normal", "正常显示"), new("minimized", "最小化"), new("hidden", "隐藏")], Group: "更多选项"),
+            new("window", "窗口状态", TaskFieldKind.Choice, true, "普通隐藏由目标程序决定是否接受。启动遮蔽会在目标中加载保护组件，遮蔽启动窗口；窗口自行隐藏或保护结束时，先隐藏再解除遮蔽，之后手动打开不再拦截。仅支持 x64 桌面程序，不用于游戏或受保护程序。", "normal", 16,
+                [new("normal", "正常显示"), new("minimized", "最小化"), new("hidden", "隐藏"), new("startup-hidden", "启动遮蔽（实验性）")], Group: "更多选项"),
+            new("startupProtectionSeconds", "启动保护最长时间（秒）", TaskFieldKind.Number, false, "仅用于启动遮蔽，1–20 整数秒，默认 15。再次启动同路径程序时尝试提前解除保护；动作完成后手动打开不再拦截。极快退出的启动器可能无法确认，保护期内请稍候。晚于保护期的弹窗仍可能显示，安全软件可能阻止保护组件。", "15", 2, [], 1, 20, "更多选项"),
             new("ifRunning", "程序已运行时", TaskFieldKind.Choice, true, "按完整路径识别当前用户的程序实例。", "skip", 16,
                 [new("skip", "跳过启动"), new("new", "再开一个实例")], Group: "更多选项")]
         : [new("executable", "目标程序", TaskFieldKind.ExecutableSelection, true,
@@ -51,6 +52,8 @@ public static class ProgramCapabilities
                 n < field.Minimum || n > field.Maximum)) throw new ArgumentException(field.Label + "超出范围。");
         }
         var paths = config.CapabilityId == "program.start" ? [ExecutablePaths.ValidatePath(Value(config, "executable"))] : ExecutablePaths.Parse(Value(config, "executable"));
+        if (config.CapabilityId == "program.start" && Number(config, "startupProtectionSeconds") % 1 != 0)
+            throw new ArgumentException("启动保护时长必须为整数秒。");
         if (config.CapabilityId == "program.start" && Value(config, "workingDirectory") is { Length: > 0 } directory &&
             (!Path.IsPathFullyQualified(directory) || directory.StartsWith("\\\\", StringComparison.Ordinal)))
             throw new ArgumentException("工作目录必须是本机完整路径。");

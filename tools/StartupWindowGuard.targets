@@ -1,0 +1,11 @@
+<Project>
+  <PropertyGroup><StartupGuardOutput>$(MSBuildProjectDirectory)/obj/startup-guard/$(Configuration)</StartupGuardOutput></PropertyGroup>
+  <ItemGroup Condition="'$(OS)' == 'Windows_NT'">
+    <None Include="$(StartupGuardOutput)/Axiom.StartupWindowGuard.dll" Link="Axiom.StartupWindowGuard.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="BuildStartupWindowGuard" BeforeTargets="PrepareForBuild" Condition="'$(OS)' == 'Windows_NT'"
+    Inputs="$(MSBuildThisFileDirectory)../src/Axiom.Providers.Windows/Native/StartupWindowGuard.cpp;$(MSBuildThisFileDirectory)../src/Axiom.Providers.Windows/Native/StartupWindowGuard.h;$(MSBuildThisFileDirectory)build-startup-window-guard.ps1"
+    Outputs="$(StartupGuardOutput)/Axiom.StartupWindowGuard.dll">
+    <Exec Command="pwsh -NoProfile -File &quot;$(MSBuildThisFileDirectory)build-startup-window-guard.ps1&quot; -OutputDirectory &quot;$(StartupGuardOutput)&quot;" />
+  </Target>
+</Project>

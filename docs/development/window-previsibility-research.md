@@ -1,6 +1,6 @@
 # 窗口首次显示前干预：最小实验
 
-2026-10-28。按所有者要求仅研究，不修改正式实现、不替换预览、不启动或注入HECATE。
+2026-10-28。首阶段按所有者要求仅研究；后续所有者要求继续开发并授权测试期间结束HECATE。以下原始矩阵保留其阶段边界，后续集成结果见末尾。
 
 ## 结论与证据边界
 
@@ -52,3 +52,11 @@ Windows任务视图的**虚拟桌面**与CreateDesktop的**独立Desktop对象**
 - [WM_WINDOWPOSCHANGING](https://learn.microsoft.com/en-us/windows/win32/winmsg/wm-windowposchanging) / [SetWindowPos标志](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwindowpos)
 - [Desktop与线程归属](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setthreaddesktop)
 - [虚拟桌面公开接口](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-ivirtualdesktopmanager)
+
+## 后续：恢复交互与实际HECATE
+
+- HECATE包含自身`-startup`入口。正常权限下实测仍有短暂启动窗口；后台运行后再次从原exe入口启动可打开主窗口。原用户实例未退出的一轮测试无效，不作为启动证据。
+- 保护扩为每窗口状态、应用目录延迟加载插件、自然隐藏信号与有限截止。Qt的qwindows插件晚于主程序加载，首版漏掉；单靠窗口附加过程也不能覆盖Qt的替换路径。后续在插件加载及CreateWindowEx返回阶段补齐，结束信号核对实际隐藏调用。
+- 原生修正版实测：HECATE启动临时窗口显示事件cloaked=1；自然隐藏触发结束；保护后约2.6秒从原入口打开，主窗口cloaked=0、可见，原生失败计数0。
+- 实际WindowsProgramControl路径实测：启动显示cloaked=1；第6秒原入口打开cloaked=0；命令完成成功，主窗口可见。取消路径在第1秒解除保护，程序保留，第6秒原入口打开可见、未cloaked。取消后不再抑制后来启动窗口属于预期。
+- 证据仅本机`artifacts/guard-integration-smoke`及`window-previsibility-smoke`。不把窗口状态/事件核对称为逐帧验收或耳机硬件功能验收。正式设计边界见[ADR0012](../adr/0012-recoverable-startup-window-guard.md)。
