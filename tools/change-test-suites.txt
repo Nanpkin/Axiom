@@ -52,3 +52,4 @@ Axiom.Engine.Tests.UsageObservationTests.FullRegisteredCatalogFitsExportAndOvers
 Axiom.Engine.Tests.WindowActionTests.BatchMissingTargetDoesNotPreventClosingRealWindow
 Axiom.Engine.Tests.WindowsConditionRestoreRuntimeTests
 Axiom.Engine.Tests.WorkbenchPresentationTests
+Axiom.Engine.Tests.WindowOnceRuntimeTests
