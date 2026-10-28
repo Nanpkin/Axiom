@@ -14,7 +14,7 @@
 
 `IAutomationTaskBackend` 声明实际支持的 `TaskCombination`，负责该组合的读取、持久化、版本检查、运行生命周期和删除；`AutomationTaskRouter` 拒绝未接通及重复组合。宿主注册适配器，不能因为两个描述存在就假定它们能够组合执行。跨不同后端修改现有任务目前拒绝，用户需新建；不尝试跨存储非原子迁移。
 
-WinUI 经 `AutomationProtocol` 的受权本地管道读取目录及任务，提交通用 save/delete/read/shutdown。SID 与会话来自 OS，不能相信请求中的身份；有大小、并发和期限上限。UI 不碰 Provider 或数据库，不轮询。
+WinUI 经 `AutomationProtocol` 的受权本地管道读取目录及任务，提交通用 save/delete/read/shutdown。SID 与会话来自 OS，不能相信请求中的身份；有大小、并发和期限上限。JSON以UTF-8传送Unicode正文，避免中文目录全部转为ASCII转义后挤占大小预算；仍保留262144字节帧上限、严格未知字段检查和完整往返，不截断目录/任务或放宽上限。UI 不碰 Provider 或数据库，不轮询。
 
 ## 接入一种能力
 
@@ -33,6 +33,8 @@ WinUI 经 `AutomationProtocol` 的受权本地管道读取目录及任务，提�
 
 `AxiomStartupPlugin` 提供 `axiom.started`（schema 1）：Choice 参数 `frequency=every|firstBoot`，与程序启动/关闭组合。事件来自 Host 本身，加载时启用且版本未变的规则在 Agent 首次就绪、完整资源计划确认后收到 false → true；保留 true 让现有 Engine 支持动作延迟。UI 重开、Agent 重连、运行中新建/编辑/启用不产生启动事件；修改、暂停、删除或连接中断取消未执行延迟，不补发。
 
+主动调整无关检测资源（例如HDR门禁恢复内层观察）不属于Agent断线：若启动资源集合不变且不要求全新基线，保留Host启动源的epoch、序列和已知值，等待新订阅就绪再接受新的工具请求。不撤销已有启动动作，也不重新发出启动边沿。真实连接中断、启动资源变化、强制新基线与停止仍释放原源并遵守取消/不补发；不能用重试掩盖取消。
+
 首次是当前用户本次 Windows 开机第一次启动后台，不是各条规则分别第一次执行。Host 每次启动只读取一次 Windows 注册表 BootId，并在 `tasks.db` 的 `host_startup` 单行表事务认领；库 schema 原地升级至 2，不改既有配置、不备份。即使没有启动规则也记录首次，错过/暂停/执行失败/取消/崩溃均不自动补发。BootId 或持久化不可用时首次观察为 Unknown 并记录原因，每次启动仍可触发。BootId 来源见 [微软文档](https://learn.microsoft.com/windows-hardware/design/device-experiences/oem-hvci-enablement)；本轮未实际重启电脑验证快速启动/休眠组合。
 
 当前一次检测配一个动作；AND/OR 编辑、多步骤任务未实现。延迟、窗口状态、重复实例和关闭策略是程序能力真实参数；活动历史已持久化。测试中的会话检测/消息动作仍不代表系统会话通知功能已交付。
@@ -47,7 +49,9 @@ WinUI 经 `AutomationProtocol` 的受权本地管道读取目录及任务，提�
 
 会话 Invoke 的管道对端断开时立即取消调用 token；暂停/删除取消尚在等待的窗口动作，不能在 Host 已取消后仍等待后续窗口并关闭。已发出的关闭消息无法撤销。通知溢出/不可用或窗口仍显示返回失败/原因；命令回执不能用于推断持续后台状态。窗口通知仅用于该动作的有限等待，原进程检测继续使用原生进程事件。
 
-`TrayPlugin` 提供 `tray.hide`（schema 1），与 `process.running` / `process.exited` / `axiom.started` 组合，声明 `TraySelection` 完整路径多选（最多 32）、等待图标 1–30 秒和 Engine 延迟 0–86400 秒。TraySelection 复用 ExecutableSelection 的名单/批量输入和校验，增加当前托盘搜索、多选、刷新面板；选择仅保存 executable 换行完整路径，旧 schema/单路径不迁移，暂无图标的原目标保留。Host 转发 Agent 的只读发现与动作共用核验，不因选取而立即执行；UI 按字段类型渲染，无具体能力 ID 分支。同一 WindowsProgramBatch 汇总逐项结果；匹配当前用户/会话/完整路径，普通 ID 核对窗口（含 message-only），除缓存 UID 外额外核验当前 HWND 数值 UID；GUID 核对系统路径且拒绝归属冲突，公开 Shell_NotifyIcon 删除并确认。注册表/Explorer 通知只在等待期间共享，末订阅释放，无轮询。一次触发移除当前可识别图标，重建后可能再出现，暂停不恢复。未知身份记录/UID 明确失败，不用折叠假成功，不注入或修改全局偏好；决策见 [ADR 0010](../adr/0010-tray-icon-discovery.md)。
+`TrayPlugin` 提供 `tray.hide`（schema 1），与 `process.running` / `process.exited` / `axiom.started` 组合，声明 `TraySelection` 完整路径多选（最多 32）、等待图标 1–120 秒和 Engine 延迟 0–86400 秒。TraySelection 复用 ExecutableSelection 的名单/批量输入和校验，增加当前托盘搜索、多选、刷新面板；选择仅保存 executable 换行完整路径，旧 schema/单路径不迁移，暂无图标的原目标保留。Host 转发 Agent 的只读发现与动作共用核验，不因选取而立即执行；UI 按字段类型渲染，无具体能力 ID 分支。同一 WindowsProgramBatch 汇总逐项结果；匹配当前用户/会话/完整路径，普通 ID 核对窗口（含 message-only），除缓存 UID 外额外核验当前 HWND 数值 UID；GUID 核对系统路径且拒绝归属冲突，公开 Shell_NotifyIcon 删除并确认。注册表/Explorer 通知只在等待期间共享，末订阅释放，无轮询。一次触发移除当前可识别图标，重建后可能再出现，暂停不恢复。未知身份记录/UID 明确失败，不用折叠假成功，不注入或修改全局偏好；决策见 [ADR 0010](../adr/0010-tray-icon-discovery.md)。
+
+托盘等待的命令期限为130秒，Provider仅对已通过参数校验的tray.hide Invoke接受最长135秒的请求；其他Provider操作维持45秒上限。目标仍并行等待，退出/暂停立即取消，不增加轮询。
 
 ## 内置插件模块接入步骤
 
@@ -162,7 +166,7 @@ Engine在新条件边沿/事件进入延迟前、延迟deadline以及队列取�
 
 首次启用硬件渐变时，在读基线前固定选择亮度VCP0x10的[GetVCPFeatureAndVCPFeatureReply](https://learn.microsoft.com/windows/win32/api/lowlevelmonitorconfigurationapi/nf-lowlevelmonitorconfigurationapi-getvcpfeatureandvcpfeaturereply)与[SetVCPFeature](https://learn.microsoft.com/windows/win32/api/lowlevelmonitorconfigurationapi/nf-lowlevelmonitorconfigurationapi-setvcpfeature)，只接受连续型且0≤current≤max、max>0的有效回复，按0–max映射。参考[PowerToys亮度入口](https://github.com/microsoft/PowerToys/blob/main/src/modules/powerdisplay/PowerDisplay.Lib/Drivers/DDC/DdcCiController.cs)，不扩展其他VCP。恢复租约首次捕获即固定接口，后续开关渐变不切换接口、不重抓基线；未知、写失败或不匹配不fallback。默认旧规则继续高层接口，自动亮度仍优先WMI。
 
-同次实机还确认写入可生效而紧接着的读取暂时失败。高层和VCP亮度读取仅对已观察的`ERROR_GRAPHICS_DDCCI_INVALID_MESSAGE_COMMAND`（0xC0262589）允许在原句柄上最多3次只读查询；失败后可取消等待150ms，仍计入原10秒期限。读取成功即返回实际值，不因范围无效、值与目标不同而继续等目标值；其他错误或取消立即停止。首次基线、Command读回和恢复守卫共用此窄策略，Set始终单次，全部查询结束前保留原句柄与准入；无后台计时器、环境轮询或写入重发。[PowerToys暂态查询实现](https://github.com/microsoft/PowerToys/blob/main/src/modules/powerdisplay/PowerDisplay.Lib/Drivers/DDC/VcpFeatureProbeService.cs)与[错误分类](https://github.com/microsoft/PowerToys/blob/main/src/modules/powerdisplay/PowerDisplay.Lib/Drivers/DDC/DdcErrorClassifier.cs)提供对照，Axiom仅启用上述实际观察错误。
+同次实机还确认写入可生效而紧接着的读取暂时失败。高层和VCP亮度读取仅对已观察的`ERROR_GRAPHICS_DDCCI_INVALID_MESSAGE_COMMAND`（0xC0262589）允许在原句柄上最多3次只读查询；失败后可取消等待150ms，仍计入原10秒期限。底层读取成功即返回实际值，不因范围无效或值与目标不同而循环查询；硬件渐变段末识别自己已接受的延迟中间值时，使用下述独立有限只读等待；其他错误或取消立即停止。首次基线、Command读回和恢复守卫共用此窄策略，Set始终单次，全部查询结束前保留原句柄与准入；无后台计时器、环境轮询或写入重发。[PowerToys暂态查询实现](https://github.com/microsoft/PowerToys/blob/main/src/modules/powerdisplay/PowerDisplay.Lib/Drivers/DDC/VcpFeatureProbeService.cs)与[错误分类](https://github.com/microsoft/PowerToys/blob/main/src/modules/powerdisplay/PowerDisplay.Lib/Drivers/DDC/DdcErrorClassifier.cs)提供对照，Axiom仅启用上述实际观察错误。
 
 最多64逻辑、每逻辑8物理、总64句柄，枚举数量先检查再打开，完整有界发现后才写。未知目标不写但其他支持目标可继续；结果仅计数，不记录显示器描述/身份。SID和当前WTS活动会话授权不成立拒绝；锁定仍可执行已授权系统事件动作。所有成功/部分发现/异常/取消/超时均由worker finally尝试[DestroyPhysicalMonitors](https://learn.microsoft.com/windows/win32/api/physicalmonitorenumerationapi/nf-physicalmonitorenumerationapi-destroyphysicalmonitors)，清理失败不阻断其他lease释放并使回执未确认。整批10秒BoundedNativeCommand，调用者取消/超时不提前释放gate/句柄、真正原生返回后才清理；Agent关停Drain。不操作其他VCP、不轮询、不依赖厂商接口，新亮度保留，取消可能已写入，不回滚。真实DDC/CI启用/坞站/MST/虚拟显示/驱动差异待设备验证。
 
@@ -171,19 +175,47 @@ Engine在新条件边沿/事件进入延迟前、延迟deadline以及队列取�
 
 `display.brightness.restore`/`display.hardware-brightness.restore`新schema 1沿原绝对percent/delay及硬件primary/all字段，不更改旧Command行为。只有持续检测组合，亮度模块各自固定`brightness`Desired资源，配置经严格校验后沿`RestorableSettingInvocations`规范化绝对目标；不同硬件selection同资源竞争；范围改变先等待旧lease明确释放/清理确认才新捕获，不在原lease内换目标。首次capture只Known，硬件原始DWORD范围/值保留而非重算百分比基线；更新百分比不重抓基线，相对增减保持一次Command。
 
-本地两个native入口共享亮度ownership，恢复期间其他Axiom亮度写拒绝，外部变化仅在更新/释放及有限渐变步进时核验，稳定持有时无周期读取或持续压制。原生worker固定所有WMI对象/物理句柄并同线程执行；硬件捕获复用上述已知亮度优先准入，后续更新/释放继续核验首次固定接口、原范围、授权及拓扑，不重复以能力查询否决有效当前值。displayOnly拓扑/恢复信号永久失效本轮，失败不枚举替代屏。per-target共享ConditionalSettingTransaction当前/最后确认相等检查，Unknown、不一致/其他来源改变后让出，不恢复猜测值；部分支持/未知/写读回/恢复与资源失败只输出计数，不输出设备描述或WMI身份。
+本地两个native入口共享亮度ownership，恢复期间其他Axiom亮度写拒绝，外部变化仅在更新/释放及有限渐变确认点（硬件为段边界）核验，稳定持有时无周期读取或持续压制。原生worker固定所有WMI对象/物理句柄并同线程执行；硬件捕获复用上述已知亮度优先准入，后续更新/释放继续核验首次固定接口、原范围、授权及拓扑，不重复以能力查询否决有效当前值。displayOnly拓扑/恢复信号永久失效本轮，失败不枚举替代屏。per-target共享ConditionalSettingTransaction当前/最后确认相等检查，Unknown、不一致/其他来源改变后让出，不恢复猜测值；部分支持/未知/写读回/恢复与资源失败只输出计数，不输出设备描述或WMI身份。
 
 Release用独立清理token，末尾全部finally尝试清理，内屏对象及每组物理句柄清理异常不阻断其他资源。捕获固定10秒；未启用渐变的Apply/Release仍10秒，启用后增加所选过渡时长，调用者超时取消并不表示真实原生停止，资源与准入仍保留到worker真正返回；只按事件/条件生命周期工作，不重试或相对累加。比较与写入非原子、异常进程退出/驱动阻塞不能保证恢复，实机支持性待验。UI退出不结束后台租约；暂停、删除、Unknown及条件结束走共享租约释放回执。
-六个绝对/相对/恢复亮度动作共享可选fadeEnabled（默认false）与fadeDurationSeconds（1–15整数、默认3），省略新字段兼容旧规则。专用BrightnessFade在已固定目标的原生线程上运行有限smoothstep时间线，每批结束后至少等待250ms，不追赶逾期帧；同值不重复写，零距离一次核验即结束。仅硬件渐变真正写成功后可取消等待500ms再首次确认读，避免连续写后立即查询；同一硬件渐变步未发生写入时以首次所有权读取作确认，省去第二次无写读取；旧无渐变/WMI不增加等待且保留原读取流程，原3次/150ms窄读取策略不变。WMI与硬件均逐步读验写验；取消停止后续写，未确认或外部接管让出，不回滚猜测值；正常恢复沿同一最初基线渐变。渐变终点已严格读回原基线且仍Owned时直接完成释放，不重复两次原生读取；此前未确认或让出仍保留原失败/跳过判断，不凭稍后实物值追认成功。稳态无新定时器。
+六亮度动作共享fadeEnabled（默认false）、fadeDurationSeconds（1–15整数，默认3）和fadeWritesPerSecond（1–60请求次/秒，缺省10，推荐18），兼容旧规则。有限smoothstep时间线目标16ms；原生慢时按实际时间跳帧，不积压、不重写同值。WMI逐步严格确认并按耗时重算。硬件段开始核对最后确认值，最多1秒连续写入，每个候选单次Set；按1000/fadeWritesPerSecond限流，最终Set另保留至少100ms绝对期限。段内手动改值可能被覆盖，这是已选择的有限顺滑窗口；稳态无轮询。
+
+2026-10-18重复往返实机发现Set接受后中间值可永久跳过（例如发41、实读43），所以继续下一段/发终点前执行“进度检查”：只接受最近有限段内实际写过的值，记录实际读数，丢弃未兑现尾部并重新计算后续帧；不声称旧期望已完成、不重发它。仅保留该已观测且写过的读数，允许它在下一次终点严格确认时作为≤1秒延迟值等待。最初基线和未写过的值不在接受集合；Unknown、取消、外部值、写失败立即让出。最终目标及恢复原基线仍必须精确读回，进度检查不能完成终点或Release；未确认pending不能凭旧Confirmed恢复。非渐变读写及窄只读错误策略不变，所有清理仍保持原生准入。
+
+2026-10-23补充中断清理：取消仍立即停止续写；仅原恢复会话可在独立清理token下额外读一次固定目标，精确读到本轮已接受写入的值（硬件限最近段）后，将该实际值确认并渐变恢复最初基线，不继续原Apply或另抓基线。外部值、Unknown、原生写入抛错未接受或显式手动放弃仍不恢复；恢复终点继续严格读回。此为条件快速消失时的清理，不是失败重试或后台轮询。
+
+2026-10-23租约通信交接补充：初始请求发送前仍检查条件授权；一旦发送，首次回执在原有有限期限内完整读取，不用条件取消打断半帧。授权结束立即标记释放，原租约保留到释放清理结束；已撤销授权或变更范围的新代际/目标必须等待前次释放确认后才捕获新基线；授权仍成立的目标更新复用原租约。旧代际回执不能报告为新代际成功。后续更新继续由单一读取器排空在途回执，失败仍不假称恢复。 租约状态锁仅在同步辅助方法中短暂持有；锁内只读写内存，不创建管道、调度Task、完成回执或发布状态。释放先原子标记再锁外启动，避免重入与异步异常路径扩大阻塞范围。
+
+缺省10次/秒是兼容旧硬件设置，不是测得的硬件频率上限。补充有限实机实验：整段75/60/约55ms写入各0/3完整往返；改为中段75ms或无人工等待（实际约55ms）、仅最终Set与前一笔间隔至少100ms后，两档均3/3终点严格确认成功，前后100ms对照各1/1。原生接口、确认与清理均沿生产DLL，实验时仅夹具改变调度；本批已移植为可调平滑度的硬件末笔策略。它证明更高频请求与终点确认可以兼得，不证明每个中间物理亮度都兑现或手机级视觉效果，见[实测记录](../exec-plans/completed/brightness-responsive-fade.md)。
 
 原生动作10+过渡时长最多25秒，命令绑定30秒、恢复绑定40秒；Host仅启用亮度渐变时使用首次37秒、更新/释放30秒，Provider协议45秒上限保持；Agent亮度清理/Drain30秒。正常停止须覆盖有限恢复，超时仍保留现场而非强退。设备实际响应与粒度决定可见平滑度，非逐帧动画；[SetMonitorBrightness](https://learn.microsoft.com/en-us/windows/win32/api/highlevelmonitorconfigurationapi/nf-highlevelmonitorconfigurationapi-setmonitorbrightness)为同步设备调用。
 
 ## 有界状态组合检测
 
-`TaskDetectionExpression(Kind, Invocation?, Children)`只支持leaf/all/any/not：leaf只有Invocation；all/any至少2个子节点；not恰好1个。根为深度1，最多4层、16叶、64节点，空组/混合叶与子节点/未知运算符/越界拒绝。没有脚本或任意表达式。`AutomationTask.DetectionExpression`非空时必须task schema3，`Detection`严格按内容等于深度优先有序首叶，仅供旧展示，绝不替代树执行。schema1/2不得携树；3可保留原TimeWindow并沿原动作门禁校验。Domain不依赖JSON，叶的默认Children归一为空数组；常规序列化允许null/false默认字段，单检测及协商语义由版本/树校验保持，匿名摘要末级省略false标记仍还原false。
+`TaskDetectionExpression(Kind, Invocation?, Children)`只支持leaf/all/any/not：leaf只有Invocation；all/any至少2个子节点；not恰好1个。根为深度1，最多4层、16叶、64节点，空组/混合叶与子节点/未知运算符/越界拒绝。没有脚本或任意表达式。`AutomationTask.DetectionExpression`非空时使用task schema3（有外层运行条件则schema4），`Detection`严格按内容等于深度优先有序首叶，仅供旧展示，绝不替代树执行。schema1/2不得携树；3可保留原TimeWindow并沿原动作门禁校验。Domain不依赖JSON，叶的默认Children归一为空数组；常规序列化允许null/false默认字段，单检测及协商语义由版本/树校验保持，匿名摘要末级省略false标记仍还原false。
 
 Snapshot.CompositeDetectionVersion=1及所选action.SupportsCompositeDetection=true共同协商；只有检测IsStateCondition=true可选为叶，脉冲/快捷键/定时/启动检测保留单检测路径、不组合或否定。PluginTaskRuntime启用compiler支持并登记每个允许对，编译、保存、加载和Router逐叶检查同一个动作/同一个支持树的backend，继承全部反馈排除。HDR旧backend/legacy转换明确拒绝树。Domain已有All/Any/Not三值：NOT Unknown=Unknown，AND中明确false可决定false，OR中明确true可决定true；Engine依赖集合及观察计划去重合并，未知/结束/暂停/源释放撤销持续授权，首次及恢复snapshot不补Command。
 
 SQLite无需新配置表：schema3树JSON保存/读回，首次保存3时在同一事务把user_version提升3，重新打开不降版；旧应用在读取/覆盖前因数据库版本较新拒绝，旧1/2记录由新应用完整读取。任务管道仍版本1/原frame上限，save先检查树结构与schema，未知新树不能落回anchor。AI建议组合使用UsageImport.Version2且携同一DetectionExpression/首叶Detection，版本1不能夹树；逐叶解析观察别名、必填/手填和能力约束，每叶支持同动作且目录协商才给默认暂停schema3草稿。匿名摘要/机器目录保留协商及state/action标记，原64KiB不变。
 
 “非锁定”使用独立`session.lock-state`，state=locked|unlocked，资源current-session为锁定bool；只读WTSInfoEx当前Active会话及锁元数据，未知/非活动不假未锁定，不读取用户名等内容。WindowsSessionEvents(lockStateOnly:true)先订阅后初读；7/8仅提示查询，1/3/5/9及恢复先Unknown再重查建基线，2/4/6及挂起只失效等待报告。64有界合并保留reset，队列失败立即标记并清缓存，新kind不进旧租约；没有轮询、锁屏请求或自动解锁。允许提醒、播放设置/应用音量及保持唤醒，排除锁屏/显示动作反馈。
+
+## 亮度滚轮接管与关闭（2026-10-23）
+
+2026-10-24滚轮输入：BrightnessWheelSettings.ImmediateResponse默认true（旧JSON缺字段沿默认）。即时模式每条非零消息至少一步，标准120单位及其倍数仍按步数合并；高精度累计模式继续保留余量，累计满120才发一步。两者都不改变每步百分比、快捷键或原生写入上限。即时模式可能对高频碎片输入过敏，工具设置提供切回累计；不把消息条数声称为物理滚轮齿数。
+
+自动亮度不完整渐变的释放：硬件最后Set被接受但终点确认失败时，清理阶段可重新读一次固定目标；仅当前值仍属于本段有限已接受写值，才恢复本轮最初基线。不是重试原调暗动作；未知、段外值、拒写不恢复。Host只有释放成功才能清空租约引用；失败保留完成标记，后续条件代际不得捕获中间亮度作为新基线。明确手动接管并结束、原生清理已确认后，用户选择恢复自动亮度才允许以其手动选择值重新开始。
+
+工具仅在组合键与滚轮命中后接管，不因启用监听暂停自动亮度。滚轮中间连续写入可被显示器合并：仅以本段已接受写值的读回作为checkpoint继续，方向切换及段边界沿同一规则；最终目标仍须精确读回，不重发失败写入、不把中间值当完成。未知或外部值仍让出。
+
+关闭工具先停止监听、取消/等待手势，再由Agent确认原生工作清理并解除manual门禁，持久化关闭与manual=false后释放Engine覆盖；随后按当前规则重算，不强设100%或回放旧Command。失败保留接管并明确提示，不假报关闭成功。单独“恢复自动亮度”沿同一流程但保持启用设置。内部接管元数据更新不使当前界面设置版本失效；真正用户配置更改仍拒绝旧版本，版本检查在停止监听之前。
+
+## 任务级自动暂停
+
+`AutomationTask.RunConditions`使用schema4，包含主屏`Hdr=any|on|off`与可选`WeeklyTimeWindow`，两者均须满足；不改旧`TimeWindow`动作执行门禁。schema4也可保留组合树。Snapshot.RunConditionsVersion=1协商，未支持的编译器、旧schema夹带或旧数据库版本不能静默忽略。SQLite首次保存4原地升user_version4，不批量改旧配置；导入Version3可携运行条件，旧导入1/2拒绝夹带。
+
+Host维持独立外层HDR订阅和时钟/恢复通知，仅设置一个最近时段边界deadline。HDR先订阅再初读，随后依赖AdvancedColorInfoChanged及拓扑/恢复事件；外层和普通`display.hdr-state`检测共享原生来源，不采集画面、不轮询状态。HDR未知保持自动暂停，不假装关闭。时间按本地周时段、起点包含终点排除、跨午夜归起点星期。
+
+Engine自动暂停独立于持久手动Paused/version，移除该规则内部观察需求，取消等待及在途授权，Desired State沿既有保护释放；其他任务共享的需求不释放。恢复重新获取状态基线，旧边沿不重放，一次Command不因恢复快照补发；Desired State按新的当前条件重算。手动暂停不会因HDR/时间满足而自动启用。
+
+同用户`watch-run-states`原子订阅并返回全量TaskRunStatus，初始sequence0，后续有界合并状态变化；断开释放。仅握手有deadline，闲置无心跳/刷新计时器。UI显示手动暂停、自动暂停及原因；流断开显示状态未确认，显式刷新重连，不继续宣称旧状态有效。

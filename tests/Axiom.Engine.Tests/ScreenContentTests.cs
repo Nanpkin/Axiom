@@ -51,7 +51,7 @@ public sealed class ScreenContentTests
         Assert.Equal(At(20), night.NextBoundary(At(8), TimeZoneInfo.Utc)); Assert.Equal(At(8).AddDays(1), night.NextBoundary(At(20), TimeZoneInfo.Utc));
         foreach (var invocation in new[] { Detection("20:00", ""), Detection("20:00", "20:00"), Detection("8:00", "20:00"),
             Detection() with { Parameters = Detection().Parameters.SetItem("exitPercent", "65") },
-            Detection() with { Parameters = Detection().Parameters.SetItem("stableSeconds", "0") },
+            Detection() with { Parameters = Detection().Parameters.SetItem("stableSeconds", "-1") },
             Detection() with { Parameters = Detection().Parameters.SetItem("enterPercent", "65.5") },
             Detection() with { Parameters = Detection().Parameters.Add("monitor", "all") }, Detection() with { SchemaVersion = 2 } })
             Assert.Throws<ArgumentException>(() => ScreenContentCapabilities.Validate(invocation));
@@ -60,6 +60,81 @@ public sealed class ScreenContentTests
         var zone = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
         var spring = new ScreenContentSpec(65, 45, 3, 150, 240);
         Assert.Equal(new DateTimeOffset(2026, 3, 8, 7, 0, 0, TimeSpan.Zero), spring.NextBoundary(new(2026, 3, 8, 6, 59, 0, TimeSpan.Zero), zone));
+    }
+
+    [Fact]
+    public void FractionalStabilityIsInvariantCanonicalAndRejectsInvalidPrecision()
+    {
+        foreach (var text in new[] { "0.01", "0.2", "0.50", "1.25", "60", "0" })
+        {
+            var invocation = Detection("20:00", "08:00") with { Parameters = Detection("20:00", "08:00").Parameters.SetItem("stableSeconds", text) };
+            var spec = ScreenContentCapabilities.Validate(invocation);
+            Assert.Equal(spec, ScreenContentCapabilities.ParseResource(spec.Resource));
+            Assert.Equal(decimal.Parse(text, System.Globalization.CultureInfo.InvariantCulture), spec.StableSeconds);
+        }
+        Assert.Equal("65:45:0.5@*", ScreenContentCapabilities.Validate(Detection() with { Parameters = Detection().Parameters.SetItem("stableSeconds", "0.50") }).Resource);
+        foreach (var text in new[] { "0.001", "60.01", "NaN", "Infinity", "0,5", "1e-1", "-0.1" })
+            Assert.Throws<ArgumentException>(() => ScreenContentCapabilities.Validate(Detection() with { Parameters = Detection().Parameters.SetItem("stableSeconds", text) }));
+    }
+
+    [Fact(Timeout = 10000)]
+    public async Task FractionalStabilityProviderUsesSubsecondDeadlinesForEnterAndExitWithoutNewFrames()
+    {
+        var time = Clock(21); using var env = new FakeEnvironment(); using var stop = new CancellationTokenSource();
+        var updates = Channel.CreateUnbounded<ProviderUpdate>();
+        var provider = new ScreenContentCapabilityProvider(() => env, time, () => TimeZoneInfo.Utc);
+        var spec = ScreenContentCapabilities.Validate(Detection() with { Parameters = Detection().Parameters.SetItem("stableSeconds", "0.25") });
+        var run = provider.ObserveAsync([new(ScreenContentCapabilities.Bright, spec.Resource)], u => updates.Writer.TryWrite(u), stop.Token);
+        try
+        {
+            await Until(() => env.Captures.Count == 1);
+            env.Captures[0].Emit(new(80));
+            await Until(() => time.Timers.Any(t => t.At == TimeSpan.FromMilliseconds(250).Ticks));
+            time.Advance(TimeSpan.FromMilliseconds(249));
+            while (updates.Reader.TryRead(out var update)) Assert.All(update.Samples, sample => Assert.NotEqual(true, sample.Boolean));
+            time.Advance(TimeSpan.FromMilliseconds(1)); Assert.True((await Sample(updates.Reader, s => s.Boolean == true)).Boolean);
+            env.Captures[0].Emit(new(20));
+            await Until(() => time.Timers.Any(t => t.At == TimeSpan.FromMilliseconds(500).Ticks));
+            time.Advance(TimeSpan.FromMilliseconds(249));
+            while (updates.Reader.TryRead(out var update)) Assert.All(update.Samples, sample => Assert.NotEqual(false, sample.Boolean));
+            time.Advance(TimeSpan.FromMilliseconds(1)); Assert.False((await Sample(updates.Reader, s => s.Boolean == false)).Boolean);
+        }
+        finally { stop.Cancel(); await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run); }
+    }
+
+    [Fact]
+    public void ZeroStabilityEntersAndExitsImmediatelyWithHysteresisAndUnknownBaselineProtection()
+    {
+        var invocation = Detection() with { Parameters = Detection().Parameters.SetItem("stableSeconds", "0") };
+        var spec = ScreenContentCapabilities.Validate(invocation);
+        Assert.Equal(spec, ScreenContentCapabilities.ParseResource(spec.Resource)); Assert.Equal(0, spec.StableSeconds);
+        Assert.Equal(3, ScreenContentCapabilities.Validate(Detection()).StableSeconds);
+        var state = new ScreenContentState(spec.EnterPercent, spec.ExitPercent, TimeSpan.Zero);
+        Assert.True(state.Read(new(80), TimeSpan.Zero).Bright); Assert.Null(state.PendingAt);
+        Assert.True(state.Read(new(60), TimeSpan.Zero).Bright); Assert.Null(state.PendingAt);
+        Assert.False(state.Read(new(45), TimeSpan.Zero).Bright); Assert.Null(state.PendingAt);
+        Assert.Null(state.Unknown("HDR").Bright);
+        var recovered = state.Read(new(90), TimeSpan.Zero); Assert.True(recovered.Bright); Assert.True(recovered.Baseline);
+        Assert.False(state.OutsideWindow().Bright); Assert.Null(state.PendingAt);
+    }
+
+    [Fact(Timeout = 10000)]
+    public async Task ZeroStabilityProviderPublishesTheFirstFrameImmediatelyWithoutAnyStabilityDeadline()
+    {
+        var time = Clock(21); using var env = new FakeEnvironment(); using var stop = new CancellationTokenSource();
+        var updates = Channel.CreateUnbounded<ProviderUpdate>();
+        var provider = new ScreenContentCapabilityProvider(() => env, time, () => TimeZoneInfo.Utc);
+        var spec = ScreenContentCapabilities.Validate(Detection() with { Parameters = Detection().Parameters.SetItem("stableSeconds", "0") });
+        var run = provider.ObserveAsync([new(ScreenContentCapabilities.Bright, spec.Resource)], u => updates.Writer.TryWrite(u), stop.Token);
+        try
+        {
+            await Until(() => env.Captures.Count == 1);
+            env.Captures[0].Emit(new(80)); Assert.True((await Sample(updates.Reader, s => s.Boolean == true)).Boolean);
+            env.Captures[0].Emit(new(45)); Assert.False((await Sample(updates.Reader, s => s.Boolean == false)).Boolean);
+            Assert.Equal(0, time.GetTimestamp()); Assert.All(time.Timers, t => Assert.Null(t.At));
+        }
+        finally { stop.Cancel(); await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run); }
+        Assert.True(env.Captures[0].Disposed);
     }
 
     [Fact]
@@ -107,6 +182,40 @@ public sealed class ScreenContentTests
     }
 
     [Fact(Timeout = 15000)]
+    public async Task RecoverableCaptureLossRecreatesWithBoundedBackoffAndCancelsAllDeadlinesOnScreenOff()
+    {
+        var time = Clock(21); using var env = new FakeEnvironment(); using var stop = new CancellationTokenSource();
+        var updates = Channel.CreateUnbounded<ProviderUpdate>();
+        var provider = new ScreenContentCapabilityProvider(() => env, time, () => TimeZoneInfo.Utc);
+        var spec = ScreenContentCapabilities.Validate(Detection() with { Parameters = Detection().Parameters.SetItem("stableSeconds", "0") });
+        var run = provider.ObserveAsync([new(ScreenContentCapabilities.Bright, spec.Resource)], u => updates.Writer.TryWrite(u), stop.Token);
+        try
+        {
+            await Until(() => env.Captures.Count == 1);
+            foreach (var delay in new[] { 0.5, 2, 8 })
+            {
+                var count = env.Captures.Count;
+                var reason = "recoverable" + count;
+                env.Captures[^1].Emit(new(null, reason, CaptureLost: true, CanRecreate: true));
+                await Sample(updates.Reader, s => s.Quality == StateQuality.Unknown && s.Reason == reason);
+                await Until(() => time.Timers.Any(t => t.At == time.GetTimestamp() + TimeSpan.FromSeconds(delay).Ticks));
+                time.Advance(TimeSpan.FromSeconds(delay)); await Until(() => env.Captures.Count == count + 1);
+            }
+            env.Captures[^1].Emit(new(null, "exhausted", CaptureLost: true, CanRecreate: true));
+            await Sample(updates.Reader, s => s.Reason == "exhausted");
+            time.Advance(TimeSpan.FromMinutes(1)); Assert.Equal(4, env.Captures.Count);
+            env.Emit("display-color-changed"); await Until(() => env.Captures.Count == 5);
+            env.Captures[^1].Emit(new(90)); await Sample(updates.Reader, s => s.Boolean == true);
+            env.Captures[^1].Emit(new(null, "again", CaptureLost: true, CanRecreate: true));
+            await Sample(updates.Reader, s => s.Reason == "again");
+            env.Emit("screen-off"); await Sample(updates.Reader, s => s.Reason!.Contains("屏幕关闭"));
+            time.Advance(TimeSpan.FromMinutes(1)); Assert.Equal(5, env.Captures.Count);
+            Assert.All(time.Timers, t => Assert.Null(t.At));
+        }
+        finally { stop.Cancel(); await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run); }
+    }
+
+    [Fact(Timeout = 15000)]
     public async Task LockPowerHdrAndCaptureLossReleaseResourcesAndRecoverOnlyFromRelevantEvents()
     {
         var time = Clock(21); using var env = new FakeEnvironment(); using var stop = new CancellationTokenSource();
@@ -148,11 +257,13 @@ public sealed class ScreenContentTests
         var catalog = new AutomationSnapshot([], compiler.Catalog, [.. modules.SelectMany(m => m.Combinations)], true, "ready", "", At(21), [], CompositeDetectionVersion: 1);
         var draft = Assert.Single(AutomationTemplates.Build(catalog), t => t.Id == "screen-content-night-dim").Draft;
         Assert.True(draft.Paused); Assert.Equal("20:00", draft.Detection.Parameters["start"]); Assert.Equal("40", draft.Action.Parameters["percent"]);
+        draft = draft with { Detection = draft.Detection with { Parameters = draft.Detection.Parameters.SetItem("stableSeconds", "0.25") } };
         var compiled = compiler.Compile(draft, "owner", ResourceScope.Session("owner", 1)); Assert.Equal(RuleActionKind.Desired, compiled.Action.Kind);
         var leaf = new TaskDetectionExpression("leaf", draft.Detection, []);
         Assert.NotNull(compiler.Compile(draft with { SchemaVersion = 3, DetectionExpression = new("not", null, [leaf]) }, "owner", ResourceScope.Session("owner", 1)));
         var recorder = new UsageRecorder(new(5, false, false, [], SystemEvents: true), At(21));
-        var proposal = new UsageImport(1, recorder.Session.Id, "existing", "night dim", "synthetic", Detection(), draft.Action);
+        var fractional = Detection() with { Parameters = Detection().Parameters.SetItem("stableSeconds", "0.25") };
+        var proposal = new UsageImport(1, recorder.Session.Id, "existing", "night dim", "synthetic", fractional, draft.Action);
         Assert.True(UsageAnalysis.Import(JsonSerializer.Serialize(proposal), recorder.Session, catalog).Draft!.Paused);
         Assert.Throws<ArgumentException>(() => UsageAnalysis.Import(JsonSerializer.Serialize(proposal with { Detection = Detection() with { Parameters = Detection().Parameters.SetItem("exitPercent", "99") } }), recorder.Session, catalog));
         Assert.Throws<ArgumentException>(() => UsageAnalysis.Import(JsonSerializer.Serialize(proposal with { Detection = draft.Detection }), recorder.Session, catalog)); // HH:mm text remains manually reviewed, like other imported free text.

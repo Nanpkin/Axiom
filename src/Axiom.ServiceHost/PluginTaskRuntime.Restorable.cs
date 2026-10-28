@@ -41,24 +41,59 @@ internal sealed partial class PluginTaskRuntime
         {
             if (!settingAuthorizations.TryGetValue(key, out var item)) settingAuthorizations.Add(key, item = new(generation, authorized));
             item.Generation = generation; item.Authorized = authorized;
-            if (!authorized && item.Lease is { } lease) { item.Lease = null; release = lease; }
+            if (!authorized && item.Lease is { } lease && MarkSettingRelease(lease)) release = lease;
         }
-        if (release is not null) StartSettingRelease(key, release);
+        if (release is not null) QueueSettingRelease(key, release);
     }
     private void ReleaseRestorableSettings()
     {
-        List<(ResourceKey Key, SettingLease Lease)> release = [];
+        var releases = new List<(ResourceKey Key, SettingLease Lease)>();
         lock (settingGate)
             foreach (var pair in settingAuthorizations)
             {
                 pair.Value.Authorized = false;
-                if (pair.Value.Lease is { } lease) { pair.Value.Lease = null; release.Add((pair.Key, lease)); }
+                if (pair.Value.Lease is { } lease && MarkSettingRelease(lease)) releases.Add((pair.Key, lease));
             }
-        foreach (var pair in release) StartSettingRelease(pair.Key, pair.Lease);
+        foreach (var item in releases) QueueSettingRelease(item.Key, item.Lease);
     }
+    // Keep Monitor scopes in synchronous methods. No transport, task scheduling or publication
+    // runs while this state lock is held, including the cancellation/error paths.
+    private SettingLease? PriorSettingLease(ResourceKey key, long generation, string? selection, out bool startRelease)
+    {
+        lock (settingGate)
+        {
+            startRelease = false;
+            if (!settingAuthorizations.TryGetValue(key, out var held) || !held.Authorized || held.Generation != generation ||
+                held.Lease is not { } old || old.Release is null && old.CapturedSelection == selection) return null;
+            startRelease = MarkSettingRelease(old); return old;
+        }
+    }
+    private (SettingLease? Lease, bool First, string? Error) ClaimSettingLease(ResourceKey key, long generation,
+        string? selection, TimeSpan operationTimeout, NamedPipeClientStream candidate)
+    {
+        lock (settingGate)
+        {
+            if (!settingAuthorizations.TryGetValue(key, out var item) || !item.Authorized || item.Generation != generation)
+                return (null, false, "设置条件已结束或代际已变化。");
+            if (item.FailedGeneration == generation)
+                return (null, false, "本轮设置租约未确认；等待新条件或暂停后启用，不自动重试。");
+            var first = item.Lease is null;
+            if (first) { item.Lease = new(candidate) { CapturedSelection = selection }; settingLeases.Add(item.Lease); }
+            item.Lease!.OperationTimeout = operationTimeout;
+            return (item.Lease, first, null);
+        }
+    }
+    private int SettingAuthorizationState(ResourceKey key, SettingLease lease, long generation)
+    {
+        lock (settingGate) return !settingAuthorizations.TryGetValue(key, out var current) || !current.Authorized ||
+            !ReferenceEquals(current.Lease, lease) ? 0 : current.Generation == generation ? 2 : 1;
+    }
+    private void FailSettingGeneration(ResourceKey key, long generation)
+    { lock (settingGate) if (settingAuthorizations.TryGetValue(key, out var current) && current.Generation == generation) current.FailedGeneration = generation; }
     private async ValueTask<Outcome> ApplyRestorableAsync(DesiredState desired, CancellationToken token)
     {
         var id = Guid.NewGuid();
+        if (wheelTakenOver && IsBrightness(desired.Key.CapabilityId)) return new(OutcomeStatus.Rejected, "亮度已明确由手动接管，未捕获新基线。", id);
         if (stopping || desired.Key.Scope != scope || desired.Target.Schema != RestorableSettingInvocations.Schema || desired.Target.Text is null ||
             !bindings.TryGetValue(desired.Key.CapabilityId, out var binding) || !binding.Descriptor.DesiredState)
             return new(OutcomeStatus.Rejected, "条件恢复目标、权限或会话不匹配。", id);
@@ -71,47 +106,39 @@ internal sealed partial class PluginTaskRuntime
         var acquireTimeout = fading ? TimeSpan.FromSeconds(37) : TimeSpan.FromSeconds(12);
         // This currently has one real consumer: hardware brightness primary/all selects fixed handles.
         var selection = invocation.CapabilityId == HardwareBrightnessCapabilities.Set + ".restore" ? invocation.Parameters.GetValueOrDefault("target") : null;
-        SettingLease? prior = null;
-        lock (settingGate)
-        {
-            if (settingAuthorizations.TryGetValue(desired.Key, out var held) && held.Authorized && held.Generation == desired.Generation &&
-                held.Lease is { } old && old.CapturedSelection != selection)
-            { prior = old; held.Lease = null; }
-        }
+        var prior = PriorSettingLease(desired.Key, desired.Generation, selection, out var startPriorRelease);
         if (prior is not null)
         {
-            StartSettingRelease(desired.Key, prior);
+            if (startPriorRelease) QueueSettingRelease(desired.Key, prior);
             try { await prior.Released.Task.WaitAsync(token); }
             catch (OperationCanceledException) { return new(OutcomeStatus.Failed, "原目标仍在释放，本次未捕获新范围；不自动重试。", id, FailureKind.Permanent); }
             if (!prior.ReleaseConfirmed)
             {
-                lock (settingGate) if (settingAuthorizations.TryGetValue(desired.Key, out var current) && current.Generation == desired.Generation) current.FailedGeneration = desired.Generation;
+                FailSettingGeneration(desired.Key, desired.Generation);
                 Record("新范围未执行", "原目标释放结果未确认；没有捕获或修改新范围，不自动重试。", ActivityLevel.Warning);
                 return new(OutcomeStatus.Failed, "原目标释放结果未确认，新范围未执行。", id, FailureKind.Permanent);
             }
         }
-        SettingLease lease; bool first;
-        lock (settingGate)
-        {
-            if (!settingAuthorizations.TryGetValue(desired.Key, out var item) || !item.Authorized || item.Generation != desired.Generation)
-                return new(OutcomeStatus.Rejected, "设置条件已结束或代际已变化。", id);
-            if (item.FailedGeneration == desired.Generation)
-                return new(OutcomeStatus.Failed, "本轮设置租约未确认；等待新条件或暂停后启用，不自动重试。", id, FailureKind.Permanent);
-            first = item.Lease is null;
-            if (first) { item.Lease = new(Client()) { CapturedSelection = selection }; settingLeases.Add(item.Lease); }
-            lease = item.Lease!;
-            lease.OperationTimeout = operationTimeout;
-        }
+        var candidate = Client();
+        var claim = ClaimSettingLease(desired.Key, desired.Generation, selection, operationTimeout, candidate);
+        if (!claim.First) candidate.Dispose();
+        if (claim.Lease is not { } lease) return new(OutcomeStatus.Failed, claim.Error!, id, FailureKind.Permanent);
+        var first = claim.First;
         var entered = false;
         try
         {
             await lease.Serial.WaitAsync(token); entered = true;
-            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token, lease.Lifetime.Token);
+            // Once an initial frame has been sent, drain its reply even if the condition ends.
+            // Canceling a partial pipe read loses framing and prevents a confirmed release.
+            using var deadline = first ? CancellationTokenSource.CreateLinkedTokenSource(lease.Lifetime.Token)
+                : CancellationTokenSource.CreateLinkedTokenSource(token, lease.Lifetime.Token);
             deadline.CancelAfter(first ? acquireTimeout : operationTimeout);
             ProviderMessage receipt;
             if (first)
             {
+                token.ThrowIfCancellationRequested();
                 await lease.Pipe.ConnectForUserAsync(2000, deadline.Token);
+                token.ThrowIfCancellationRequested();
                 await ProviderProtocol.WriteAsync(lease.Pipe, new(1, "lease-setting", id.ToString("N"), DateTimeOffset.UtcNow.Add(acquireTimeout), Invocation: invocation), deadline.Token);
                 receipt = await ProviderProtocol.ReadAsync(lease.Pipe, deadline.Token);
                 ValidateSettingReceipt(receipt, id.ToString("N"), 0);
@@ -131,9 +158,9 @@ internal sealed partial class PluginTaskRuntime
                 Record("条件设置未完成", receipt.Reason!, ActivityLevel.Warning);
                 return new(receipt.Status!.Value, receipt.Reason!, id, FailureKind.Permanent);
             }
-            lock (settingGate)
-                if (!settingAuthorizations.TryGetValue(desired.Key, out var current) || !current.Authorized || !ReferenceEquals(current.Lease, lease))
-                    throw new OperationCanceledException("设置条件已结束。");
+            var authorization = SettingAuthorizationState(desired.Key, lease, desired.Generation);
+            if (authorization == 0) throw new OperationCanceledException("设置条件已结束。");
+            if (authorization == 1) return new(OutcomeStatus.Rejected, "设置代际已变化；原租约供当前代际更新，不将旧回执报告为当前结果。", id);
             Record("条件设置已确认", receipt.Reason!, ActivityLevel.Success);
             return new(OutcomeStatus.Succeeded, receipt.Reason!, id);
         }
@@ -155,14 +182,50 @@ internal sealed partial class PluginTaskRuntime
     }
     private async Task<ProviderMessage> SettingExchangeAsync(SettingLease lease, string type, TaskInvocation? invocation, CancellationToken token)
     {
-        TaskCompletionSource<ProviderMessage> reply; long sequence;
+        var (reply, sequence) = BeginSettingReply(lease);
+        await ProviderProtocol.WriteAsync(lease.Pipe, new(1, type, lease.Target!, DateTimeOffset.UtcNow.Add(lease.OperationTimeout), Invocation: invocation, Sequence: sequence), token);
+        return await reply.Task.WaitAsync(token);
+    }
+    private (TaskCompletionSource<ProviderMessage> Reply, long Sequence) BeginSettingReply(SettingLease lease)
+    {
         lock (settingGate)
         {
             if (lease.Reply is not null) throw new IOException("前一次设置请求尚未返回，本次不排队。");
-            reply = lease.Reply = new(TaskCreationOptions.RunContinuationsAsynchronously); sequence = ++lease.Sequence;
+            var reply = lease.Reply = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            return (reply, ++lease.Sequence);
         }
-        await ProviderProtocol.WriteAsync(lease.Pipe, new(1, type, lease.Target!, DateTimeOffset.UtcNow.Add(lease.OperationTimeout), Invocation: invocation, Sequence: sequence), token);
-        return await reply.Task.WaitAsync(token);
+    }
+    private TaskCompletionSource<ProviderMessage> AcceptSettingReply(SettingLease lease, ProviderMessage receipt)
+    {
+        lock (settingGate)
+        {
+            ValidateSettingReceipt(receipt, lease.Target!, lease.Sequence);
+            var reply = lease.Reply ?? throw new InvalidDataException("设置租约返回未请求的回执。");
+            lease.Reply = null; return reply;
+        }
+    }
+    private TaskCompletionSource<ProviderMessage>? TakeFailedSettingReply(SettingLease lease)
+    {
+        lock (settingGate) { var reply = lease.Reply; lease.Reply = null; return reply; }
+    }
+    private Task<ProviderMessage>? PendingSettingReply(SettingLease lease)
+    { lock (settingGate) return lease.Reply?.Task; }
+    private void ForgetSettingLease(ResourceKey key, SettingLease lease)
+    {
+        lock (settingGate)
+        {
+            // A failed restoration is not a new baseline. Keep a completed failure marker so
+            // subsequent conditions cannot capture the partially dimmed value as the original.
+            if (lease.ReleaseConfirmed && settingAuthorizations.TryGetValue(key, out var current) && ReferenceEquals(current.Lease, lease)) current.Lease = null;
+            settingLeases.Remove(lease);
+        }
+    }
+    private void RebaseManuallyChosenBrightness()
+    {
+        lock (settingGate)
+            foreach (var pair in settingAuthorizations)
+                if (IsBrightness(pair.Key.CapabilityId) && pair.Value.Lease is { ReleaseConfirmed: false } failed && failed.Released.Task.IsCompleted)
+                    pair.Value.Lease = null;
     }
     private async Task MonitorSettingLeaseAsync(ResourceKey key, SettingLease lease)
     {
@@ -171,18 +234,13 @@ internal sealed partial class PluginTaskRuntime
             while (!lease.Lifetime.IsCancellationRequested)
             {
                 var receipt = await ProviderProtocol.ReadAsync(lease.Pipe, lease.Lifetime.Token);
-                TaskCompletionSource<ProviderMessage>? reply;
-                lock (settingGate)
-                {
-                    ValidateSettingReceipt(receipt, lease.Target!, lease.Sequence);
-                    reply = lease.Reply ?? throw new InvalidDataException("设置租约返回未请求的回执。"); lease.Reply = null;
-                }
+                var reply = AcceptSettingReply(lease, receipt);
                 reply.TrySetResult(receipt);
             }
         }
         catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
         {
-            lock (settingGate) { lease.Reply?.TrySetException(new IOException("设置租约连接中断，释放结果尚未确认。")); lease.Reply = null; }
+            TakeFailedSettingReply(lease)?.TrySetException(new IOException("设置租约连接中断，释放结果尚未确认。"));
             if (lease.Release is null)
             {
                 BlockSettingLease(key, lease, null);
@@ -195,12 +253,20 @@ internal sealed partial class PluginTaskRuntime
     {
         lock (settingGate)
             if (settingAuthorizations.TryGetValue(key, out var item) && ReferenceEquals(item.Lease, lease))
-            { item.FailedGeneration = generation ?? item.Generation; item.Lease = null; }
+            { item.FailedGeneration = generation ?? item.Generation; }
     }
     private void StartSettingRelease(ResourceKey key, SettingLease lease)
     {
-        lock (settingGate) lease.Release ??= Task.Run(() => ReleaseSettingLeaseAsync(key, lease));
+        bool start; lock (settingGate) start = MarkSettingRelease(lease);
+        if (start) QueueSettingRelease(key, lease);
     }
+    // Called only under settingGate; reserve the release before any asynchronous work starts.
+    private static bool MarkSettingRelease(SettingLease lease)
+    {
+        if (lease.Release is not null) return false;
+        lease.Release = lease.Released.Task; return true;
+    }
+    private void QueueSettingRelease(ResourceKey key, SettingLease lease) => _ = Task.Run(() => ReleaseSettingLeaseAsync(key, lease));
     private async Task ReleaseSettingLeaseAsync(ResourceKey key, SettingLease lease)
     {
         using var cleanup = new CancellationTokenSource(lease.OperationTimeout);
@@ -208,7 +274,7 @@ internal sealed partial class PluginTaskRuntime
         try
         {
             await lease.Serial.WaitAsync(cleanup.Token); entered = true;
-            Task<ProviderMessage>? pending; lock (settingGate) pending = lease.Reply?.Task;
+            var pending = PendingSettingReply(lease);
             if (pending is not null) await pending.WaitAsync(cleanup.Token);
             if (!lease.Connected) throw new IOException("尚未收到初始租约回执；关闭连接后的释放结果未确认。");
             var receipt = await SettingExchangeAsync(lease, "lease-setting-release", null, cleanup.Token);
@@ -223,17 +289,15 @@ internal sealed partial class PluginTaskRuntime
             lease.Lifetime.Cancel(); lease.Pipe.Dispose();
             if (entered) lease.Serial.Release();
             if (lease.Monitor is { } monitor) await monitor;
-            lock (settingGate)
-            {
-                if (settingAuthorizations.TryGetValue(key, out var current) && ReferenceEquals(current.Lease, lease)) current.Lease = null;
-                settingLeases.Remove(lease);
-            }
+            ForgetSettingLease(key, lease);
             lease.Lifetime.Dispose(); lease.Released.TrySetResult();
         }
     }
     private Task DrainRestorableSettingsAsync(CancellationToken token)
     {
         ReleaseRestorableSettings();
-        lock (settingGate) return Task.WhenAll(settingLeases.Select(l => l.Released.Task)).WaitAsync(token);
+        return Task.WhenAll(SettingReleaseTasks()).WaitAsync(token);
     }
+    private Task[] SettingReleaseTasks()
+    { lock (settingGate) return settingLeases.Select(l => l.Released.Task).ToArray(); }
 }

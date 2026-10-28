@@ -10,6 +10,29 @@ namespace Axiom.Engine.Tests;
 [Collection("Brightness native ownership")]
 public sealed class BrightnessRestoreTests
 {
+    [Fact(Timeout = 10000)]
+    public async Task SameConnectedScreenModeChangeRetainsBaselineButReplacementAndUnknownNeverRestore()
+    {
+        foreach (var change in new[] { "mode", "replacement", "unknown" })
+        {
+            string? connected = "synthetic-physical-connection"; var queries = 0;
+            var guard = new BrightnessTopologyGuard(() => { queries++; return connected; });
+            uint current = 100; var writes = new List<uint>();
+            await using var session = await BrightnessRestoreSession.CreateAsync(_ => new([new(100, p => (uint)p,
+                () => guard.Valid ? current : null, value => { if (!guard.Valid) return false; current = value; writes.Add(value); return true; })],
+                0, 0, _ => { }, () => { }), "primary", TimeSpan.FromSeconds(3), default);
+            Assert.True((await session.ApplyAsync(Parameters(50), default)).Success);
+            Assert.Equal(1, queries); // All ordinary reads/writes share the unchanged identity.
+            connected = change == "mode" ? connected : change == "unknown" ? null : "different-connection";
+            guard.Changed();
+            var released = await session.ReleaseAsync(default);
+            Assert.Equal(change == "mode", current == 100);
+            if (change == "mode") Assert.True(released.Success);
+            else Assert.DoesNotContain(100u, writes);
+            Assert.Equal(2, queries);
+        }
+    }
+
     private static Dictionary<string, string> Parameters(int percent) => new() { ["percent"] = percent.ToString(System.Globalization.CultureInfo.InvariantCulture), ["delaySeconds"] = "0", ["target"] = "primary" };
     [Fact(Timeout = 10000)]
     public async Task RegisteredDesiredTemplatesSaveAndImportUseOneCapturedBaselineAcrossUpdatesAndNativeOwnershipUntilRelease()
@@ -33,15 +56,19 @@ public sealed class BrightnessRestoreTests
             }
             finally { foreach (var f in Directory.GetFiles(Path.GetDirectoryName(path)!, Path.GetFileName(path) + "*")) File.Delete(f); }
         }
-        await Assert.ThrowsAsync<IOException>(() => BrightnessRestoreSession.CreateAsync(_ => Capture([], () => { }), "primary", TimeSpan.FromSeconds(10), default));
+        await Assert.ThrowsAsync<RestorableSettingNotAcquiredException>(() => BrightnessRestoreSession.CreateAsync(_ => Capture([], () => { }), "primary", TimeSpan.FromSeconds(10), default));
         await BrightnessNativeOwnership.DrainAsync().WaitAsync(TimeSpan.FromSeconds(3)); // unknown/empty baseline never owns a write target
         var target = new Target(80); var captures = 0; var closed = 0; var captureThread = 0;
         var session = await BrightnessRestoreSession.CreateAsync(_ => { captures++; captureThread = Environment.CurrentManagedThreadId; return Capture([target], () => { closed++; Assert.Equal(captureThread, Environment.CurrentManagedThreadId); }); }, "primary", TimeSpan.FromSeconds(10), default);
         try
         {
             Assert.True((await session.ApplyAsync(Parameters(30), default)).Owned); Assert.Null(BrightnessNativeOwnership.TryAcquire());
-            Assert.True((await session.ApplyAsync(Parameters(50), default)).Owned); Assert.Equal(1, captures); Assert.Equal(50u, target.Current);
-            Assert.True((await session.ReleaseAsync(default)).Success); Assert.Equal(80u, target.Current); Assert.Equal(new uint[] { 30, 50, 80 }, target.Writes); Assert.Equal(1, closed);
+            var applied = await session.ApplyAsync(Parameters(50), default);
+            Assert.True(applied.Owned); Assert.Equal(1, captures); Assert.Equal(50u, target.Current);
+            Assert.Contains("原亮度80%、最后读回50%", applied.Reason);
+            var released = await session.ReleaseAsync(default);
+            Assert.True(released.Success); Assert.Contains("原亮度80%、最后读回80%", released.Reason);
+            Assert.Equal(80u, target.Current); Assert.Equal(new uint[] { 30, 50, 80 }, target.Writes); Assert.Equal(1, closed);
         }
         finally { await session.DisposeAsync(); }
         using var next = BrightnessNativeOwnership.TryAcquire(); Assert.NotNull(next);

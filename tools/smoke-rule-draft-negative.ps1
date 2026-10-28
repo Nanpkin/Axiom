@@ -1,6 +1,7 @@
 $ErrorActionPreference = 'Stop'
 $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value.Replace('-', '_')
-$name = "axiom-rule-drafts-v1-$sid"
+$sessionId = (Get-Process -Id $PID).SessionId
+$name = "axiom-rule-drafts-v1-${sid}-s$sessionId"
 
 function ReadExact($pipe, [int]$count) {
     $buffer = [byte[]]::new($count)

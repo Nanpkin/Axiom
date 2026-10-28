@@ -23,7 +23,7 @@ public static class RuleDraftProtocol
     {
         UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow
     };
-    public static string PipeName(string sid) => "axiom-rule-drafts-v1-" + sid.Replace('-', '_');
+    public static string PipeName(string sid, int? sessionId = null) => SessionPipeName.Create("axiom-rule-drafts-v1-", sid, sessionId);
 
     public static void ValidateRequest(RuleDraftMessage message, DateTimeOffset now)
     {

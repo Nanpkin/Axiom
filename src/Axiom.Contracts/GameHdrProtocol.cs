@@ -8,7 +8,7 @@ public sealed record GameHdrRuleDto(string Id, long Version, string Title, strin
     string DisplayPath, bool HdrEnabled, bool Paused, string? ProcessNamesText = null);
 
 public sealed record GameHdrDisplayDto(string Name, string Path, bool? Supported, bool? Enabled,
-    bool? Active, string? Error);
+    bool? Active, string? Error, string? ConnectionPath = null);
 
 public sealed record GameHdrStatusDto(string State, string Reason, DateTimeOffset AtUtc,
     bool AgentConnected, GameHdrDisplayDto[] Displays, GameHdrRuleDto[] Rules);
@@ -25,8 +25,8 @@ public sealed record GameHdrMessage(int Version, string Type, string RequestId,
 public static class GameHdrProtocol
 {
     public const int MaximumFrame = 65_536;
-    public static string HostPipe(string sid) => "axiom-game-hdr-host-v1-" + sid.Replace('-', '_');
-    public static string AgentPipe(string sid) => "axiom-game-hdr-agent-v1-" + sid.Replace('-', '_');
+    public static string HostPipe(string sid, int? sessionId = null) => SessionPipeName.Create("axiom-game-hdr-host-v1-", sid, sessionId);
+    public static string AgentPipe(string sid, int? sessionId = null) => SessionPipeName.Create("axiom-game-hdr-agent-v1-", sid, sessionId);
     private static readonly GameHdrJsonContext Strict = new(new JsonSerializerOptions
     {
         UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow

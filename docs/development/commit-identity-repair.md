@@ -14,7 +14,7 @@ git var GIT_COMMITTER_IDENT
 
 新提交、合并、标签均使用这组姓名和邮箱。提交前确认最终身份，提交后用`git log -1 --format=fuller`核对实际结果。命令级`git -c`、`--author`及身份环境变量能覆盖默认配置，因此不能只看`git config user.email`。禁止AI自造GitHub noreply邮箱；发现错误提交须在推送前修正。保留真正的GitHub网页合并提交者记录，不将平台身份伪装为所有者。
 
-2026-10-28所有者GitHub用户名由Starvan改为Nanpkin，账号ID仍为63274913。远端统一使用 https://github.com/Nanpkin/Axiom.git 。旧提交中的带ID noreply邮箱保留，不因本次改名重写历史；参见[GitHub用户名说明](https://docs.github.com/en/account-and-profile/reference/username-reference)。
+2026-10-28所有者GitHub用户名由Starvan改为Nanpkin，已核对账号ID仍为63274913。远端统一使用`https://github.com/Nanpkin/Axiom.git`；新clone同时核对origin地址。旧提交中的带ID noreply邮箱保留，不因本次改名重写历史；参见[GitHub用户名说明](https://docs.github.com/en/account-and-profile/reference/username-reference)。
 
 ## 2026-10-19维护记录
 

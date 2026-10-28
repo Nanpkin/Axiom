@@ -8,13 +8,16 @@ namespace Axiom.WinUI;
 
 public sealed partial class WorkbenchWindow
 {
+    private WorkbenchPresentation.ActivityGroup? selectedActivity;
+    private ActivityRecord? activityDetail;
+    private string? activityDetailError;
+    private double activityListOffset;
+    private bool activityRestoreScroll;
     private ActivityPage? activity;
     private string? activityError;
     private long? activityBeforeId;
-    private int activityPageSize;
     private readonly Stack<long?> activityPositions = [];
     private bool activityScrollToTop;
-    private bool activityResizeQueued;
 
     private int CalculateActivityPageSize()
     {
@@ -23,28 +26,14 @@ public sealed partial class WorkbenchWindow
         if (!double.IsFinite(height) || height <= 0) return 4;
         // A card row contains a title, detail and metadata. Reserve the heading,
         // toolbar and date labels so a page contains only complete visible rows.
-        var rowHeight = width < 760 ? 150 : 132;
-        var available = Math.Max(200, height - 210);
+        var rowHeight = width < 600 ? 82 : 66;
+        var available = Math.Max(200, height - 50);
         return Math.Clamp((int)Math.Floor(available / rowHeight), 1, 64);
-    }
-
-    private void QueueActivityViewportRefresh()
-    {
-        if (!loaded || closed || page != Page.Activity || busy || activityResizeQueued) return;
-        var next = CalculateActivityPageSize();
-        if (activityPageSize == 0 || next == activityPageSize) return;
-        activityResizeQueued = true;
-        DispatcherQueue.TryEnqueue(async () =>
-        {
-            activityResizeQueued = false;
-            if (closed || page != Page.Activity || busy) return;
-            activityPositions.Clear();
-            await ReadActivityCoreAsync(null, reset: true);
-        });
     }
 
     private void BuildActivity()
     {
+        if (selectedActivity is not null) { BuildActivityDetail(); return; }
         var toolbar = Column(12);
         var actions = new Grid { ColumnSpacing = 12 };
         actions.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -55,8 +44,8 @@ public sealed partial class WorkbenchWindow
         clear.Click += async (_, _) => await ClearOldActivityAsync();
         Grid.SetColumn(clear, 1); actions.Children.Add(clear);
         toolbar.Children.Add(actions);
-        toolbar.Children.Add(Text("记录保存在本机，重启后仍可查看。清理只删除超过七天的记录。", 12, Muted));
-        content.Children.Add(toolbar);
+        ToolTipService.SetToolTip(clear, "保留最近七天的记录，清理后无法撤销");
+        pageTools.Children.Add(toolbar);
 
         if (activityError is not null || activity?.Error is not null || !reachable)
             content.Children.Add(Card(Text(activityError ?? activity?.Error ?? "后台未连接，下面保留的是上次读取的记录。", 13, Amber), PaleAmber, 16));
@@ -72,13 +61,14 @@ public sealed partial class WorkbenchWindow
         }
         else
         {
-            if (activityPositions.Count > 0 || activity.BeforeId is not null) content.Children.Add(ActivityPager());
+            if (activityPositions.Count > 0 || activity.BeforeId is not null) pageTools.Children.Add(ActivityPager());
             // Group consecutive dates so each page follows the durable event order.
             DateOnly? date = null;
             StackPanel? rows = null;
-            foreach (var record in activity.Records)
+            foreach (var group in WorkbenchPresentation.GroupActivity(activity.Records))
             {
-                var local = record.Event.AtUtc.ToLocalTime();
+                var record = group.Latest;
+                var local = group.LastAtUtc.ToLocalTime();
                 var nextDate = DateOnly.FromDateTime(local.DateTime);
                 if (date != nextDate)
                 {
@@ -89,7 +79,7 @@ public sealed partial class WorkbenchWindow
                 }
                 var entry = record.Event;
                 var warning = entry.Level is ActivityLevel.Warning or ActivityLevel.Error;
-                var row = new Grid { ColumnSpacing = 14, Padding = new Thickness(20, 18, 20, 18) };
+                var row = new Grid { ColumnSpacing = 14, Padding = new Thickness(16, 10, 16, 10) };
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(22) });
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                 var icon = new FontIcon { Glyph = entry.Level switch { ActivityLevel.Success => "\uE73E",
@@ -99,17 +89,102 @@ public sealed partial class WorkbenchWindow
                 AutomationProperties.SetName(icon, entry.Level switch { ActivityLevel.Success => "完成", ActivityLevel.Warning => "提醒",
                     ActivityLevel.Error => "异常", _ => "活动" });
                 row.Children.Add(icon);
-                var body = Column(6);
-                body.Children.Add(Text(entry.Title, 16, Ink, true));
-                if (!string.IsNullOrEmpty(entry.Subject)) body.Children.Add(Text(entry.Subject, 13, Accent));
-                body.Children.Add(Text(entry.Detail, 13, Muted));
-                body.Children.Add(Text($"{local:HH:mm:ss}  ·  {entry.Category}", 11, Muted));
+                var body = Column(4);
+                var heading = new Grid { ColumnSpacing = 8 };
+                heading.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                heading.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                heading.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                heading.Children.Add(Preview(entry.Title, 14, Ink, true));
+                if (group.Count > 1)
+                {
+                    var repeat = Badge($"连续 {group.Count} 次", true); Grid.SetColumn(repeat, 1); heading.Children.Add(repeat);
+                    ToolTipService.SetToolTip(repeat, $"本页连续相同记录 · {group.FirstAtUtc.ToLocalTime():HH:mm:ss}–{local:HH:mm:ss}。原始记录仍保留。");
+                }
+                var time = Text($"{local:HH:mm:ss}", 11, Muted); time.VerticalAlignment = VerticalAlignment.Center;
+                ToolTipService.SetToolTip(time, $"{local:yyyy-MM-dd HH:mm:ss} · {entry.Category}");
+                Grid.SetColumn(time, 2); heading.Children.Add(time); body.Children.Add(heading);
+                var summary = WorkbenchPresentation.ActivitySummary(entry.Detail);
+                if (!string.IsNullOrWhiteSpace(entry.Subject) && entry.Subject != entry.Detail) summary = entry.Subject + " · " + summary;
+                body.Children.Add(Preview(summary, 12, warning ? Amber : Muted));
                 Grid.SetColumn(body, 1); row.Children.Add(body);
-                rows!.Children.Add(new Border { Child = row, BorderBrush = Line,
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(18) });
+                var arrow = new FontIcon { Glyph = "\uE76C", FontSize = 12, Foreground = Muted, VerticalAlignment = VerticalAlignment.Center };
+                Grid.SetColumn(arrow, 2); row.Children.Add(arrow);
+                var open = new Button { Content = row, Padding = new Thickness(0), MinHeight = 56,
+                    Background = Surface, BorderThickness = new Thickness(0), CornerRadius = new CornerRadius(0),
+                    HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch };
+                open.Resources["ButtonBackgroundPointerOver"] = Hover;
+                AutomationProperties.SetName(open, "查看活动详情：" + entry.Title + $" {local:HH:mm:ss}");
+                AutomationProperties.SetAutomationId(open, "Activity.Record." + record.Id);
+                open.Click += async (_, _) => await OpenActivityDetailAsync(group);
+                rows!.Children.Add(new Border { Child = open, BorderBrush = Line,
                     BorderThickness = new Thickness(0, rows.Children.Count == 0 ? 0 : 1, 0, 0) });
             }
         }
         if (activity is not null && (activityPositions.Count > 0 || activity.BeforeId is not null)) content.Children.Add(ActivityPager());
+    }
+
+    private async Task OpenActivityDetailAsync(WorkbenchPresentation.ActivityGroup group)
+    {
+        if (busy || closed) return;
+        activityListOffset = pageScroll.VerticalOffset;
+        selectedActivity = group; activityDetail = null; activityDetailError = null;
+        pageScrollToTop = true; Render();
+        await LoadActivityDetailAsync();
+    }
+
+    private async Task LoadActivityDetailAsync()
+    {
+        if (busy || closed || selectedActivity is not { } selection) return;
+        SetBusy(true);
+        try
+        {
+            var response = await WorkbenchClient.RequestAsync(new(1, "read-activity-detail", Guid.NewGuid().ToString("N"),
+                Id: selection.Latest.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+            if (response.Type != "activity-detail" || response.ActivityDetail is { } item && item.Id != selection.Latest.Id)
+                throw new InvalidDataException();
+            if (!ReferenceEquals(selectedActivity, selection) || closed) return;
+            activityDetail = response.ActivityDetail;
+            activityDetailError = activityDetail is null ? "这条记录已清理，或已不在当前记录库中。" : null;
+        }
+        catch (Exception) { activityDetailError = "详情读取未确认，请重试。"; }
+        finally { SetBusy(false); Render(); }
+    }
+
+    private void BuildActivityDetail()
+    {
+        var group = selectedActivity!;
+        var entry = activityDetail?.Event ?? group.Latest.Event;
+        pageTitle.Text = "活动详情"; pageSubtitle.Text = "活动记录 / " + entry.Category;
+        content.MaxWidth = 940;
+        var actions = Row(8);
+        var back = Action("← 返回活动记录");
+        back.Click += (_, _) =>
+        {
+            selectedActivity = null; activityDetail = null; activityDetailError = null;
+            pageScrollToTop = activityScrollToTop = false; activityRestoreScroll = true; Render();
+        };
+        actions.Children.Add(back);
+        var retry = Action("刷新详情"); retry.Click += async (_, _) => await LoadActivityDetailAsync(); actions.Children.Add(retry);
+        pageTools.Children.Add(actions);
+        var heading = Column(8); heading.Children.Add(Text(entry.Title, 20, Ink, true));
+        heading.Children.Add(Badge(entry.Level switch { ActivityLevel.Success => "完成", ActivityLevel.Warning => "提醒", ActivityLevel.Error => "异常", _ => "信息" },
+            entry.Level is not ActivityLevel.Success));
+        if (!string.IsNullOrWhiteSpace(entry.Subject)) heading.Children.Add(Text(entry.Subject, 14, Accent));
+        heading.Children.Add(Text(group.Count > 1
+            ? $"本页连续 {group.Count} 次 · {group.FirstAtUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss} – {group.LastAtUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss}"
+            : $"{entry.AtUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss}", 12, Muted));
+        content.Children.Add(Card(heading));
+        if (activityDetailError is not null) content.Children.Add(Card(Text(activityDetailError, 14, Amber), PaleAmber));
+        if (activityDetail is null)
+        {
+            if (activityDetailError is null) content.Children.Add(Text("正在读取详情…", 14, Muted));
+            return;
+        }
+        var detail = Text(string.IsNullOrWhiteSpace(entry.Detail) ? "此记录没有额外说明。" : entry.Detail, 14);
+        detail.IsTextSelectionEnabled = true;
+        AutomationProperties.SetName(detail, "活动完整详情");
+        content.Children.Add(Card(detail));
     }
 
     private Grid ActivityPager()
@@ -129,12 +204,11 @@ public sealed partial class WorkbenchWindow
     {
         try
         {
-            var pageSize = beforeId is null || activityPageSize == 0 ? CalculateActivityPageSize() : activityPageSize;
+            var pageSize = CalculateActivityPageSize();
             var response = await WorkbenchClient.RequestAsync(new(1, "read-activity", Guid.NewGuid().ToString("N"),
                 ActivityBeforeId: beforeId, ActivityPageSize: pageSize));
             if (response.Type != "activity" || response.Activity is null) throw new InvalidDataException(response.Error ?? "活动记录回复未确认。");
             activity = response.Activity; activityBeforeId = beforeId; activityError = null;
-            activityPageSize = pageSize;
             activityScrollToTop = true;
             if (reset) activityPositions.Clear();
             Render(); return true;

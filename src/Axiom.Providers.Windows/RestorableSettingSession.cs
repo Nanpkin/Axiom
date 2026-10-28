@@ -1,5 +1,9 @@
 namespace Axiom.Providers.Windows;
 
+// Only a capture that never reached Apply and whose native cleanup is confirmed may use this.
+// It permits a negative acquisition receipt followed by a truthful, successful empty release.
+public sealed class RestorableSettingNotAcquiredException(string message, Exception inner) : IOException(message, inner);
+
 // A receipt describes this owned transaction, never the machine's global state.
 public sealed record RestorableSettingResult(bool Success, string Reason, bool Owned);
 

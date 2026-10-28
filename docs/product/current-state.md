@@ -1,26 +1,26 @@
 # 当前交接
 
-维护更新（2026-10-28）：GitHub用户名已由Starvan改为Nanpkin（账号ID63274913不变）；本机新旧检出origin、新提交邮箱与当前仓库登录账号配置已同步，读取及推送验证通过。通用作者名和旧检出禁止推送保护保持；身份规则见[提交身份说明](../development/commit-identity-repair.md)。本次仅修改三份开发文档，以下功能状态为此前记录。
+更新：2026-10-28。所有者要求处理全部开放PR；[PR40](https://github.com/Nanpkin/Axiom/pull/40)用户名文档已合并，[PR39](https://github.com/Nanpkin/Axiom/pull/39)改投main，集中承载PR28–39最终功能组合。精确PR CI、合并、main检查及功能批次发布待完成；跟踪见[收尾计划](../exec-plans/active/open-pr-consolidation.md)。
 
-更新：2026-10-19。仓库公开；开始开发按AGENTS设置固定提交身份。
+GitHub用户名已由Starvan改为Nanpkin（账号ID63274913不变），新旧检出origin与新提交noreply邮箱已同步；通用作者名及旧检出禁止推送保护保持。开发使用本检出，身份设置见[提交身份说明](../development/commit-identity-repair.md)。
 
-## 仓库维护
+## 本机已更新：规则库与会话连接修复
 
-- 所有者授权本次历史作者修复：所有可写分支/标签的错误邮箱归到Starvan；代码文件、提交说明和合并结构逐一核对一致。见[身份规则与迁移说明](../development/commit-identity-repair.md)、[旧新SHA对照](../history/commit-identity-map-20261019.tsv)。
-- 重新clone后再开发；旧clone/工作树不可直接push、merge或cherry-pick回旧历史。旧SHA在历史文档、CI和二进制BUILD-INFO中保留原事实，按对照表查等价新提交。
-- 既有Release资产保留原字节和摘要；本轮不新发版、不重新构建。GitHub管理的PR旧引用/旧活动和统计缓存不等于当前分支仍使用错误邮箱。
+- 固定artifacts/Axiom-preview/Axiom.exe已更新并启动为0.1.0-local.20261026.3/干净b29e6ec；各角色来源、版本、SHA256及真实UI后台连接已核对。原9任务规范化指纹和托盘设置保持，登录启动当前已启用且指向固定入口。
+- 所有者结束旧进程后，只读确认所有会话旧进程退出，再经统一publish-preview替换；无需Windows重启。不声称助手正常停止或已验证旧版退出时恢复。紧邻更新前启动设置基线为空，当前读取正常、未改启动设置。
+- 7条管道统一追加真实OS会话编号，修复同账户多会话请求串接；保留用户/会话/角色校验，不回退旧端点、不重试命令、不迁移用户数据。
+- Automation管理通道保留第9监听实例，处理上限仍8；旧版在诊断中触发Win32 231导致监听故障，本轮已修复。
+- LocalUserPipeTests 4项通过，容量配置对齐后局部复查通过；四角色统一发布成功。证据artifacts/session-pipe-smoke及test-results/focused仅本机，[完成计划](../exec-plans/completed/session-pipe-isolation.md)。诊断内存不可上传。
 
-## 当前开发状态
+## 规则库UI
 
-- main仍是已发布亮度渐变批次，以下PR保持开放，没有借本轮维护合并功能。
-- [PR28](https://github.com/Nanpkin/Axiom/pull/28)：响应式亮度渐变及多键组合+滚轮；[PR29](https://github.com/Nanpkin/Axiom/pull/29)叠于其上，新增任务外层HDR/时段自动暂停与事件推送。
-- [PR30](https://github.com/Nanpkin/Axiom/pull/30)：工作台视觉/导航和紧凑任务行，基于PR29；浅深色/窄窗及8项呈现测试此前通过。
-- [PR31](https://github.com/Nanpkin/Axiom/pull/31)基于PR29修复晚启动托盘等待；[PR32](https://github.com/Nanpkin/Axiom/pull/32)叠于其上修复无关观察重建误取消启动动作。分支名保持。
+- 分类栏+搜索/状态/新建工具栏；普通规则行64逻辑像素，名称编辑，行尾启停，更多菜单含详情/移至分类，暂停原因与未知直显。
+- 支持自定义分类创建/改名/删除/逐条归类、数量及搜索状态叠加。ui-rule-collections.json独立原子保存选中分类；失败保留原状态，删除分类不删除规则。
+- RuleCollectionsTests 3项及真实分类/搜索/编辑返回/详情/窄窗已通过；固定新版分类/搜索控件再次核对可见，临时验收分类已清除。证据artifacts/rule-library-smoke。
+- 活动二级详情沿PR38，旧记录缺失的信息不补造。本轮未重复全UI、原生动作、多会话真实任务或性能验收。
 
-## 本机与验收边界
+## 保护边界
 
-- 固定预览local.20261019.2对应原cba7e1b（身份修复后8fba30a），本轮未替换应用。此前17项相关测试及一次后台重启通过，未点立即隐藏自动完成8/8托盘目标；原8规则及托盘/启动设置保持，等待60秒。
-- 首次开机窗口任务资格已被旧版消耗，未重置，真实下次开机仍待确认。用户后续配置以实时状态为准，不按历史摘要回填。
-- 亮度恢复沿原目标/最初基线，Unknown/外部变化/取消仍让出；暂停释放无消费者采集。已有采集、亮度与UI证据沿各PR/计划查，不重复无关验证，不宣称广设备/游戏/完整性能达标。
-- 本轮仅核对Git对象/文件树/身份、分支标签和文档链接；旧SHA成功CI不冒充新SHA验证。重新开发时只验证本批功能与直接影响边界。
-- 共用用户数据，原地保存，不备份/EFS/打包私有副本；正常停止拒绝或恢复未知时保留现场，不强杀。
+- ×隐藏UI；停止后台须正常恢复，不强杀。共用原用户数据，不备份/EFS/打包私有副本，拒停/恢复未知留现场。
+- 游戏前台HDR故障在全部Axiom/记录器退出后手动开启仍复现；不盲改显示/G-SYNC设置。会话路由修复不等于驱动呈现问题已修复。
+- 旧检出禁止推送或引回旧祖先；游戏模式、恢复、采集策略沿原contract/wiki。

@@ -1,5 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <Compile Include="../../src/Axiom.ServiceHost/GameHdrRuntime.cs" Link="GameHdrRuntime.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/ScreenBrightRegions.cs" Link="ScreenBrightRegions.cs" />
+    <Compile Include="../../src/Axiom.ServiceHost/PluginTaskRuntime.Hosts.cs" Link="PluginTaskRuntime.Hosts.cs" />
+    <Compile Include="../../src/Axiom.SessionAgent/ClockEventCapabilityProvider.cs" Link="ClockEventCapabilityProvider.cs" />
+    <Compile Include="../../src/Axiom.ServiceHost/PluginTaskRuntime.RunConditions.cs" Link="PluginTaskRuntime.RunConditions.cs" />
+    <Compile Include="../../src/Axiom.ServiceHost/PluginTaskRuntime.BrightnessWheel.cs" Link="PluginTaskRuntime.BrightnessWheel.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsBrightnessWheelGesture.cs" Link="WindowsBrightnessWheelGesture.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/ScreenContentObservation.cs" Link="ScreenContentObservation.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/ScreenContentCapabilityProvider.cs" Link="ScreenContentCapabilityProvider.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/WindowOnceEventSource.cs" Link="WindowOnceEventSource.cs" />
@@ -11,6 +18,7 @@
     <Compile Include="../../src/Axiom.Providers.Windows/TaskbarAutoHideOperation.cs" Link="TaskbarAutoHideOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/TaskbarAppBarData.cs" Link="TaskbarAppBarData.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/BrightnessRestoreSession.cs" Link="BrightnessRestoreSession.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/BrightnessRestoreTopology.cs" Link="BrightnessRestoreTopology.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/BrightnessFade.cs" Link="BrightnessFade.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/HardwareBrightnessOperation.cs" Link="HardwareBrightnessOperation.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/NetworkCategoryState.cs" Link="NetworkCategoryState.cs" />
@@ -104,6 +112,7 @@
     <Compile Include="../../src/Axiom.Providers.Windows/SessionLockStateReader.cs" Link="SessionLockStateReader.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/OnceEventSource.cs" Link="OnceEventSource.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/DailyEventSource.cs" Link="DailyEventSource.cs" />
+    <Compile Include="../../src/Axiom.SessionAgent/MonthlyEventSource.cs" Link="MonthlyEventSource.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/SessionCapabilityProvider.cs" Link="SessionCapabilityProvider.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/AudioCapabilityProvider.cs" Link="AudioCapabilityProvider.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsAudioEvents.cs" Link="WindowsAudioEvents.cs" />
@@ -133,12 +142,14 @@
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsProgramControl.cs" Link="WindowsProgramControl.cs" />
     <Compile Include="../../src/Axiom.ServiceHost/PluginTaskRuntime.TrayTool.cs" Link="PluginTaskRuntime.TrayTool.cs" />
     <Compile Include="../../src/Axiom.ServiceHost/PluginTaskRuntime.cs" Link="PluginTaskRuntime.cs" />
+    <Compile Include="../../src/Axiom.ServiceHost/PluginTaskRuntime.GameMode.cs" Link="PluginTaskRuntime.GameMode.cs" />
     <Compile Include="../../src/Axiom.ServiceHost/WindowsBootIdentity.cs" Link="WindowsBootIdentity.cs" />
     <Compile Include="../../src/Axiom.SessionAgent/ShortcutActionRegistry.cs" Link="ShortcutActionRegistry.cs" />
     <Compile Include="../../src/Axiom.ServiceHost/ShortcutCoordinator.cs" Link="ShortcutCoordinator.cs" />
     <Compile Include="../../src/Axiom.ServiceHost/LoginStartupRegistration.cs" Link="LoginStartupRegistration.cs" />
     <Compile Include="../../src/Axiom.ServiceHost/LocalPipeFactory.cs" Link="LocalPipeFactory.cs" />
     <Compile Include="../../src/Axiom.WinUI/WorkbenchPresentation.cs" Link="WorkbenchPresentation.cs" />
+    <Compile Include="../../src/Axiom.WinUI/RuleCollections.cs" Link="RuleCollections.cs" />
     <Compile Include="../../src/Axiom.WinUI/TaskEditorState.cs" Link="TaskEditorState.cs" />
     <Compile Include="../../src/Axiom.WinUI/CapabilityPickerState.cs" Link="CapabilityPickerState.cs" />
     <Compile Include="../../src/Axiom.WinUI/ProcessSelectionState.cs" Link="ProcessSelectionState.cs" />

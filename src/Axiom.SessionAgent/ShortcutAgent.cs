@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO.Pipes;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
@@ -49,8 +49,12 @@ internal sealed class ShortcutAgent : IDisposable
                 if (ui.SessionId != Process.GetCurrentProcess().SessionId) continue;
                 if (!string.Equals(ui.MainModule?.FileName, uiPath, StringComparison.OrdinalIgnoreCase))
                     throw new InvalidOperationException("另一份 Axiom 窗口正在运行，请先关闭旧版本。");
-                var handle = ui.MainWindowHandle;
-                if (handle != 0 && !ui.CloseMainWindow())
+                var handle = FindWorkbench(ui.Id);
+                if (handle != 0 && (!IsWindowVisible(handle) || IsIconic(handle))) {
+                    AllowSetForegroundWindow((uint)ui.Id);
+                    ShowWindow(handle, 9); SetForegroundWindow(handle); return;
+                }
+                if (handle != 0 && !PostMessage(handle, 0x0010, 0, 0))
                     throw new InvalidOperationException("无法关闭 Axiom 窗口，请稍后重试。");
                 return;
             }
@@ -108,6 +112,28 @@ internal sealed class ShortcutAgent : IDisposable
         var response = await AutomationProtocol.ReadAsync(pipe, timeout.Token);
         if (response.Type != "shortcuts" || response.RequestId != id) throw new IOException("快捷键恢复未确认。");
     }
+    private delegate bool WindowVisitor(nint window, nint data);
+    [DllImport("user32.dll")] private static extern bool EnumWindows(WindowVisitor visitor, nint data);
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(nint window, out uint process);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowText(nint window, System.Text.StringBuilder text, int count);
+    private static nint FindWorkbench(int processId)
+    {
+        nint found = 0;
+        EnumWindows((window, _) => {
+            GetWindowThreadProcessId(window, out var owner);
+            if (owner != (uint)processId) return true;
+            var title = new System.Text.StringBuilder(128);
+            GetWindowText(window, title, title.Capacity);
+            if (title.ToString() != "Axiom") return true;
+            found = window; return false;
+        }, 0);
+        return found;
+    }
+    [DllImport("user32.dll")] private static extern bool IsWindowVisible(nint window);
+    [DllImport("user32.dll")] private static extern bool IsIconic(nint window);
+    [DllImport("user32.dll")] private static extern bool ShowWindow(nint window, int command);
+    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(nint window);
+    [DllImport("user32.dll")] private static extern bool PostMessage(nint window, uint message, nint wparam, nint lparam);
     public void Dispose() => listener.Dispose();
     [DllImport("user32.dll")] private static extern bool AllowSetForegroundWindow(uint processId);
 }

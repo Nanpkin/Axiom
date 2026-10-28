@@ -25,7 +25,7 @@ public sealed class TrayActionTests
         Assert.Equal(RuleActionKind.Command,rule.Action.Kind);Assert.Equal(TrayCapabilities.Hide,rule.Action.Key.CapabilityId);Assert.Equal(TimeSpan.FromSeconds(2),rule.Timing.MinimumDuration);
         Assert.Equal(2,TrayCapabilities.ValidateTargets(task.Action).Length);
         Assert.Equal(TaskFieldKind.TraySelection,TrayCapabilities.Descriptor.Fields.Single(f=>f.Id=="executable").Kind);
-        foreach(var value in new[]{"0","31","NaN"})Assert.Throws<ArgumentException>(()=>TrayCapabilities.ValidateTargets(task.Action with{Parameters=task.Action.Parameters.SetItem("waitSeconds",value)}));
+        foreach(var value in new[]{"0","121","NaN"})Assert.Throws<ArgumentException>(()=>TrayCapabilities.ValidateTargets(task.Action with{Parameters=task.Action.Parameters.SetItem("waitSeconds",value)}));
         foreach(var value in new[]{"SampleAudio.exe",@"C:\Windows\cmd.exe",@"C:\Axiom.exe"})Assert.Throws<ArgumentException>(()=>TrayCapabilities.ValidateTargets(task.Action with{Parameters=task.Action.Parameters.SetItem("executable",value)}));
         Assert.Throws<ArgumentException>(()=>TrayCapabilities.ValidateTargets(task.Action with{Parameters=task.Action.Parameters.Add("inject","true")}));
     }
@@ -93,14 +93,35 @@ public sealed class TrayActionTests
         target.Add(false);Assert.True(target.Exists(false));
     }
     [Fact(Timeout=15000)]
-    public async Task NoIconIsFailureAndMissingPathDoesNotAffectOtherIcons()
+    public async Task NoIconIsNoOpAndMissingPathDoesNotAffectOtherIcons()
     {
         using var target=new IconWindow(false);
         var noIcon=await WindowsTrayActions.HideAsync(Environment.ProcessPath!,TimeSpan.FromSeconds(1),default);
-        Assert.False(noIcon.Success);Assert.Contains("超时",noIcon.Reason);
+        Assert.True(noIcon.Success);Assert.True(noIcon.Skipped);Assert.Contains("无需处理",noIcon.Reason);
+        Assert.DoesNotContain("已隐藏成功",noIcon.Reason);
         target.Add(false);
         var missing=await WindowsTrayActions.HideAsync(Path.Combine(Path.GetTempPath(),Guid.NewGuid()+".exe"),TimeSpan.FromSeconds(1),default);
         Assert.False(missing.Success);Assert.True(target.Exists(false));
+        var hidden = await WindowsTrayActions.HideAsync(Environment.ProcessPath!, TimeSpan.FromSeconds(1), default);
+        Assert.True(hidden.Success); Assert.False(hidden.Skipped);
+        var repeated = await WindowsTrayActions.HideAsync(Environment.ProcessPath!, TimeSpan.FromSeconds(1), default);
+        Assert.True(repeated.Success); Assert.True(repeated.Skipped); Assert.True(target.Alive);
+    }
+    [Fact(Timeout = 15000)]
+    public async Task ShortStartupWaitMissesLateWindowButLongWaitHidesItWithoutManualRetry()
+    {
+        var shortWait = await WindowsTrayActions.HideAsync(Environment.ProcessPath!, TimeSpan.FromSeconds(1), default);
+        Assert.True(shortWait.Success); Assert.True(shortWait.Skipped);
+        var pending = WindowsTrayActions.HideAsync(Environment.ProcessPath!, TimeSpan.FromSeconds(60), default);
+        await Task.Delay(1500); Assert.False(pending.IsCompleted);
+        using var target = new IconWindow(false, true);
+        target.Add(false);
+        var hidden = await pending.WaitAsync(TimeSpan.FromSeconds(4));
+        Assert.True(hidden.Success, hidden.Reason); Assert.False(target.Exists(false)); Assert.True(target.Alive);
+        using var cancel = new CancellationTokenSource();
+        var cancelled = WindowsTrayActions.HideAsync(Environment.ProcessPath!, TimeSpan.FromSeconds(120), cancel.Token);
+        cancel.Cancel(); await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelled);
+        target.Add(false); Assert.True(target.Exists(false));
     }
     [Fact(Timeout=15000)]
     public async Task SharedWaitSourceSurvivesOneSubscriberAndCanBeRecreated()
@@ -149,6 +170,29 @@ public sealed class TrayActionTests
         }
         target.Add(false); Assert.True(target.Exists(false)); Assert.True(target.Alive);
     }
+    [Fact]
+    public async Task BatchSummariesSeparateAbsentTargetsFromFailuresAndCollapseRepeatedReasons()
+    {
+        var paths = Enumerable.Range(1, 8).Select(i => $@"C:\Synthetic\Tray{i}.exe").ToArray();
+        var absent = await WindowsProgramBatch.ExecuteAsync(paths,
+            (_, _) => Task.FromResult(new ProgramControlResult(true, "未发现图标，无需处理。") { Skipped = true }), default);
+        Assert.True(absent.Success); Assert.True(absent.Skipped);
+        Assert.Contains("无需处理 8 个目标", absent.Reason); Assert.DoesNotContain("0/8", absent.Reason);
+        Assert.DoesNotContain(paths[0], absent.Reason.Split('\n')[0]);
+        Assert.All(paths, path => Assert.Contains(path, absent.Reason));
+        var mixed = await WindowsProgramBatch.ExecuteAsync(paths, (path, _) => Task.FromResult(path == paths[0]
+            ? new ProgramControlResult(false, "权限不足") : new ProgramControlResult(true, "未发现图标") { Skipped = true }), default);
+        Assert.False(mixed.Success); Assert.Contains("失败 1 个", mixed.Reason); Assert.Contains("无需处理 7 个", mixed.Reason);
+        Assert.Contains(paths[0], mixed.Reason); Assert.Contains(paths[1], mixed.Reason);
+        Assert.Contains("【失败】权限不足", mixed.Reason); Assert.Contains("【无需处理】", mixed.Reason);
+        var denied = await WindowsProgramBatch.ExecuteAsync(paths,
+            (_, _) => Task.FromResult(new ProgramControlResult(false, "权限不足")), default);
+        Assert.False(denied.Success); Assert.Equal(1, denied.Reason.Split("权限不足").Length - 1);
+        using var cancelled = new CancellationTokenSource(); cancelled.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => WindowsProgramBatch.ExecuteAsync(paths,
+            (_, _) => Task.FromResult(new ProgramControlResult(true, "不应调用")), cancelled.Token));
+    }
+
     private sealed class IconWindow : IDisposable
     {
         private static int serial;

@@ -12,17 +12,18 @@ internal sealed class AutomationPipeServer(ImmutableArray<IAutomationTaskBackend
     IAutomationRuntimeLifetime lifetime, string sid, CancellationTokenSource exit, LoginStartupRegistration startup, ShortcutCoordinator shortcuts,
     EngineHost engine, WorkbenchUtilities utilities, UsageObservationController usage)
 {
+    private const int MaximumClients = LocalPipeFactory.AutomationMaximumClients;
     private readonly AutomationTaskRouter router = new(backends);
     private readonly HashSet<Task> clients = [];
     public async Task RunAsync()
     {
         while (!exit.IsCancellationRequested)
         {
-            var pipe = LocalPipeFactory.Create(AutomationProtocol.PipeName(sid), sid);
+            var pipe = LocalPipeFactory.Create(AutomationProtocol.PipeName(sid), sid, LocalPipeFactory.AutomationMaximumInstances);
             try { await pipe.WaitForConnectionAsync(exit.Token); }
             catch (OperationCanceledException) { pipe.Dispose(); break; }
             clients.RemoveWhere(t => t.IsCompleted);
-            if (clients.Count >= 8) { pipe.Dispose(); continue; }
+            if (clients.Count >= MaximumClients) { pipe.Dispose(); continue; }
             clients.Add(HandleAsync(pipe));
         }
         await Task.WhenAll(clients);
@@ -39,7 +40,9 @@ internal sealed class AutomationPipeServer(ImmutableArray<IAutomationTaskBackend
             Combinations = [.. snapshots.SelectMany(x => x.Combinations)],
             Observations = [.. snapshots.SelectMany(x => x.Observations)],
             DetectionAvailable = snapshots.All(x => x.DetectionAvailable),
-            CompositeDetectionVersion = snapshots.Max(x => x.CompositeDetectionVersion)
+            CompositeDetectionVersion = snapshots.Max(x => x.CompositeDetectionVersion),
+            RunConditionsVersion = snapshots.Max(x => x.RunConditionsVersion),
+            RunStates = [.. snapshots.Where(x => !x.RunStates.IsDefault).SelectMany(x => x.RunStates)]
         };
     }
     private async Task HandleAsync(NamedPipeServerStream pipe)
@@ -59,6 +62,40 @@ internal sealed class AutomationPipeServer(ImmutableArray<IAutomationTaskBackend
                 GameHdrPipePeer.RequireSameSession(pipe, request.Type == "restore-shortcuts" ? "Axiom.SessionAgent.exe" : null);
                 AutomationProtocol.ValidateRequest(request, DateTimeOffset.UtcNow);
                 authorized = true;
+                if (request.Type == "watch-run-states")
+                {
+                    var runtime = backends.OfType<PluginTaskRuntime>().Single();
+                    deadline.CancelAfter(Timeout.InfiniteTimeSpan);
+                    var disconnected = pipe.ReadExactlyAsync(new byte[1], deadline.Token).AsTask();
+                    await using var states = runtime.WatchRunStatesAsync(deadline.Token).GetAsyncEnumerator(deadline.Token);
+                    long sequence = 0;
+                    try
+                    {
+                        while (true)
+                        {
+                            var changed = states.MoveNextAsync().AsTask();
+                            if (await Task.WhenAny(disconnected, changed) == disconnected) { deadline.Cancel(); try { await changed; } catch (OperationCanceledException) { } break; }
+                            if (!await changed) break;
+                            using var write = CancellationTokenSource.CreateLinkedTokenSource(exit.Token); write.CancelAfter(TimeSpan.FromSeconds(3));
+                            await AutomationProtocol.WriteAsync(pipe, new(1, "run-states", request.RequestId, RunStates: states.Current, RunStatesSequence: sequence++), write.Token);
+                        }
+                    }
+                    finally { deadline.Cancel(); try { await disconnected; } catch (Exception error) when (error is IOException or OperationCanceledException) { } }
+                    return;
+                }
+                if (request.Type is "read-game-mode" or "save-game-mode")
+                {
+                    var runtime = backends.OfType<PluginTaskRuntime>().Single();
+                    var snapshot = request.Type == "save-game-mode" ? await runtime.SaveGameModeAsync(request.GameModeSettings!, deadline.Token) : runtime.ReadGameMode();
+                    await AutomationProtocol.WriteAsync(pipe, new(1, "game-mode", request.RequestId, GameMode: snapshot), deadline.Token); return;
+                }
+                if (request.Type is "read-brightness-wheel" or "save-brightness-wheel" or "resume-brightness-wheel")
+                {
+                    var runtime = backends.OfType<PluginTaskRuntime>().Single();
+                    var wheel = request.Type == "save-brightness-wheel" ? await runtime.SaveBrightnessWheelAsync(request.WheelSettings!, deadline.Token) :
+                        request.Type == "resume-brightness-wheel" ? await runtime.ResumeAutomaticBrightnessAsync(request.ExpectedVersion!.Value, deadline.Token) : runtime.ReadBrightnessWheel();
+                    await AutomationProtocol.WriteAsync(pipe, new(1, "brightness-wheel", request.RequestId, Wheel: wheel), deadline.Token); return;
+                }
                 if (request.Type == "shutdown") deadline.CancelAfter(request.DeadlineUtc!.Value - DateTimeOffset.UtcNow);
                 if (request.Type == "usage")
                 {
@@ -104,6 +141,12 @@ internal sealed class AutomationPipeServer(ImmutableArray<IAutomationTaskBackend
                     if (request.Type is "save-group" or "delete-group") engine.RecordActivity(new(DateTimeOffset.UtcNow, "进程组",
                         request.Type == "save-group" ? "进程组已保存" : "进程组已删除", request.Group?.Name ?? "组已移除，已有任务保持原进程名单。", ActivityLevel.Success));
                     await AutomationProtocol.WriteAsync(pipe, result, deadline.Token); return;
+                }
+                if (request.Type == "read-activity-detail")
+                {
+                    var record = await engine.ReadActivityDetailAsync(actualSid!, long.Parse(request.Id!, System.Globalization.CultureInfo.InvariantCulture), deadline.Token);
+                    await AutomationProtocol.WriteAsync(pipe, new(1, "activity-detail", request.RequestId, ActivityDetail: record), deadline.Token);
+                    return;
                 }
                 if (request.Type == "read-activity")
                 {
@@ -163,7 +206,7 @@ internal sealed class AutomationPipeServer(ImmutableArray<IAutomationTaskBackend
             }
             catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
             {
-                if (authorized && request?.Type is "save" or "delete" or "save-shortcut" or "delete-shortcut" or "set-startup" or "shutdown" or "save-group" or "delete-group" or "save-steam-settings" or "refresh-steam-tool" or "save-tray-tool" or "run-tray-tool")
+                if (authorized && request?.Type is "save-game-mode" or "save" or "delete" or "save-shortcut" or "delete-shortcut" or "set-startup" or "shutdown" or "save-group" or "delete-group" or "save-steam-settings" or "refresh-steam-tool" or "save-tray-tool" or "run-tray-tool")
                     engine.RecordActivity(new(DateTimeOffset.UtcNow, "操作", "操作未完成", error.Message, ActivityLevel.Error,
                         request.Task?.Title));
                 using var errorTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));

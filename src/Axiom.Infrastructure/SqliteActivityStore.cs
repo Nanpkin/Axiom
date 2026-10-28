@@ -60,12 +60,31 @@ public sealed class SqliteActivityStore : IDisposable
         command.Parameters.AddWithValue("$limit", pageSize + 1);
         using var reader = command.ExecuteReader();
         var result = new List<ActivityRecord>();
-        while (reader.Read()) result.Add(new(reader.GetInt64(0), new(new DateTimeOffset(reader.GetInt64(1), TimeSpan.Zero),
-            reader.GetString(2), reader.GetString(3), reader.GetString(4), (ActivityLevel)reader.GetInt32(5),
-            reader.IsDBNull(6) ? null : reader.GetString(6))));
+        while (reader.Read()) result.Add(ReadRecord(reader, summary: true));
         var more = result.Count > pageSize;
         if (more) result.RemoveAt(pageSize);
         return new([.. result], more ? result[^1].Id : null);
+    }
+
+    public ActivityRecord? ReadDetail(long id)
+    {
+        if (id <= 0) throw new ArgumentOutOfRangeException(nameof(id));
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT id,at_utc,category,title,detail,level,subject FROM activity_records WHERE id=$id;";
+        command.Parameters.AddWithValue("$id", id);
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? ReadRecord(reader, summary: false) : null;
+    }
+
+    private static ActivityRecord ReadRecord(SqliteDataReader reader, bool summary)
+    {
+        var detail = reader.GetString(4);
+        var entry = new ActivityEvent(new DateTimeOffset(reader.GetInt64(1), TimeSpan.Zero), reader.GetString(2),
+            reader.GetString(3), detail, (ActivityLevel)reader.GetInt32(5), reader.IsDBNull(6) ? null : reader.GetString(6));
+        if (!summary) return new(reader.GetInt64(0), entry);
+        var preview = ActivityText.Summary(detail);
+        var fingerprint = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(detail)));
+        return new(reader.GetInt64(0), entry with { Detail = preview }, fingerprint);
     }
 
     public ActivityCleanupResult ClearBefore(DateTimeOffset beforeUtc)

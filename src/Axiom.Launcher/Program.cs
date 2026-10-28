@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO.Pipes;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
@@ -127,14 +127,33 @@ internal static class Program
         using var existing = FindRunning("Axiom.WinUI", ui, session);
         if (existing is not null)
         {
-            if (existing.MainWindowHandle != 0)
+            var window = FindWorkbench(existing.Id);
+            if (window != 0)
             {
-                ShowWindow(existing.MainWindowHandle, SwRestore);
-                SetForegroundWindow(existing.MainWindowHandle);
+                ShowWindow(window, SwRestore);
+                SetForegroundWindow(window);
             }
             return;
         }
         Start(ui, null);
+    }
+
+    private delegate bool WindowVisitor(nint window, nint data);
+    [DllImport("user32.dll")] private static extern bool EnumWindows(WindowVisitor visitor, nint data);
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(nint window, out uint process);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowText(nint window, System.Text.StringBuilder text, int count);
+    private static nint FindWorkbench(int processId)
+    {
+        nint found = 0;
+        EnumWindows((window, _) => {
+            GetWindowThreadProcessId(window, out var owner);
+            if (owner != (uint)processId) return true;
+            var title = new System.Text.StringBuilder(128);
+            GetWindowText(window, title, title.Capacity);
+            if (title.ToString() != "Axiom") return true;
+            found = window; return false;
+        }, 0);
+        return found;
     }
 
     private static void StartIfMissing(string name, string path, string args, int session)

@@ -1,6 +1,8 @@
 using System.Buffers.Binary;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Encodings.Web;
+using System.Text.Unicode;
 using Axiom.Domain;
 
 namespace Axiom.Contracts;
@@ -16,17 +18,60 @@ public sealed record AutomationMessage(int Version, string Type, string RequestI
     SteamToolSettings? SteamSettings = null, SteamToolSnapshot? SteamTool = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TrayCatalog? Tray = null, UsageRequest? Usage = null, UsageSnapshot? UsageSnapshot = null, string? ExportText = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TrayToolSettings? TraySettings = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TrayToolSnapshot? TrayTool = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TrayToolSnapshot? TrayTool = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] BrightnessWheelSettings? WheelSettings = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] BrightnessWheelSnapshot? Wheel = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TaskRunStatus[]? RunStates = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? RunStatesSequence = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] GameModeSettings? GameModeSettings = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] GameModeSnapshot? GameMode = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ActivityRecord? ActivityDetail = null);
 
 public sealed record LoginStartupStatus(bool Registered, bool CurrentLocation, bool LauncherAvailable, string? Error = null);
 
 public static class AutomationProtocol
 {
     public const int MaximumFrame = 262144;
-    public static string PipeName(string sid) => "axiom-tasks-v1-" + sid.Replace('-', '_');
-    private static readonly JsonSerializerOptions Options = new() { UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow };
+    public static string PipeName(string sid, int? sessionId = null) => SessionPipeName.Create("axiom-tasks-v1-", sid, sessionId);
+    // Local UTF-8 pipe payloads need no ASCII-only escaping; retain the same frame bound and strict reader.
+    private static readonly JsonSerializerOptions Options = new() { UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
+        Encoder = JavaScriptEncoder.Create(UnicodeRanges.All) };
     public static void ValidateRequest(AutomationMessage request, DateTimeOffset now, bool shortcutAgent = false)
     {
+        if (request.ActivityDetail is not null) throw new InvalidDataException("活动详情只用于后台回执。");
+        if (request.Type == "read-activity-detail")
+        {
+            if (shortcutAgent || !long.TryParse(request.Id, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var recordId) ||
+                recordId <= 0 || recordId.ToString(System.Globalization.CultureInfo.InvariantCulture) != request.Id)
+                throw new InvalidDataException("活动记录编号无效。");
+            ValidateRequest(request with { Type = "read-tray-tool", Id = null }, now);
+            return;
+        }
+        if (request.GameMode is not null || request.GameModeSettings is not null && request.Type != "save-game-mode") throw new InvalidDataException("游戏模式字段不属于此操作。");
+        if (request.Type is "read-game-mode" or "save-game-mode")
+        {
+            if (shortcutAgent || request.Type == "save-game-mode" && request.GameModeSettings is null) throw new InvalidDataException("游戏模式操作无效。");
+            ValidateRequest(request with { Type = "read-tray-tool", GameModeSettings = null }, now);
+            if (request.GameModeSettings is not null) GameModeCapabilities.Normalize(request.GameModeSettings);
+            return;
+        }
+        if (request.RunStates is not null || request.RunStatesSequence is not null) throw new InvalidDataException("运行状态只用于后台回执。");
+        if (request.Type == "watch-run-states")
+        {
+            if (shortcutAgent) throw new InvalidDataException("运行状态只允许用户界面订阅。");
+            ValidateRequest(request with { Type = "read-tray-tool" }, now); return;
+        }
+        if (request.Wheel is not null || request.WheelSettings is not null && request.Type != "save-brightness-wheel") throw new InvalidDataException("亮度工具字段不属于此操作。");
+        if (request.Type is "read-brightness-wheel" or "save-brightness-wheel" or "resume-brightness-wheel")
+        {
+            if (shortcutAgent || request.Type == "save-brightness-wheel" && request.WheelSettings is null || request.Type == "resume-brightness-wheel" && request.ExpectedVersion is not > 0)
+                throw new InvalidDataException("亮度工具操作无效。");
+            // Reuse the closed empty read-request envelope to reject every unrelated existing field.
+            ValidateRequest(request with { Type = "read-tray-tool", WheelSettings = null, ExpectedVersion = null }, now);
+            if (request.Type != "resume-brightness-wheel" && request.ExpectedVersion is not null) throw new InvalidDataException("亮度工具版本字段无效。");
+            if (request.WheelSettings is not null) BrightnessWheelTool.Validate(request.WheelSettings);
+            return;
+        }
         if (request.Version != 1 || string.IsNullOrWhiteSpace(request.RequestId) || request.RequestId.Length > 64 ||
             request.DeadlineUtc is not { } deadline || deadline <= now || deadline > now.AddSeconds(request.Type == "shutdown" ? 45 : 15) ||
             request.TrayTool is not null || request.Snapshot is not null || request.Error is not null || request.Startup is not null || request.Shortcuts is not null ||
@@ -85,6 +130,8 @@ public static class AutomationProtocol
             request.Type == "delete" && request.Id == Axiom.Contracts.TrayTool.TaskId)
             throw new InvalidDataException("请在工具箱中管理托盘工具。");
         if (request.Type == "save-tray-tool") Axiom.Contracts.TrayTool.Validate(request.TraySettings!);
+        if (request.Type == "save" && (request.Task!.Id == BrightnessWheelTool.TaskId || request.Task.Detection.CapabilityId == BrightnessWheelTool.Trigger) || request.Type == "delete" && request.Id == BrightnessWheelTool.TaskId)
+            throw new InvalidDataException("请在工具箱中管理亮度滚轮工具。");
         if (request.Type == "save") TaskDetectionExpressions.ValidateTask(request.Task!);
     }
     public static async Task WriteAsync(Stream stream, AutomationMessage message, CancellationToken token)
