@@ -11,3 +11,5 @@
 - [x] 针对性审查、提交177f9e2并推送，[PR43](https://github.com/Nanpkin/Axiom/pull/43)草稿；正常界面停止确认及旧角色退出后统一更新固定预览0.2.0-local.20261028.2。准确干净源码及组件hash匹配；三角色版本/连接、新选项、原9任务与托盘指纹、登录启动均核对通过。未合并/发Release。
 
 证据只留本机artifacts/window-previsibility-smoke与hecate-startup-smoke；不上传参数、配置或设备信息。结论见[实验记录](../../development/window-previsibility-research.md)。
+
+用户反馈修正（2026-10-28）：前轮同权限重开未覆盖普通桌面点击。现场确认目标已提权但无cloak；改为同用户/同会话桌面权限启动、私有句柄复制与正常进程对象权限。独立非管理员调用方连续打开/关闭/再打开通过，目标未提权、启动仍遮蔽。正在完成同批精确检查及固定预览更新。

@@ -5,6 +5,8 @@
 #include <cstring>
 #include <string>
 #include <vector>
+#include <userenv.h>
+#include <sddl.h>
 static HINSTANCE self;
 static GuardStatus* status;
 static HANDLE mapping, releaseEvent, finishedEvent;
@@ -187,13 +189,15 @@ static DWORD WINAPI Finish(void*) {
     InterlockedExchange(&status->finished, 1); SetEvent(finishedEvent); return 0;
 }
 extern "C" __declspec(dllexport) DWORD WINAPI InitializeGuard(void* parameter) {
-    auto name = static_cast<const wchar_t*>(parameter); if (!name) return 1;
-    mapping = OpenFileMappingW(FILE_MAP_ALL_ACCESS, FALSE, name); if (!mapping) return 2;
+    auto bootstrap = static_cast<const GuardBootstrap*>(parameter);
+    if (!bootstrap || bootstrap->size != sizeof(GuardBootstrap)) return 1;
+    mapping = bootstrap->shared;
+    releaseEvent = bootstrap->release;
+    finishedEvent = bootstrap->finished;
+    if (!mapping || !releaseEvent || !finishedEvent) return 2;
     status = static_cast<GuardStatus*>(MapViewOfFile(mapping, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(GuardStatus)));
     if (!status || status->size != sizeof(GuardStatus) || status->targetPid != GetCurrentProcessId()) return 3;
     finishMessage = RegisterWindowMessageW(L"Axiom.VisibilityGuard.Finish.v1");
-    releaseEvent = OpenEventW(SYNCHRONIZE | EVENT_MODIFY_STATE, FALSE, (std::wstring(name) + L".release").c_str());
-    finishedEvent = OpenEventW(EVENT_MODIFY_STATE, FALSE, (std::wstring(name) + L".finished").c_str());
     if (!releaseEvent || !finishedEvent || !finishMessage) return 4;
     InterlockedExchange(&active, 1);
     wchar_t image[32768]; GetModuleFileNameW(nullptr, image, 32768);
@@ -210,6 +214,57 @@ extern "C" __declspec(dllexport) DWORD WINAPI InitializeGuard(void* parameter) {
 }
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID) { if (reason == DLL_PROCESS_ATTACH) self = instance; return TRUE; }
 
+static bool SameUser(HANDLE first, HANDLE second) {
+    DWORD firstSize = 0, secondSize = 0;
+    GetTokenInformation(first, TokenUser, nullptr, 0, &firstSize);
+    GetTokenInformation(second, TokenUser, nullptr, 0, &secondSize);
+    if (!firstSize || !secondSize) return false;
+    std::vector<BYTE> firstUser(firstSize), secondUser(secondSize);
+    if (!GetTokenInformation(first, TokenUser, firstUser.data(), firstSize, &firstSize) ||
+        !GetTokenInformation(second, TokenUser, secondUser.data(), secondSize, &secondSize)) return false;
+    return EqualSid(reinterpret_cast<TOKEN_USER*>(firstUser.data())->User.Sid,
+        reinterpret_cast<TOKEN_USER*>(secondUser.data())->User.Sid) != FALSE;
+}
+
+static DWORD DesktopUserLaunchContext(HANDLE* parent, LPVOID* environment, PSECURITY_DESCRIPTOR* security) {
+    DWORD shellPid = 0, shellSession = 0, currentSession = 0;
+    auto shellWindow = GetShellWindow();
+    if (!shellWindow || !GetWindowThreadProcessId(shellWindow, &shellPid) ||
+        !ProcessIdToSessionId(shellPid, &shellSession) || !ProcessIdToSessionId(GetCurrentProcessId(), &currentSession) ||
+        shellSession != currentSession) return ERROR_NO_SUCH_LOGON_SESSION;
+    auto shell = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_CREATE_PROCESS, FALSE, shellPid);
+    if (!shell) return GetLastError();
+    HANDLE shellToken = nullptr, currentToken = nullptr;
+    DWORD result = ERROR_ACCESS_DENIED;
+    if (OpenProcessToken(shell, TOKEN_QUERY, &shellToken) &&
+        OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY | TOKEN_DUPLICATE, &currentToken) && SameUser(shellToken, currentToken)) {
+        TOKEN_ELEVATION shellElevation{}; DWORD elevationBytes = 0;
+        if (!GetTokenInformation(shellToken, TokenElevation, &shellElevation, sizeof(shellElevation), &elevationBytes) || shellElevation.TokenIsElevated) {
+            CloseHandle(currentToken); CloseHandle(shellToken); CloseHandle(shell);
+            return ERROR_NOT_SUPPORTED; // Do not give a high-integrity child medium-integrity object permissions.
+        }
+        // The verified shell supplies the creation token through the parent attribute.
+        // Environment values are per-user: build them from the same-SID caller token,
+        // rather than inheriting the Agent's process-specific environment.
+        DWORD bytes = 0; GetTokenInformation(currentToken, TokenUser, nullptr, 0, &bytes);
+        std::vector<BYTE> user(bytes); LPWSTR sid = nullptr;
+        if (bytes && GetTokenInformation(currentToken, TokenUser, user.data(), bytes, &bytes) &&
+            ConvertSidToStringSidW(reinterpret_cast<TOKEN_USER*>(user.data())->User.Sid, &sid)) {
+            // The process/thread objects must also belong to the desktop user at
+            // medium integrity, rather than retaining the elevated creator's defaults.
+            std::wstring descriptor = L"O:" + std::wstring(sid) + L"D:P(A;;GA;;;SY)(A;;GA;;;" + sid + L")S:(ML;;NW;;;ME)";
+            if (ConvertStringSecurityDescriptorToSecurityDescriptorW(descriptor.c_str(), SDDL_REVISION_1, security, nullptr) &&
+                CreateEnvironmentBlock(environment, currentToken, FALSE)) result = ERROR_SUCCESS;
+            else result = GetLastError();
+            LocalFree(sid);
+        } else result = GetLastError();
+    }
+    if (currentToken) CloseHandle(currentToken);
+    if (shellToken) CloseHandle(shellToken);
+    if (result == ERROR_SUCCESS) *parent = shell; else CloseHandle(shell);
+    return result;
+}
+
 // Host-side entry. Failure before ResumeThread only terminates the process just created
 // by this call; after resume, cleanup releases protection and leaves the application running.
 extern "C" __declspec(dllexport) DWORD WINAPI StartGuarded(const wchar_t* path, const wchar_t* arguments,
@@ -219,9 +274,10 @@ extern "C" __declspec(dllexport) DWORD WINAPI StartGuarded(const wchar_t* path, 
     if (!GetBinaryTypeW(path, &type)) return GetLastError();
     if (type != SCS_64BIT_BINARY) return ERROR_BAD_EXE_FORMAT;
     const wchar_t* dllPath = component;
-    wchar_t name[128]; swprintf_s(name, L"Local\\AxiomStartupGuard-%lu-%llu", GetCurrentProcessId(), GetTickCount64());
-    // The managed start path serializes launches, so this per-call name cannot collide.
     HANDLE shared = nullptr, release = nullptr, finished = nullptr, loader = nullptr, init = nullptr;
+    HANDLE desktopParent = nullptr; LPVOID environment = nullptr;
+    PSECURITY_DESCRIPTOR desktopSecurity = nullptr;
+    LPPROC_THREAD_ATTRIBUTE_LIST attributes = nullptr; bool attributesInitialized = false;
     GuardStatus* view = nullptr; void* remote = nullptr; PROCESS_INFORMATION process{}; bool resumed = false;
     DWORD result = ERROR_GEN_FAILURE;
     auto cleanup = [&]() {
@@ -229,22 +285,43 @@ extern "C" __declspec(dllexport) DWORD WINAPI StartGuarded(const wchar_t* path, 
         if (remote && process.hProcess) VirtualFreeEx(process.hProcess, remote, 0, MEM_RELEASE);
         for (auto handle : { loader, init, process.hThread, process.hProcess, release, finished, shared }) if (handle) CloseHandle(handle);
         if (view) UnmapViewOfFile(view);
+        if (environment) DestroyEnvironmentBlock(environment);
+        if (attributesInitialized) DeleteProcThreadAttributeList(attributes);
+        if (attributes) HeapFree(GetProcessHeap(), 0, attributes);
+        if (desktopParent) CloseHandle(desktopParent);
+        if (desktopSecurity) LocalFree(desktopSecurity);
     };
     do {
-        shared = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0, sizeof(GuardStatus), name);
-        if (!shared || GetLastError() == ERROR_ALREADY_EXISTS) { result = ERROR_ALREADY_EXISTS; break; }
+        result = DesktopUserLaunchContext(&desktopParent, &environment, &desktopSecurity);
+        if (result != ERROR_SUCCESS) break; // Never silently fall back to administrator launch.
+        shared = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0, sizeof(GuardStatus), nullptr);
+        if (!shared) { result = GetLastError(); break; }
         view = static_cast<GuardStatus*>(MapViewOfFile(shared, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(GuardStatus)));
-        release = CreateEventW(nullptr, TRUE, FALSE, (std::wstring(name) + L".release").c_str());
-        finished = CreateEventW(nullptr, TRUE, FALSE, (std::wstring(name) + L".finished").c_str());
+        release = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        finished = CreateEventW(nullptr, TRUE, FALSE, nullptr);
         if (!view || !release || !finished) { result = GetLastError(); break; }
         ZeroMemory(view, sizeof(GuardStatus)); view->size = sizeof(GuardStatus); view->timeoutMs = timeoutMs;
-        STARTUPINFOW startup{}; startup.cb = sizeof(startup);
+        SIZE_T attributeBytes = 0;
+        InitializeProcThreadAttributeList(nullptr, 1, 0, &attributeBytes);
+        attributes = static_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(HeapAlloc(GetProcessHeap(), 0, attributeBytes));
+        if (!attributes || !InitializeProcThreadAttributeList(attributes, 1, 0, &attributeBytes)) { result = GetLastError(); break; }
+        attributesInitialized = true;
+        if (!UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_PARENT_PROCESS, &desktopParent,
+            sizeof(desktopParent), nullptr, nullptr)) { result = GetLastError(); break; }
+        STARTUPINFOEXW startup{}; startup.StartupInfo.cb = sizeof(startup); startup.lpAttributeList = attributes;
         std::wstring command = L"\"" + std::wstring(path) + L"\" " + arguments;
-        if (!CreateProcessW(path, command.data(), nullptr, nullptr, FALSE, CREATE_SUSPENDED | CREATE_NO_WINDOW,
-            nullptr, directory, &startup, &process)) { result = GetLastError(); break; }
+        auto flags = CREATE_SUSPENDED | CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT;
+        SECURITY_ATTRIBUTES security{ sizeof(SECURITY_ATTRIBUTES), desktopSecurity, FALSE };
+        auto created = CreateProcessW(path, command.data(), &security, &security, FALSE, flags, environment, directory, &startup.StartupInfo, &process);
+        if (!created) { result = GetLastError(); break; }
         *pid = process.dwProcessId; view->targetPid = process.dwProcessId;
+        HANDLE childToken = nullptr; TOKEN_ELEVATION childElevation{}; DWORD elevationBytes = 0;
+        if (!OpenProcessToken(process.hProcess, TOKEN_QUERY, &childToken)) { result = GetLastError(); break; }
+        auto tokenRead = GetTokenInformation(childToken, TokenElevation, &childElevation, sizeof(childElevation), &elevationBytes);
+        auto tokenError = tokenRead ? ERROR_SUCCESS : GetLastError(); CloseHandle(childToken);
+        if (!tokenRead || childElevation.TokenIsElevated) { result = tokenRead ? ERROR_ELEVATION_REQUIRED : tokenError; break; }
         auto bytes = (wcslen(dllPath) + 1) * sizeof(wchar_t);
-        remote = VirtualAllocEx(process.hProcess, nullptr, max(bytes, sizeof(name)), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+        remote = VirtualAllocEx(process.hProcess, nullptr, max(bytes, sizeof(GuardBootstrap)), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
         if (!remote || !WriteProcessMemory(process.hProcess, remote, dllPath, bytes, nullptr)) { result = GetLastError(); break; }
         auto loadAddress = GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "LoadLibraryW");
         // ntdll is mapped by process creation; kernel32 may not be present until the first
@@ -269,7 +346,11 @@ extern "C" __declspec(dllexport) DWORD WINAPI StartGuarded(const wchar_t* path, 
             CloseHandle(snapshot);
         }
         if (!loaded) { result = ERROR_DLL_INIT_FAILED; break; }
-        if (!WriteProcessMemory(process.hProcess, remote, name, (wcslen(name) + 1) * sizeof(wchar_t), nullptr)) { result = GetLastError(); break; }
+        GuardBootstrap bootstrapData{ sizeof(GuardBootstrap), 0, nullptr, nullptr, nullptr };
+        if (!DuplicateHandle(GetCurrentProcess(), shared, process.hProcess, &bootstrapData.shared, 0, FALSE, DUPLICATE_SAME_ACCESS) ||
+            !DuplicateHandle(GetCurrentProcess(), release, process.hProcess, &bootstrapData.release, 0, FALSE, DUPLICATE_SAME_ACCESS) ||
+            !DuplicateHandle(GetCurrentProcess(), finished, process.hProcess, &bootstrapData.finished, 0, FALSE, DUPLICATE_SAME_ACCESS) ||
+            !WriteProcessMemory(process.hProcess, remote, &bootstrapData, sizeof(bootstrapData), nullptr)) { result = GetLastError(); break; }
         auto offset = reinterpret_cast<BYTE*>(GetProcAddress(self, "InitializeGuard")) - reinterpret_cast<BYTE*>(self);
         init = CreateRemoteThread(process.hProcess, nullptr, 0, reinterpret_cast<LPTHREAD_START_ROUTINE>(reinterpret_cast<BYTE*>(loaded) + offset), remote, 0, nullptr);
         if (!init || WaitForSingleObject(init, 3000) != WAIT_OBJECT_0 || !view->ready || !view->patched) { result = ERROR_DLL_INIT_FAILED; break; }

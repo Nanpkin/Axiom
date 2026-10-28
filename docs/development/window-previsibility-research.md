@@ -60,3 +60,9 @@ Windows任务视图的**虚拟桌面**与CreateDesktop的**独立Desktop对象**
 - 原生修正版实测：HECATE启动临时窗口显示事件cloaked=1；自然隐藏触发结束；保护后约2.6秒从原入口打开，主窗口cloaked=0、可见，原生失败计数0。
 - 实际WindowsProgramControl路径实测：启动显示cloaked=1；第6秒原入口打开cloaked=0；命令完成成功，主窗口可见。取消路径在第1秒解除保护，程序保留，第6秒原入口打开可见、未cloaked。取消后不再抑制后来启动窗口属于预期。
 - 证据仅本机`artifacts/guard-integration-smoke`及`window-previsibility-smoke`。不把窗口状态/事件核对称为逐帧验收或耳机硬件功能验收。正式设计边界见[ADR0012](../adr/0012-recoverable-startup-window-guard.md)。
+
+## 用户反馈修正：普通桌面点击
+
+- 前轮夹具的重开与目标均继承管理员权限，验收存在盲点。用户反馈后现场查到目标仍提权、全部窗口cloak=0；普通权限打开无窗口，同权限打开能显示。此前结果不能作为普通桌面点击已通过的证据。
+- 启动遮蔽改用经同用户/同会话核对的桌面父进程权限，显式设置正常进程/线程对象权限；保护内部对象不再跨权限按名字打开，而只向本次目标复制私有句柄。不修改UIPI过滤。
+- 新回归由管理员夹具建立保护，另一非管理员进程发起普通打开、正常关闭窗口、再次普通打开。两次均可见、cloak=0，目标TokenElevation=0，启动临时窗口仍cloaked=1。原始ordinary-result.json与ordinary-clicks.json仅留本机，不上传。

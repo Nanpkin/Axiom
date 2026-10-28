@@ -18,5 +18,5 @@ foreach ($line in $environmentLines) {
     if ($separator -gt 0) { [Environment]::SetEnvironmentVariable($line.Substring(0, $separator), $line.Substring($separator + 1), 'Process') }
 }
 $nativeSource = Join-Path $repo 'src/Axiom.Providers.Windows/Native/StartupWindowGuard.cpp'
-& cl /nologo /W4 /WX /EHsc /std:c++17 /DUNICODE /MT /O2 /LD $nativeSource "/Fo:$outputPath/StartupWindowGuard.obj" "/Fe:$outputPath/Axiom.StartupWindowGuard.dll" /link user32.lib dwmapi.lib comctl32.lib
+& cl /nologo /W4 /WX /EHsc /std:c++17 /DUNICODE /MT /O2 /LD $nativeSource "/Fo:$outputPath/StartupWindowGuard.obj" "/Fe:$outputPath/Axiom.StartupWindowGuard.dll" /link user32.lib dwmapi.lib comctl32.lib advapi32.lib userenv.lib
 if ($LASTEXITCODE -ne 0) { throw 'Startup window protection compilation failed.' }
