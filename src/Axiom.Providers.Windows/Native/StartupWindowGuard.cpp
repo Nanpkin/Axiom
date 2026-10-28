@@ -12,6 +12,7 @@ static GuardStatus* status;
 static HANDLE mapping, releaseEvent, finishedEvent;
 static volatile LONG active;
 static UINT finishMessage;
+static constexpr auto recoveryProperty = L"Axiom.VisibilityGuard.Recover.v1";
 struct WindowState { bool cloaked = false, shown = false, initiallyVisible = false; };
 static SRWLOCK windowsLock = SRWLOCK_INIT;
 static std::vector<HWND> windows;
@@ -19,8 +20,24 @@ struct ImportPatch { ULONG_PTR* address; ULONG_PTR original, replacement; HMODUL
 static std::vector<ImportPatch> imports;
 static SRWLOCK importsLock = SRWLOCK_INIT;
 static std::wstring applicationDirectory;
+static void Recover(HWND hwnd) {
+    DWORD owner = 0;
+    if (status && InterlockedCompareExchange(&status->finished, 0, 0) &&
+        GetWindowThreadProcessId(hwnd, &owner) && owner == GetCurrentProcessId() && RemovePropW(hwnd, recoveryProperty)) {
+        if (!IsWindowVisible(hwnd)) ShowWindow(hwnd, IsIconic(hwnd) ? SW_RESTORE : SW_SHOW);
+    }
+}
+static BOOL WINAPI Foreground(HWND hwnd) { Recover(hwnd); return SetForegroundWindow(hwnd); }
+static HWND WINAPI Activate(HWND hwnd) { Recover(hwnd); return SetActiveWindow(hwnd); }
+static BOOL WINAPI BringTop(HWND hwnd) { Recover(hwnd); return BringWindowToTop(hwnd); }
 static void Failed(DWORD error) { status->lastFailure = error; InterlockedIncrement(&status->failures); }
 static void Patch(HMODULE module);
+static bool ApplicationWindow(HWND hwnd) {
+    auto module = reinterpret_cast<HMODULE>(GetClassLongPtrW(hwnd, GCLP_HMODULE));
+    wchar_t path[32768];
+    return module && GetModuleFileNameW(module, path, 32768) &&
+        !_wcsnicmp(path, applicationDirectory.c_str(), applicationDirectory.size());
+}
 static void PatchLoaded(HMODULE module) {
     if (!module || (reinterpret_cast<ULONG_PTR>(module) & 3) || module == self) return;
     wchar_t path[32768];
@@ -80,7 +97,7 @@ static LRESULT CALLBACK Subclass(HWND hwnd, UINT msg, WPARAM w, LPARAM l, UINT_P
 static LRESULT CALLBACK CreateHook(int code, WPARAM w, LPARAM l) {
     if (code == HCBT_CREATEWND && InterlockedCompareExchange(&active, 0, 0)) {
         auto cs = reinterpret_cast<CBT_CREATEWNDW*>(l)->lpcs;
-        if (!(cs->style & WS_CHILD) && cs->hwndParent != HWND_MESSAGE) {
+        if (!(cs->style & WS_CHILD) && cs->hwndParent != HWND_MESSAGE && ApplicationWindow(reinterpret_cast<HWND>(w))) {
             auto hwnd = reinterpret_cast<HWND>(w); auto state = new WindowState(); state->initiallyVisible = (cs->style & WS_VISIBLE) != 0;
             AcquireSRWLockExclusive(&windowsLock);
             if (!InterlockedCompareExchange(&active, 0, 0)) { ReleaseSRWLockExclusive(&windowsLock); delete state; return CallNextHookEx(nullptr, code, w, l); }
@@ -97,7 +114,7 @@ static HWND WINAPI CreateW(DWORD ex, LPCWSTR cls, LPCWSTR title, DWORD style, in
     auto hook = InterlockedCompareExchange(&active, 0, 0) ? SetWindowsHookExW(WH_CBT, CreateHook, self, GetCurrentThreadId()) : nullptr;
     if (!hook && InterlockedCompareExchange(&active, 0, 0)) InterlockedIncrement(&status->failures);
     auto hwnd = CreateWindowExW(ex, cls, title, style, x, y, width, height, parent, menu, instance, data);
-    if (hwnd && !(style & WS_CHILD) && parent != HWND_MESSAGE) {
+    if (hwnd && !(style & WS_CHILD) && parent != HWND_MESSAGE && ApplicationWindow(hwnd)) {
         AcquireSRWLockShared(&windowsLock);
         if (InterlockedCompareExchange(&active, 0, 0)) {
             BOOL on = TRUE;
@@ -110,7 +127,7 @@ static HWND WINAPI CreateW(DWORD ex, LPCWSTR cls, LPCWSTR title, DWORD style, in
 static HWND WINAPI CreateA(DWORD ex, LPCSTR cls, LPCSTR title, DWORD style, int x, int y, int width, int height, HWND parent, HMENU menu, HINSTANCE instance, LPVOID data) {
     auto hook = InterlockedCompareExchange(&active, 0, 0) ? SetWindowsHookExW(WH_CBT, CreateHook, self, GetCurrentThreadId()) : nullptr;
     auto hwnd = CreateWindowExA(ex, cls, title, style, x, y, width, height, parent, menu, instance, data);
-    if (hwnd && !(style & WS_CHILD) && parent != HWND_MESSAGE) {
+    if (hwnd && !(style & WS_CHILD) && parent != HWND_MESSAGE && ApplicationWindow(hwnd)) {
         AcquireSRWLockShared(&windowsLock);
         if (InterlockedCompareExchange(&active, 0, 0)) {
             BOOL on = TRUE;
@@ -141,6 +158,9 @@ static void Patch(HMODULE module) {
             if (!strcmp(name, "LoadLibraryExA")) replacement = reinterpret_cast<ULONG_PTR>(LoadExA);
             if (!strcmp(name, "ShowWindow")) replacement = reinterpret_cast<ULONG_PTR>(Show);
             if (!strcmp(name, "SetWindowPos")) replacement = reinterpret_cast<ULONG_PTR>(Position);
+            if (!strcmp(name, "SetForegroundWindow")) replacement = reinterpret_cast<ULONG_PTR>(Foreground);
+            if (!strcmp(name, "SetActiveWindow")) replacement = reinterpret_cast<ULONG_PTR>(Activate);
+            if (!strcmp(name, "BringWindowToTop")) replacement = reinterpret_cast<ULONG_PTR>(BringTop);
             if (!replacement || addresses->u1.Function == replacement) continue;
             DWORD old;
             if (VirtualProtect(&addresses->u1.Function, sizeof(ULONG_PTR), PAGE_READWRITE, &old)) {
@@ -158,6 +178,12 @@ static DWORD WINAPI Finish(void*) {
     auto copy = windows; ReleaseSRWLockExclusive(&windowsLock);
     AcquireSRWLockExclusive(&importsLock);
     for (auto patch : imports) {
+        // Some frameworks retain their logical visible state after an external hide.
+        // These hooks only SHOW a previously suppressed window when the app asks to
+        // activate it; they never extend startup suppression or run a polling worker.
+        if (patch.replacement == reinterpret_cast<ULONG_PTR>(Foreground) ||
+            patch.replacement == reinterpret_cast<ULONG_PTR>(Activate) ||
+            patch.replacement == reinterpret_cast<ULONG_PTR>(BringTop)) continue;
         MEMORY_BASIC_INFORMATION memory{};
         if (!VirtualQuery(patch.address, &memory, sizeof(memory)) || memory.State != MEM_COMMIT ||
             memory.Type != MEM_IMAGE || memory.AllocationBase != patch.module) continue; // Plugin already unloaded.
@@ -175,7 +201,14 @@ static DWORD WINAPI Finish(void*) {
         DWORD cloaked = 0;
         if (SUCCEEDED(DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, &cloaked, sizeof(cloaked))) && (cloaked & DWM_CLOAKED_APP)) {
             if (status->reopen && IsWindowVisible(hwnd)) reopenWindows.push_back(hwnd);
-            if (IsWindowVisible(hwnd)) ShowWindow(hwnd, SW_HIDE);
+            if (IsWindowVisible(hwnd)) {
+                if (!SetPropW(hwnd, recoveryProperty, reinterpret_cast<HANDLE>(1))) Failed(GetLastError());
+                ShowWindow(hwnd, SW_HIDE);
+            }
+            // Qt can destroy/recreate its native handle in response to the hide.
+            // A destroyed window no longer needs uncloaking and is not a failure.
+            DWORD currentOwner = 0;
+            if (!IsWindow(hwnd) || !GetWindowThreadProcessId(hwnd, &currentOwner) || currentOwner != GetCurrentProcessId()) continue;
             if (!IsWindowVisible(hwnd)) {
                 BOOL off = FALSE;
                 auto hr = DwmSetWindowAttribute(hwnd, DWMWA_CLOAK, &off, sizeof(off)); if (FAILED(hr)) Failed(HRESULT_CODE(hr));

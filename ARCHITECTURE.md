@@ -22,7 +22,7 @@ WinUI（可退出） ── Named Pipes ── Service 角色
 
 后台自身生命周期检测由 Host 提供输入（`AxiomStartupPlugin` / `PluginTaskRuntime`），不要求 Agent 反向检测 Host 进程。开机去重在现有任务库原地持久化；Agent 就绪后经 Engine 的命令路径执行，UI 仅渲染声明字段。系统观察及程序操作仍位于 Agent。
 
-程序启动的显式实验选项`startup-hidden`由Agent/Windows Provider建立有限启动保护：挂起新进程、进程内创建前干预与DWM遮蔽，结束时隐藏后解除并恢复导入，之后不干预手动打开。普通隐藏配置不迁移；组件缓存不锁固定预览。范围、取消/恢复和已知兼容性见[ADR0012](docs/adr/0012-recoverable-startup-window-guard.md)。
+程序启动的显式实验选项`startup-hidden`由Agent/Windows Provider建立有限启动保护：挂起新进程、进程内创建前干预与DWM遮蔽，结束时隐藏后解除并恢复创建/显示导入；保留仅在应用请求激活时恢复被隐藏窗口的兼容包装，之后不再隐藏。普通隐藏配置不迁移；组件缓存不锁固定预览。范围、取消/恢复和已知兼容性见[ADR0012](docs/adr/0012-recoverable-startup-window-guard.md)。
 
 | 改动 | 只读相关规范 |
 |---|---|
