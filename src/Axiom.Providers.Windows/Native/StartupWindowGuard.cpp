@@ -140,6 +140,10 @@ static HWND WINAPI CreateA(DWORD ex, LPCSTR cls, LPCSTR title, DWORD style, int 
 static void Patch(HMODULE module) {
     auto image = reinterpret_cast<BYTE*>(module); auto dos = reinterpret_cast<IMAGE_DOS_HEADER*>(image);
     auto nt = reinterpret_cast<IMAGE_NT_HEADERS*>(image + dos->e_lfanew);
+    // AnyCPU CLR assemblies can have PE32 import thunks inside an x64 process.
+    // They are runtime-managed metadata, not native x64 GUI imports.
+    if (nt->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC ||
+        nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR].VirtualAddress) return;
     auto offset = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress; if (!offset) return;
     AcquireSRWLockExclusive(&importsLock);
     if (!InterlockedCompareExchange(&active, 0, 0)) { ReleaseSRWLockExclusive(&importsLock); return; }
@@ -173,6 +177,7 @@ static void Patch(HMODULE module) {
 }
 static DWORD WINAPI Finish(void*) {
     WaitForSingleObject(releaseEvent, status->timeoutMs);
+    InterlockedExchange(reinterpret_cast<volatile LONG*>(&status->stage), RestoreWindows);
     AcquireSRWLockExclusive(&windowsLock);
     InterlockedExchange(&active, 0);
     auto copy = windows; ReleaseSRWLockExclusive(&windowsLock);
@@ -219,6 +224,7 @@ static DWORD WINAPI Finish(void*) {
     if (status->reopen) for (auto hwnd : reopenWindows) { ShowWindow(hwnd, SW_SHOWNORMAL); SetForegroundWindow(hwnd); }
     // Publish only after all visibility changes. Deferred subclass removal never changes
     // visibility, and cannot overtake and hide a later manual reopen.
+    InterlockedExchange(reinterpret_cast<volatile LONG*>(&status->stage), Complete);
     InterlockedExchange(&status->finished, 1); SetEvent(finishedEvent); return 0;
 }
 extern "C" __declspec(dllexport) DWORD WINAPI InitializeGuard(void* parameter) {
@@ -302,6 +308,8 @@ static DWORD DesktopUserLaunchContext(HANDLE* parent, LPVOID* environment, PSECU
 // by this call; after resume, cleanup releases protection and leaves the application running.
 extern "C" __declspec(dllexport) DWORD WINAPI StartGuarded(const wchar_t* path, const wchar_t* arguments,
     const wchar_t* directory, const wchar_t* component, DWORD timeoutMs, HANDLE cancellation, HANDLE reopening, DWORD* pid, GuardStatus* report) {
+    if (report) { ZeroMemory(report, sizeof(GuardStatus)); report->size = sizeof(GuardStatus); report->stage = Prepare; }
+    if (pid) *pid = 0;
     if (!path || !arguments || !directory || !component || !pid || timeoutMs < 1000 || timeoutMs > 20000) return ERROR_INVALID_PARAMETER;
     DWORD type;
     if (!GetBinaryTypeW(path, &type)) return GetLastError();
@@ -313,6 +321,7 @@ extern "C" __declspec(dllexport) DWORD WINAPI StartGuarded(const wchar_t* path, 
     LPPROC_THREAD_ATTRIBUTE_LIST attributes = nullptr; bool attributesInitialized = false;
     GuardStatus* view = nullptr; void* remote = nullptr; PROCESS_INFORMATION process{}; bool resumed = false;
     DWORD result = ERROR_GEN_FAILURE;
+    DWORD stage = Prepare;
     auto cleanup = [&]() {
         if (process.hProcess && !resumed) { TerminateProcess(process.hProcess, ERROR_PROCESS_ABORTED); WaitForSingleObject(process.hProcess, 3000); }
         if (remote && process.hProcess) VirtualFreeEx(process.hProcess, remote, 0, MEM_RELEASE);
@@ -334,6 +343,7 @@ extern "C" __declspec(dllexport) DWORD WINAPI StartGuarded(const wchar_t* path, 
         finished = CreateEventW(nullptr, TRUE, FALSE, nullptr);
         if (!view || !release || !finished) { result = GetLastError(); break; }
         ZeroMemory(view, sizeof(GuardStatus)); view->size = sizeof(GuardStatus); view->timeoutMs = timeoutMs;
+        view->stage = stage;
         SIZE_T attributeBytes = 0;
         InitializeProcThreadAttributeList(nullptr, 1, 0, &attributeBytes);
         attributes = static_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(HeapAlloc(GetProcessHeap(), 0, attributeBytes));
@@ -345,6 +355,7 @@ extern "C" __declspec(dllexport) DWORD WINAPI StartGuarded(const wchar_t* path, 
         std::wstring command = L"\"" + std::wstring(path) + L"\" " + arguments;
         auto flags = CREATE_SUSPENDED | CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT;
         SECURITY_ATTRIBUTES security{ sizeof(SECURITY_ATTRIBUTES), desktopSecurity, FALSE };
+        view->stage = stage = CreateTarget;
         auto created = CreateProcessW(path, command.data(), &security, &security, FALSE, flags, environment, directory, &startup.StartupInfo, &process);
         if (!created) { result = GetLastError(); break; }
         *pid = process.dwProcessId; view->targetPid = process.dwProcessId;
@@ -364,12 +375,14 @@ extern "C" __declspec(dllexport) DWORD WINAPI StartGuarded(const wchar_t* path, 
         auto bootstrapAddress = GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "RtlExitUserThread");
         if (!ReadProcessMemory(process.hProcess, reinterpret_cast<void*>(bootstrapAddress), remoteCode, sizeof(remoteCode), &read) ||
             read != sizeof(remoteCode) || memcmp(remoteCode, reinterpret_cast<void*>(bootstrapAddress), sizeof(remoteCode))) { result = ERROR_INVALID_ADDRESS; break; }
+        view->stage = stage = InitializeLoader;
         auto bootstrap = CreateRemoteThread(process.hProcess, nullptr, 0, reinterpret_cast<LPTHREAD_START_ROUTINE>(bootstrapAddress), nullptr, 0, nullptr);
         if (!bootstrap) { result = GetLastError(); break; }
         auto bootstrapped = WaitForSingleObject(bootstrap, 5000) == WAIT_OBJECT_0; CloseHandle(bootstrap);
         if (!bootstrapped) { result = ERROR_TIMEOUT; break; }
         if (!ReadProcessMemory(process.hProcess, reinterpret_cast<void*>(loadAddress), remoteCode, sizeof(remoteCode), &read) ||
             read != sizeof(remoteCode) || memcmp(remoteCode, reinterpret_cast<void*>(loadAddress), sizeof(remoteCode))) { result = ERROR_INVALID_ADDRESS; break; }
+        view->stage = stage = LoadComponent;
         loader = CreateRemoteThread(process.hProcess, nullptr, 0, reinterpret_cast<LPTHREAD_START_ROUTINE>(loadAddress), remote, 0, nullptr);
         if (!loader || WaitForSingleObject(loader, 3000) != WAIT_OBJECT_0) { result = ERROR_TIMEOUT; break; }
         auto snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, process.dwProcessId);
@@ -385,11 +398,14 @@ extern "C" __declspec(dllexport) DWORD WINAPI StartGuarded(const wchar_t* path, 
             !DuplicateHandle(GetCurrentProcess(), finished, process.hProcess, &bootstrapData.finished, 0, FALSE, DUPLICATE_SAME_ACCESS) ||
             !WriteProcessMemory(process.hProcess, remote, &bootstrapData, sizeof(bootstrapData), nullptr)) { result = GetLastError(); break; }
         auto offset = reinterpret_cast<BYTE*>(GetProcAddress(self, "InitializeGuard")) - reinterpret_cast<BYTE*>(self);
+        view->stage = stage = InitializeComponent;
         init = CreateRemoteThread(process.hProcess, nullptr, 0, reinterpret_cast<LPTHREAD_START_ROUTINE>(reinterpret_cast<BYTE*>(loaded) + offset), remote, 0, nullptr);
         if (!init || WaitForSingleObject(init, 3000) != WAIT_OBJECT_0 || !view->ready || !view->patched) { result = ERROR_DLL_INIT_FAILED; break; }
         if (WaitForSingleObject(cancellation, 0) == WAIT_OBJECT_0) { result = ERROR_CANCELLED; break; }
+        view->stage = stage = ProtectWindows;
         if (ResumeThread(process.hThread) == static_cast<DWORD>(-1)) { result = GetLastError(); break; }
         resumed = true;
+        view->resumed = 1;
         HANDLE waits[] = { finished, process.hProcess, cancellation, reopening };
         auto waited = WaitForMultipleObjects(4, waits, FALSE, timeoutMs + 2000);
         if (waited == WAIT_OBJECT_0) result = view->failures ? ERROR_NOT_SUPPORTED : ERROR_SUCCESS;
@@ -402,6 +418,10 @@ extern "C" __declspec(dllexport) DWORD WINAPI StartGuarded(const wchar_t* path, 
                 waited == WAIT_OBJECT_0 + 2 && restored ? ERROR_CANCELLED : ERROR_TIMEOUT;
         }
     } while (false);
-    if (report && view) *report = *view;
+    if (report) {
+        if (view) *report = *view;
+        else { ZeroMemory(report, sizeof(GuardStatus)); report->size = sizeof(GuardStatus); report->stage = stage; }
+        report->alive = resumed && WaitForSingleObject(process.hProcess, 0) == WAIT_TIMEOUT;
+    }
     cleanup(); return result;
 }

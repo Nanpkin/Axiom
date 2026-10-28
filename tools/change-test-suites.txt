@@ -1,2 +1,3 @@
 # Recoverable program startup protection and existing program launch boundaries.
 Axiom.Engine.Tests.ProgramPluginTests
+Axiom.Engine.Tests.PluginRuntimeTests.UnavailableHotkeyDoesNotDisconnectOrBlockUnrelatedProgramRule
