@@ -477,8 +477,12 @@ public sealed class BrightnessWheelTests
                 ProviderProtocol.Validate(request, DateTimeOffset.UtcNow);
                 if (request.Type == "observe")
                 {
-                    await ProviderProtocol.WriteAsync(pipe, new(1, "snapshot", request.RequestId, Sequence: 0, Samples: []), limit.Token);
-                    try { await ProviderProtocol.ReadAsync(pipe, serverStop.Token); }
+                    // Rebinding may close this observation while its first snapshot is still writing.
+                    try
+                    {
+                        await ProviderProtocol.WriteAsync(pipe, new(1, "snapshot", request.RequestId, Sequence: 0, Samples: []), limit.Token);
+                        await ProviderProtocol.ReadAsync(pipe, serverStop.Token);
+                    }
                     catch (Exception error) when (error is IOException or OperationCanceledException) { }
                 }
                 else if (request.Type == "observe-brightness-wheel")

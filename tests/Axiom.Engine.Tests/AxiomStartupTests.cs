@@ -224,7 +224,11 @@ public sealed class AxiomStartupTests
             await store.SaveAsync(TaskRule("every", @"C:\Apps\Startup.exe"), default);
             await using var provider = new ProviderFixture(sid, holdCommands: true);
             await using var runtime = new PluginTaskRuntime([new ProgramPlugin(), new AxiomStartupPlugin()], store, sid, activity.Engine, () => 42);
-            await runtime.InitializeAsync(); await provider.Observations.Reader.ReadAsync(); await provider.NextCommand();
+            await runtime.InitializeAsync(); await provider.Observations.Reader.ReadAsync();
+            // An accepted observe request precedes snapshot processing. Start the command
+            // deadline only after the runtime has acknowledged its live observation plan.
+            await WaitUntil(async () => (await runtime.ReadAsync(default)).DetectionAvailable);
+            await provider.NextCommand();
             provider.DropObservations();
             await WaitUntil(() => Task.FromResult(provider.CancelledCommands == 1));
             await provider.Observations.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(8));
