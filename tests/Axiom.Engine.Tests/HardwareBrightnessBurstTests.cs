@@ -27,7 +27,11 @@ public sealed class HardwareBrightnessBurstTests
         Assert.Equal(writes.Select(w => w.Value).Order(), writes.Select(w => w.Value));
         Assert.Contains(writes.Zip(writes.Skip(1)), pair => pair.Second.At - pair.First.At == TimeSpan.FromMilliseconds(100));
         Assert.All(writes.Zip(writes.Skip(1)), pair => Assert.True(pair.Second.At - pair.First.At >= TimeSpan.FromMilliseconds(100)));
-        Assert.True(time.GetElapsedTime(0) < TimeSpan.FromMilliseconds(3500));
+        // The endpoint has its own checkpoint before Set, then an exact readback after Set.
+        // Include both 260 ms native reads rather than the obsolete single-read budget.
+        Assert.Equal(5, reads.Count);
+        Assert.InRange(reads[^2], writes[^2].At, writes[^1].At);
+        Assert.Equal(TimeSpan.FromMilliseconds(3603), time.GetElapsedTime(0));
     }
 
     [Fact]
@@ -215,11 +219,14 @@ public sealed class HardwareBrightnessBurstTests
     }
 
     [Fact]
-    public void LaggingBurstConfirmsBeforeNextSegmentAndRestoresOriginalBaseline()
+    public void LaggingBurstCheckpointsObservedProgressAndStrictlyRestoresOriginalBaseline()
     {
         var time = new ManualTimeProvider(); uint current = 100; var accepted = new List<uint>();
         var stale = false; var awaitingExact = false; var confirmations = 0; var writes = 0;
-        var target = new BrightnessRestoreTarget(100, p => (uint)p, () =>
+        var failures = new List<Exception>();
+        void Verify(Action assertion) { try { assertion(); } catch (Exception error) { failures.Add(error); } }
+        BrightnessRestoreTarget? target = null;
+        target = new BrightnessRestoreTarget(100, p => (uint)p, () =>
         {
             time.Advance(TimeSpan.FromMilliseconds(60));
             if (accepted.Count > 1 && !stale)
@@ -228,20 +235,31 @@ public sealed class HardwareBrightnessBurstTests
             awaitingExact = false; return current;
         }, value =>
         {
-            Assert.False(awaitingExact); writes++; accepted.Add(value); current = value;
+            if (awaitingExact)
+            {
+                // A checkpoint may accept a written intermediate value, but must acknowledge
+                // that exact observation and discard the old pending tail before a new Set.
+                Verify(() => Assert.Equal(accepted[^2], target!.Transaction.Confirmed));
+                Verify(() => Assert.True(target!.Transaction.HasPendingFadeWrite));
+                Verify(() => Assert.Equal(value, target!.Transaction.FadeExpected));
+                confirmations++; accepted.Clear(); stale = false; awaitingExact = false;
+            }
+            Verify(() => Assert.False(awaitingExact)); writes++; accepted.Add(value); current = value;
             time.Advance(TimeSpan.FromMilliseconds(55)); return true;
         }, hardwareBurst: true);
         void Wait(TimeSpan delay, CancellationToken token)
         {
-            Assert.True(delay <= TimeSpan.FromMilliseconds(50));
-            if (awaitingExact) { Assert.True(target.Transaction.HasPendingFadeWrite); Assert.False(target.Transaction.TryCompleteConfirmedRelease()); }
+            Verify(() => Assert.True(delay <= TimeSpan.FromMilliseconds(50), $"Unexpected wait: {delay}"));
+            if (awaitingExact) { Verify(() => Assert.False(target.Transaction.HasPendingFadeWrite)); Verify(() => Assert.False(target.Transaction.TryCompleteConfirmedRelease())); }
             time.Advance(delay);
         }
         BrightnessFade.Apply([(target, 40)], new(true, 3), default, time, Wait);
+        Assert.Empty(failures);
         Assert.True(target.Transaction.Owned); Assert.Equal(40u, target.Transaction.Confirmed);
         var applyConfirmations = confirmations; var applyWrites = writes;
         Assert.InRange(applyConfirmations, 2, 4); Assert.True(applyWrites > 10);
         BrightnessFade.Apply([(target, target.Baseline)], new(true, 3), default, time, Wait);
+        Assert.Empty(failures);
         Assert.Equal(100u, current); Assert.Equal(100u, target.Transaction.Confirmed);
         Assert.True(confirmations > applyConfirmations); Assert.True(writes > applyWrites);
         Assert.True(target.Transaction.TryCompleteConfirmedRelease()); Assert.False(target.Transaction.Owned);

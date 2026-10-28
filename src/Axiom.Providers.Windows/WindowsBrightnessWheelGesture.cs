@@ -148,4 +148,3 @@ public static class WindowsBrightnessWheelGesture
         }
     }
 }
-

@@ -81,4 +81,3 @@ internal sealed class BrightnessWheelAgent(ShortcutAgent shortcuts, string sid)
         finally { current.Gesture.Release(); }
     }
 }
-

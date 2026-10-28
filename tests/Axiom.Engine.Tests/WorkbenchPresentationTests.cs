@@ -27,7 +27,7 @@ public sealed class WorkbenchPresentationTests
     [Theory]
     [InlineData(true, true, true, "HDR 已开启并生效")]
     [InlineData(false, false, true, "HDR 已关闭")]
-    [InlineData(true, false, true, "HDR 已开启，但尚未生效")]
+    [InlineData(true, false, true, "HDR 当前实际未生效（SDR），系统仍保留启用标记")]
     [InlineData(null, false, true, "HDR 状态未确认")]
     [InlineData(false, true, true, "HDR 状态未确认")]
     [InlineData(true, true, false, "当前状态未确认，请刷新后查看。")]
