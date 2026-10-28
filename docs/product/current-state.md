@@ -1,30 +1,22 @@
 # 当前交接
 
-更新：2026-10-28。所有者要求集中处理全部开放PR；PR40、汇总PR39及启动修复PR41已合入main，其余PR28–38已核对覆盖后关闭，开放PR为0，分支及历史保留。
+更新：2026-10-28。当前开发分支codex/window-previsibility-research；[PR43](https://github.com/Nanpkin/Axiom/pull/43)草稿，未合并/发Release。外层旧检出禁止推送，开发使用此新历史检出。
 
 ## 当前批次：可恢复的启动窗口遮蔽
 
-- 所有者已要求继续开发，并授权测试期间结束HECATE。启动动作增加显式“启动遮蔽（实验性）”及1–20秒最长保护、默认15；普通隐藏与旧配置不迁移。
-- Agent原生组件处理Qt延迟插件，进程内首次显示前cloak；自然隐藏/截止/取消时先隐藏再解除、恢复导入，完成后不拦截手动打开。缓存副本避免目标占用固定预览。见[ADR0012](../adr/0012-recoverable-startup-window-guard.md)。
-- 合成恢复、实际HECATE-startup及原入口重开通过；实际WindowsProgramControl路径第6秒重开可见且未cloaked。第1秒取消后保留进程并可重开。未逐帧捕获或验证耳机硬件效果，不宣称任意应用零闪现。独立Desktop仍为未实现备选。
-- [实验记录](../development/window-previsibility-research.md)、[当前计划](../exec-plans/active/startup-window-guard.md)；证据仅本机。正在完成精确测试、审查与固定预览更新，原有规则不改写。
-
-## 已合并与验证
-
-- main功能合并058b3af；PR39精确head e8c0808的[CI与统一打包](https://github.com/Nanpkin/Axiom/actions/runs/40606738545)通过：215项相关测试、零跳过、完整Windows构建、便携包及安装器。
-- 包含亮度渐变/滚轮与恢复、任务级自动暂停、启动/托盘、月度/Hosts、画面分析、游戏模式、工作台/活动详情/规则库与会话隔离。各功能原生/GPU/UI证据沿原PR及计划复用，本轮不重复全矩阵。
-- 汇总PR的收尾只改文档/夹具/发布文案及尾部空行；后续main检查发现并修复首次快照的启动竞态。HDR文案、硬件进度检查/终点确认夹具按现契约修正；异步管道正常断开和快照就绪顺序已修正。本机对应28项及发布脚本29项通过。
-- main首轮214/215通过；本机隔离复查确认实际竞态：过早发布connected使并发刷新抢先确认同一计划，首次快照跳过启动派发。改为确认计划并派发启动后再发布就绪；取消/版本校验/不重放保持，不改截止或Engine确认契约。PR41已合并，准确main 2d65c7f的[检查40608968697](https://github.com/Nanpkin/Axiom/actions/runs/40608968697)通过：224项零跳过、完整Windows构建零警告/错误。见[完成记录](../exec-plans/completed/open-pr-consolidation.md)。
-- GitHub用户名Nanpkin、ID63274913；新旧检出origin、提交邮箱与当前仓库登录选择已同步。作者仍Axiom Contributors，旧检出禁止推送保护保持；见[身份说明](../development/commit-identity-repair.md)。
-
-## 集中发布
-
-- [0.2.0-preview.20261028.1](https://github.com/Nanpkin/Axiom/releases/tag/v0.2.0-preview.20261028.1)已发布；[发布运行40609289271](https://github.com/Nanpkin/Axiom/actions/runs/40609289271)成功，复用准确main检查，未重复功能测试。四文件齐全，上传摘要与SHA256SUMS匹配，BUILD-INFO及ZIP内外均为干净2d65c7f/正确版本。
+- 程序启动增加显式“启动遮蔽（实验性）”，最长1–20秒、默认15；原普通隐藏与用户规则不自动迁移。仅x64桌面程序，不用于游戏/受保护程序。
+- Agent加载原生保护组件，在进程内显示前cloak，覆盖Qt延迟插件；自然隐藏、截止或取消时先隐藏再解除、恢复导入。动作完成后不再干预手动打开；保护期内再次启动仅尽力核对，晚到弹窗不保证抑制。
+- 经校验的临时缓存副本避免目标占用固定预览；目标可能保留组件加载引用，但不代表继续隐藏。见[ADR0012](../adr/0012-recoverable-startup-window-guard.md)。
+- ProgramPluginTests 5项零跳过，Agent/原生Release及统一预览打包通过。合成恢复、HECATE原入口重开、实际调用第6秒重开通过；第1秒取消后程序保留并可重开。证据仅本机，见[实验记录](../development/window-previsibility-research.md)及[完成计划](../exec-plans/completed/startup-window-guard.md)。
 
 ## 本机事实与保护
 
-- 固定预览仍0.1.0-local.20261026.3/干净b29e6ec，已含汇总功能，尚未包含后续启动竞态修复；本轮未重新替换或重启。此前角色来源/版本/hash、真实UI连接及原9任务/托盘设置核对通过，登录启动启用并指向固定入口。
-- 会话隔离采用7条管道的OS会话编号与原用户/会话/角色校验；管理通道第9监听实例保留，处理上限8。LocalUserPipeTests此前4项通过，[会话修复计划](../exec-plans/completed/session-pipe-isolation.md)。
-- 规则分类独立原子保存，失败保留原状态；删除分类不删规则。分类/搜索/编辑返回/详情/窄窗已验；活动详情不补造旧记录丢失的信息。
-- ×隐藏UI；后台停止须正常恢复，不强杀。共用用户数据，不备份/EFS/打包私有副本，拒停/恢复未知留现场；诊断、配置及本机证据不上传。
-- 游戏前台HDR故障在全部Axiom/记录器退出后手动开启仍复现；会话修复不等于驱动呈现问题已修复。首次开机窗口资格不重置，真实下次开机仍待确认；游戏模式/采集/恢复策略沿原contract/wiki。
+- 固定artifacts/Axiom-preview/Axiom.exe已更新为0.2.0-local.20261028.2，干净源码177f9e2；三角色准确版本/路径、组件hash、后台连接、新选项核对通过。
+- 经自身界面正常停止并确认旧角色退出后更新，未强杀Axiom。原9任务和托盘设置规范化指纹保持，登录启动仍启用并指向固定入口。用户另外明确授权测试期间结束HECATE。
+- 共用原用户数据，未备份/迁移/改写规则。×隐藏UI；后台停止必须走恢复保护，受控游戏/拒停/恢复未知留现场，不绕过。
+- main已有汇总与启动竞态修复，最新公开[预览Release](https://github.com/Nanpkin/Axiom/releases/tag/v0.2.0-preview.20261028.1)仍对应干净2d65c7f；本批只有本机预览和开发分支，PR CI状态单独核对。
+
+## 未解决
+
+- 未逐帧捕获、未验证耳机硬件效果或广泛框架兼容，不宣称任意程序零闪现或完整性能达标。外部启动的首帧不能事后撤销；独立Desktop仍未实现。
+- 首次开机窗口资格未重置，真实下次开机待确认。游戏前台HDR驱动呈现问题此前在全部Axiom退出后仍可复现，不视为本次窗口保护已修复。

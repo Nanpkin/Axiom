@@ -8,6 +8,6 @@
 - [x] HECATE自身-startup：保持后台运行但仍有临时窗口；正常权限下原入口再打开能显示主窗口。
 - [x] HECATE完整启动保护与原入口重开实测；首轮旧实例未退出无效，后续所有者明确授权测试期间结束HECATE。Qt延迟插件和恢复事件权限等实际缺陷已修复。
 - [x] 集成显式实验选项及恢复说明；ProgramPluginTests 5项零跳过，Agent与原生组件Release零警告/错误。实际调用第6秒重开及第1秒取消后重开通过，证据仅本机。
-- [ ] 审查、提交推送、按正常停止保护更新预览；运行保护拒绝时保留现场。
+- [x] 针对性审查、提交177f9e2并推送，[PR43](https://github.com/Nanpkin/Axiom/pull/43)草稿；正常界面停止确认及旧角色退出后统一更新固定预览0.2.0-local.20261028.2。准确干净源码及组件hash匹配；三角色版本/连接、新选项、原9任务与托盘指纹、登录启动均核对通过。未合并/发Release。
 
 证据只留本机artifacts/window-previsibility-smoke与hecate-startup-smoke；不上传参数、配置或设备信息。结论见[实验记录](../../development/window-previsibility-research.md)。
