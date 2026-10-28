@@ -140,6 +140,9 @@
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsWindowEvents.cs" Link="WindowsWindowEvents.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsWindowActions.cs" Link="WindowsWindowActions.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsProgramControl.cs" Link="WindowsProgramControl.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsStartupWindowGuard.cs" Link="WindowsStartupWindowGuard.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsGameProcessObserver.cs" Link="WindowsGameProcessObserver.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsProcessStartEvents.cs" Link="WindowsProcessStartEvents.cs" />
     <Compile Include="../../src/Axiom.ServiceHost/PluginTaskRuntime.TrayTool.cs" Link="PluginTaskRuntime.TrayTool.cs" />
     <Compile Include="../../src/Axiom.ServiceHost/PluginTaskRuntime.cs" Link="PluginTaskRuntime.cs" />
     <Compile Include="../../src/Axiom.ServiceHost/PluginTaskRuntime.GameMode.cs" Link="PluginTaskRuntime.GameMode.cs" />
@@ -156,5 +159,6 @@
     <ProjectReference Include="../../src/Axiom.Engine/Axiom.Engine.csproj" />
     <ProjectReference Include="../../src/Axiom.Infrastructure/Axiom.Infrastructure.csproj" />
     <ProjectReference Include="../../src/Axiom.Contracts/Axiom.Contracts.csproj" />
+    <PackageReference Include="System.Management" Version="9.0.5" />
   </ItemGroup>
 </Project>

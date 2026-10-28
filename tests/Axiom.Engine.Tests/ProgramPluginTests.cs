@@ -8,6 +8,21 @@ namespace Axiom.Engine.Tests;
 
 public sealed class ProgramPluginTests
 {
+    [Fact]
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    public void StartupFailureNamesTargetPhaseAndActualProcessState()
+    {
+        var reason = Axiom.Providers.Windows.WindowsStartupWindowGuard.FailureReason(@"C:\Apps\target.exe", 123, 1460,
+            new() { Stage = 7, Resumed = 1, Alive = 1 });
+        Assert.StartsWith("target.exe（PID 123）：解除启动保护未完成：", reason);
+        Assert.Contains("（1460）", reason);
+        Assert.EndsWith("目标进程仍在运行，但尚未确认正常就绪。", reason);
+        Assert.DoesNotContain("。。", reason);
+        reason = Axiom.Providers.Windows.WindowsStartupWindowGuard.FailureReason(@"C:\Apps\target.exe", 123, 1460,
+            new() { Stage = 3 });
+        Assert.Contains("初始化进程加载器未完成", reason);
+        Assert.EndsWith("目标主线程尚未运行，本次创建的进程已结束。", reason);
+    }
     private static readonly ResourceScope Scope = ResourceScope.Session("owner", 1);
     private static (AutomationTaskCompiler Compiler, AutomationTask Task) Configure(bool start = true, bool exited = false)
     {
@@ -43,6 +58,26 @@ public sealed class ProgramPluginTests
         foreach (var delay in new[] { "-1", "86401", "NaN" })
             Assert.Throws<ArgumentException>(() => compiler.Compile(task with { Action = task.Action with { Parameters = task.Action.Parameters.SetItem("delaySeconds", delay) } }, "owner", Scope));
         Assert.Throws<ArgumentException>(() => ProgramCapabilities.Validate(task.Action with { Parameters = task.Action.Parameters.Add("shell", "true") }));
+    }
+    [Fact]
+    public void StartupProtectionIsExplicitPreservesOldLaunchesAndRejectsFractionalOrUnboundedDurations()
+    {
+        var (compiler, task) = Configure();
+        Assert.Equal("normal", ProgramCapabilities.Value(task.Action, "window"));
+        Assert.Equal("15", ProgramCapabilities.Value(task.Action, "startupProtectionSeconds"));
+        var guarded = task with { Action = task.Action with { Parameters = task.Action.Parameters
+            .SetItem("window", "startup-hidden").SetItem("startupProtectionSeconds", "20") } };
+        compiler.Compile(guarded, "owner", Scope);
+        foreach (var seconds in new[] { "0", "21", "1.5", "NaN", "" })
+            Assert.ThrowsAny<ArgumentException>(() => ProgramCapabilities.Validate(guarded.Action with
+                { Parameters = guarded.Action.Parameters.SetItem("startupProtectionSeconds", seconds) }));
+        var editor = new TaskEditorState(); editor.Load(guarded);
+        var rebuilt = editor.Build();
+        Assert.Equal("startup-hidden", rebuilt.Action.Parameters["window"]);
+        Assert.Equal("20", rebuilt.Action.Parameters["startupProtectionSeconds"]);
+        // Existing hidden launches keep their original mode and do not silently opt into injection.
+        Assert.Equal("hidden", ProgramCapabilities.Value(task.Action with
+            { Parameters = task.Action.Parameters.SetItem("window", "hidden") }, "window"));
     }
     [Fact]
     public async Task GenericStorageSurvivesReopenPreservesParametersAndRejectsStaleEdits()

@@ -249,8 +249,9 @@ internal sealed class ProgramCapabilityProvider : ISessionCapabilityProvider
     {
         var paths = ProgramCapabilities.ValidateTargets(config); token.ThrowIfCancellationRequested();
         var result = config.CapabilityId == "program.start"
-            ? WindowsProgramControl.Start(paths.Single(), ProgramCapabilities.Value(config, "arguments"), ProgramCapabilities.Value(config, "workingDirectory"),
-                ProgramCapabilities.Value(config, "window"), ProgramCapabilities.Value(config, "ifRunning") == "skip")
+            ? await Task.Run(() => WindowsProgramControl.Start(paths.Single(), ProgramCapabilities.Value(config, "arguments"), ProgramCapabilities.Value(config, "workingDirectory"),
+                ProgramCapabilities.Value(config, "window"), ProgramCapabilities.Value(config, "ifRunning") == "skip", token,
+                (int)ProgramCapabilities.Number(config, "startupProtectionSeconds")), token)
             : await WindowsProgramBatch.ExecuteAsync(paths, (path, cancellation) => WindowsProgramControl.CloseAsync(path, ProgramCapabilities.Value(config, "mode") == "force",
                 ProgramCapabilities.Value(config, "instances") == "latest", TimeSpan.FromSeconds((double)ProgramCapabilities.Number(config, "timeoutSeconds")), cancellation), token);
         return (result.Success ? OutcomeStatus.Succeeded : OutcomeStatus.Failed, result.Reason);

@@ -99,6 +99,11 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
     public async ValueTask<Outcome> ExecuteCommandAsync(Command command, CancellationToken token)
     {
         var attempts = new List<WindowAttempt>(); var sendStarted = false;
+        string? subject;
+        lock (statusGate) subject = string.Join("、", command.Origins.Select(origin =>
+            tasks.SingleOrDefault(t => t.Id == origin.RuleId && t.Version == origin.RuleVersion)?.Title).OfType<string>().Distinct());
+        if (subject.Length == 0) subject = null;
+        void RecordCommand(string title, string detail, ActivityLevel level) => Record(title, detail, level, subject);
         try
         {
             if (stopping || !Authorize(command.Principal, command.Key, CapabilityOperation.ExecuteCommand).Allowed || command.Arguments.Text is null)
@@ -139,7 +144,7 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
                 response.Status is not (OutcomeStatus.Succeeded or OutcomeStatus.Failed or OutcomeStatus.Rejected) || string.IsNullOrWhiteSpace(response.Reason))
                 throw new InvalidDataException("Provider 回执无效。");
             await CompleteWindowAttemptsAsync(attempts, response.Status.Value);
-            Record(invocation.CapabilityId == TrayCapabilities.Hide
+            RecordCommand(invocation.CapabilityId == TrayCapabilities.Hide
                 ? response.Status == OutcomeStatus.Succeeded ? "托盘检查完成" : "托盘处理未完成"
                 : response.Status == OutcomeStatus.Succeeded ? "自动化动作已完成" : "自动化动作未完成", response.Reason,
                 response.Status == OutcomeStatus.Succeeded ? ActivityLevel.Success : ActivityLevel.Error);
@@ -158,7 +163,7 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
             { Record("时段执行记录未确认", persistence.Message + " 为避免重复操作，不会自动重发。", ActivityLevel.Warning); }
             var message = sendStarted ? error is OperationCanceledException ? "动作已取消或通信超时；无法确认程序是否已执行，不会自动重试。" : error.Message
                 : error is OperationCanceledException ? "动作尚未发出，已取消；未消耗本时段的执行或重试次数。" : "动作尚未发出：" + error.Message + " 将按任务的失败重试设置处理。";
-            Record("自动化动作未确认", message, ActivityLevel.Warning);
+            RecordCommand("自动化动作未确认", message, ActivityLevel.Warning);
             return TrayOutcome(command, new(sendStarted ? OutcomeStatus.Unknown : OutcomeStatus.Rejected, message, command.CommandId));
         }
     }
@@ -426,10 +431,10 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
         return new(key, unknown ? StateQuality.Unknown : StateQuality.Known,
             unknown ? null : StateValue.From(new("axiom.bool", 1), firedStartupTasks.Contains(task.Id)), DateTimeOffset.UtcNow);
     }
-    private void Record(string title, string detail, ActivityLevel level)
+    private void Record(string title, string detail, ActivityLevel level, string? subject = null)
     {
         var now = DateTimeOffset.UtcNow; lock (statusGate) { state = title; reason = ActivityText.Summary(detail); at = now; }
-        activity.RecordActivity(new(now, "自动化任务", title, detail, level));
+        activity.RecordActivity(new(now, "自动化任务", title, detail, level, subject));
     }
     public async Task EnsureSafeToStopAsync(CancellationToken token)
     {
