@@ -1,14 +1,18 @@
 # 当前交接
 
-更新：2026-10-28。所有者要求集中处理全部开放PR；PR40与汇总PR39已合入main，其余PR28–38已核对覆盖后关闭，开放PR为0，分支及历史保留。
+更新：2026-10-28。所有者要求集中处理全部开放PR；PR40、汇总PR39及启动修复PR41已合入main，其余PR28–38已核对覆盖后关闭，开放PR为0，分支及历史保留。
 
 ## 已合并与验证
 
 - main功能合并058b3af；PR39精确head e8c0808的[CI与统一打包](https://github.com/Nanpkin/Axiom/actions/runs/40606738545)通过：215项相关测试、零跳过、完整Windows构建、便携包及安装器。
 - 包含亮度渐变/滚轮与恢复、任务级自动暂停、启动/托盘、月度/Hosts、画面分析、游戏模式、工作台/活动详情/规则库与会话隔离。各功能原生/GPU/UI证据沿原PR及计划复用，本轮不重复全矩阵。
 - 汇总PR的收尾只改文档/夹具/发布文案及尾部空行；后续main检查发现并修复首次快照的启动竞态。HDR文案、硬件进度检查/终点确认夹具按现契约修正；异步管道正常断开和快照就绪顺序已修正。本机对应28项及发布脚本29项通过。
-- main首轮214/215通过；本机隔离复查确认实际竞态：过早发布connected使并发刷新抢先确认同一计划，首次快照跳过启动派发。改为确认计划并派发启动后再发布就绪；取消/版本校验/不重放保持，不改截止或Engine确认契约。修复PR、main检查及批次发布待完成，见[收尾计划](../exec-plans/active/open-pr-consolidation.md)。
+- main首轮214/215通过；本机隔离复查确认实际竞态：过早发布connected使并发刷新抢先确认同一计划，首次快照跳过启动派发。改为确认计划并派发启动后再发布就绪；取消/版本校验/不重放保持，不改截止或Engine确认契约。PR41已合并，准确main 2d65c7f的[检查40608968697](https://github.com/Nanpkin/Axiom/actions/runs/40608968697)通过：224项零跳过、完整Windows构建零警告/错误。见[完成记录](../exec-plans/completed/open-pr-consolidation.md)。
 - GitHub用户名Nanpkin、ID63274913；新旧检出origin、提交邮箱与当前仓库登录选择已同步。作者仍Axiom Contributors，旧检出禁止推送保护保持；见[身份说明](../development/commit-identity-repair.md)。
+
+## 集中发布
+
+- [0.2.0-preview.20261028.1](https://github.com/Nanpkin/Axiom/releases/tag/v0.2.0-preview.20261028.1)已发布；[发布运行40609289271](https://github.com/Nanpkin/Axiom/actions/runs/40609289271)成功，复用准确main检查，未重复功能测试。四文件齐全，上传摘要与SHA256SUMS匹配，BUILD-INFO及ZIP内外均为干净2d65c7f/正确版本。
 
 ## 本机事实与保护
 
