@@ -15,11 +15,11 @@ $sourceMarker = "<!-- axiom-source-commit: $SourceCommit -->"
 $notes = @"
 $versionMarker
 $sourceMarker
-Windows 11 x64 私有阶段预览版。下载 setup.exe 安装，或解压 portable.zip 启动 Axiom.exe。
+Windows 11 x64 预览版。下载 setup.exe 安装，或解压 portable.zip 启动 Axiom.exe。
 
 可配置时间、程序、前台应用、窗口、系统、电源、Wi-Fi、USB和默认音频设备等检测，组合提醒、程序/窗口、音量、亮度、电源方案、锁屏、HDR和条件期间保持唤醒等动作。功能和限制以此提交的[交接说明](https://github.com/$repo/blob/$SourceCommit/docs/product/current-state.md)为准；示例规则默认暂停。
 
-本版本从提交 $SourceCommit 重新通过核心、Windows 原生回归和完整应用构建后生成。校验和见 SHA256SUMS.txt，包内来源见 BUILD-INFO.json。GitHub 的 Source code 下载项是源码。
+本版本从提交 $SourceCommit 通过本批相关测试和完整应用构建后生成；具体原生与实机验收范围见交接说明，不代表全套设备回归。校验和见 SHA256SUMS.txt，包内来源见 BUILD-INFO.json。GitHub 的 Source code 下载项是源码。
 
 未配置代码签名；硬件相关能力仍需对应设备实机确认。不自动更新或替换本机 Axiom；更新前先安全停止后台，用户配置保留。
 "@
