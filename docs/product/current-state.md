@@ -1,13 +1,13 @@
 # 当前交接
 
-更新：2026-10-29。当前分支codex/brightness-startup-recovery，基于codex/window-previsibility-research；[PR43](https://github.com/Nanpkin/Axiom/pull/43)草稿仍未合并/发Release。外层旧检出禁止推送，开发用此检出。
+更新：2026-10-29。当前分支codex/brightness-startup-recovery，[PR44](https://github.com/Nanpkin/Axiom/pull/44)草稿，叠于[PR43](https://github.com/Nanpkin/Axiom/pull/43)，均未合并/发Release。外层旧检出禁止推送，开发用此检出。
 
 ## 早晨亮度失败修复
 
 - 用户确认09:46首次任务失败，期间亲自调亮；09:47成功不能作为自动恢复证据，历史类似记录也不能推断自动恢复。
 - 原生初始读取仅对一种报文错误短暂重读，其他通信错误直接失败且丢失错误码。初始通信错误现最多250/750/1500毫秒三次只读重试；有效范围才写入。权限/不支持/未知错误不盲试，运行中恢复保护与固定读写接口保持。
 - 活动补接口/阶段/错误码，未写入提示纠正；不改任务配置、间隔或开机资格。旧日志无法追溯具体底层错误，当前只读实机通信正常，真实下次冷启动尚待验证。
-- 相关HardwareBrightness/HardwareBrightnessVcp共14项通过、零跳过；原生Provider构建零警告。真实初始读取与注入两次通信失败后重新读取通过，零亮度写入、句柄释放确认；证据artifacts/brightness-startup-smoke。当前运行仍为下文旧预览，待统一安全更新。
+- 相关HardwareBrightness/HardwareBrightnessVcp共14项通过、零跳过；原生Provider构建零警告。真实初始读取与注入两次通信失败后重新读取通过，零亮度写入、句柄释放确认；实机另观察到0xC0262589重读恢复，不作为今晨底层原因证明。证据artifacts/brightness-startup-smoke；代码SHA的PR CI仍在运行。
 
 ## 启动遮蔽当前行为
 
@@ -25,7 +25,7 @@
 
 ## 本机交付与保护
 
-- 固定artifacts/Axiom-preview/Axiom.exe为0.2.0-local.20261028.5，干净源码0e61e1b。正常界面停止旧角色后统一更新；三角色准确路径/版本、原生hash、后台连接核对通过。
+- 固定artifacts/Axiom-preview/Axiom.exe现为0.2.0-local.20261029.1，干净源码3c966fe。经应用“停止后台并退出”确认旧三角色结束后统一更新；新版三角色准确路径/版本、后台连接与原9任务/托盘指纹及登录启动核对通过。旧夹具的关闭窗口仅隐藏，已改用正常退出按钮，未强杀。
 - 原9任务/托盘指纹保持，登录启动正确；未改用户路径/参数或重置开机资格。新版真实HECATE动作日志已有Subject任务名。用户允许闲置DSX退出重启，HECATE测试结束权限仍有效；当前DSX主程序运行，HECATE可正常打开。
 - 共用原数据，不备份/迁移；Axiom退出遵守游戏/恢复保护，不强杀绕过。Release仍为v0.2.0-preview.20261028.1，本批仅开发分支/本机预览。
 
