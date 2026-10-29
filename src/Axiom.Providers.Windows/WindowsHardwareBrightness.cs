@@ -72,19 +72,48 @@ public static partial class WindowsHardwareBrightness
             using var ownership = BrightnessNativeOwnership.TryAcquire();
             return ownership is null ? (false, "Axiom已有亮度恢复租约或原生操作；请先暂停已有亮度恢复任务并等待释放完成，再执行其他亮度动作。本次未执行，不排队。") : action(cancellation);
         }, token, operationTimeout: fade.OperationTimeout);
-    private sealed class Api(string sid, CancellationToken token, bool directVcp = false) : IHardwareBrightnessApi
+    private sealed class Api : IHardwareBrightnessApi
     {
-        private readonly HardwareBrightnessIo io = new(directVcp, monitor =>
+        private readonly string sid;
+        private CancellationToken token;
+        private readonly HardwareBrightnessIo io;
+        private readonly List<string> diagnostics = [];
+        private string stage = "初始读取";
+        public string Diagnostics => diagnostics.Count == 0 ? "" : "诊断：" + string.Join("；", diagnostics) + "。";
+        private void Failure(string operation, int? error)
         {
-            var accepted = GetMonitorBrightness(monitor, out var minimum, out var current, out var maximum);
-            var error = accepted ? 0 : Marshal.GetLastPInvokeError();
-            return (accepted ? new HardwareBrightnessRange(minimum, current, maximum) : null, error);
-        }, monitor =>
+            if (diagnostics.Count < 8) diagnostics.Add($"{stage}/{operation}" + (error.HasValue ? $"错误0x{error.Value:X8}" : ""));
+        }
+        internal Api(string sid, CancellationToken token, bool directVcp = false)
         {
-            var accepted = GetVCPFeatureAndVCPFeatureReply(monitor, 0x10, out var type, out var current, out var maximum);
-            var error = accepted ? 0 : Marshal.GetLastPInvokeError();
-            return (accepted ? HardwareBrightnessOperation.VcpRange(type, current, maximum) : null, error);
-        }, SetMonitorBrightness, (monitor, value) => SetVCPFeature(monitor, 0x10, value));
+            this.sid = sid; this.token = token;
+            io = new(directVcp, monitor =>
+            {
+                var accepted = GetMonitorBrightness(monitor, out var minimum, out var current, out var maximum);
+                var error = accepted ? 0 : Marshal.GetLastPInvokeError();
+                if (!accepted) Failure("GetMonitorBrightness", error);
+                else if (HardwareBrightnessOperation.Map(new(minimum, current, maximum), 0) is null) Failure($"GetMonitorBrightness范围无效({minimum},{current},{maximum})", null);
+                return (accepted ? new HardwareBrightnessRange(minimum, current, maximum) : null, error);
+            }, monitor =>
+            {
+                var accepted = GetVCPFeatureAndVCPFeatureReply(monitor, 0x10, out var type, out var current, out var maximum);
+                var error = accepted ? 0 : Marshal.GetLastPInvokeError();
+                var range = accepted ? HardwareBrightnessOperation.VcpRange(type, current, maximum) : null;
+                if (!accepted) Failure("GetVCPFeatureAndVCPFeatureReply", error);
+                else if (range is null) Failure($"VCP亮度类型或范围无效({type},{current},{maximum})", null);
+                return (range, error);
+            }, (monitor, value) =>
+            {
+                var accepted = SetMonitorBrightness(monitor, value);
+                if (!accepted) Failure("SetMonitorBrightness", Marshal.GetLastPInvokeError());
+                return accepted;
+            }, (monitor, value) =>
+            {
+                var accepted = SetVCPFeature(monitor, 0x10, value);
+                if (!accepted) Failure("SetVCPFeature", Marshal.GetLastPInvokeError());
+                return accepted;
+            });
+        }
         internal void UseToken(CancellationToken value) => token = value;
         public bool IsAuthorized()
         {
@@ -112,7 +141,10 @@ public static partial class WindowsHardwareBrightness
         public IHardwareMonitorLease Acquire(nint logicalMonitor, int remainingCapacity)
         {
             token.ThrowIfCancellationRequested();
-            if (!GetNumberOfPhysicalMonitorsFromHMONITOR(logicalMonitor, out var count)) throw new Win32Exception(Marshal.GetLastPInvokeError());
+            if (!GetNumberOfPhysicalMonitorsFromHMONITOR(logicalMonitor, out var count))
+            {
+                var queryError = Marshal.GetLastPInvokeError(); Failure("GetNumberOfPhysicalMonitorsFromHMONITOR", queryError); throw new Win32Exception(queryError);
+            }
             token.ThrowIfCancellationRequested();
             if (count > 8 || count > remainingCapacity) throw new HardwareBrightnessLimitException(); // reject before allocating or opening handles
             var monitors = new PhysicalMonitor[count];
@@ -122,17 +154,27 @@ public static partial class WindowsHardwareBrightness
             var lease = new Lease(monitors);
             if (accepted) return lease;
             var error = Marshal.GetLastPInvokeError();
+            Failure("GetPhysicalMonitorsFromHMONITOR", error);
             lease.Dispose(); throw new Win32Exception(error);
         }
         public uint? Capabilities(nint monitor)
         {
             token.ThrowIfCancellationRequested();
-            return GetMonitorCapabilities(monitor, out var capabilities, out _) ? capabilities : null;
+            var accepted = GetMonitorCapabilities(monitor, out var capabilities, out _);
+            if (!accepted) Failure("GetMonitorCapabilities", Marshal.GetLastPInvokeError());
+            return accepted ? capabilities : null;
         }
-        public HardwareBrightnessRange? Read(nint monitor) => io.Read(monitor, token);
+        public HardwareBrightnessRange? ReadInitial(nint monitor)
+        {
+            stage = "初始读取"; return io.Read(monitor, token, initial: true);
+        }
+        public HardwareBrightnessRange? Read(nint monitor)
+        {
+            stage = "读回核验"; return io.Read(monitor, token);
+        }
         public bool Set(nint monitor, uint brightness)
         {
-            token.ThrowIfCancellationRequested(); return io.Write(monitor, brightness);
+            token.ThrowIfCancellationRequested(); stage = "写入"; return io.Write(monitor, brightness);
         }
     }
     private sealed class Lease(PhysicalMonitor[] monitors) : IHardwareMonitorLease

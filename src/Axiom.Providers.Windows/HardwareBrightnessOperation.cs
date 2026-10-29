@@ -14,6 +14,8 @@ internal interface IHardwareBrightnessApi
     IHardwareMonitorLease Acquire(nint logicalMonitor, int remainingCapacity);
     uint? Capabilities(nint monitor);
     HardwareBrightnessRange? Read(nint monitor);
+    HardwareBrightnessRange? ReadInitial(nint monitor) => Read(monitor);
+    string Diagnostics => "";
     bool Set(nint monitor, uint brightness);
 }
 
@@ -27,26 +29,34 @@ internal sealed class HardwareBrightnessIo(bool directVcp,
 {
     private readonly Func<nint, (HardwareBrightnessRange? Range, int Error)> read = directVcp ? readVcp : readHighLevel;
     private readonly Func<nint, uint, bool> write = directVcp ? writeVcp : writeHighLevel;
-    internal HardwareBrightnessRange? Read(nint monitor, CancellationToken token, Action<TimeSpan, CancellationToken>? wait = null) =>
-        HardwareBrightnessReadPolicy.Read(() => read(monitor), token, wait);
+    internal HardwareBrightnessRange? Read(nint monitor, CancellationToken token, Action<TimeSpan, CancellationToken>? wait = null, bool initial = false) =>
+        HardwareBrightnessReadPolicy.Read(() => read(monitor), token, wait, initial);
     internal bool Write(nint monitor, uint value) => write(monitor, value);
 }
 
 internal static class HardwareBrightnessReadPolicy
 {
-    // A framing error observed on supported hardware can clear after the device settles.
-    // Only failed reads of this kind are queried again; writes and successful replies are never repeated.
+    // Existing live readback retries remain restricted to this observed framing error.
+    // Writes and successful replies are never repeated by either policy.
     internal const int InvalidMessageCommand = unchecked((int)0xC0262589);
+    // Only initial acquisition may wait for communication to settle. A lost live
+    // restore baseline must still relinquish promptly, never reacquire or rewrite.
+    private static bool CommunicationFailure(int error) => error is
+        unchecked((int)0xC0262582) or unchecked((int)0xC0262583) or // I2C transmit / receive
+        unchecked((int)0xC0262585) or InvalidMessageCommand or     // invalid data / command
+        unchecked((int)0xC026258A) or unchecked((int)0xC026258B);   // length / checksum
     internal static HardwareBrightnessRange? Read(Func<(HardwareBrightnessRange? Range, int Error)> query,
-        CancellationToken token, Action<TimeSpan, CancellationToken>? wait = null)
+        CancellationToken token, Action<TimeSpan, CancellationToken>? wait = null, bool initial = false)
     {
-        for (var attempt = 0; attempt < 3; attempt++)
+        var attempts = initial ? 4 : 3;
+        for (var attempt = 0; attempt < attempts; attempt++)
         {
             token.ThrowIfCancellationRequested();
             var reply = query(); token.ThrowIfCancellationRequested();
-            if (reply.Range is not null || reply.Error != InvalidMessageCommand || attempt == 2) return reply.Range;
-            if (wait is not null) wait(TimeSpan.FromMilliseconds(150), token);
-            else if (token.WaitHandle.WaitOne(TimeSpan.FromMilliseconds(150))) token.ThrowIfCancellationRequested();
+            if (reply.Range is not null || !(initial ? CommunicationFailure(reply.Error) : reply.Error == InvalidMessageCommand) || attempt == attempts - 1) return reply.Range;
+            var delay = TimeSpan.FromMilliseconds(initial ? attempt switch { 0 => 250, 1 => 750, _ => 1500 } : 150);
+            if (wait is not null) wait(delay, token);
+            else if (token.WaitHandle.WaitOne(delay)) token.ThrowIfCancellationRequested();
         }
         return null;
     }
@@ -62,7 +72,7 @@ internal static class HardwareBrightnessOperation
         // Some drivers cannot report capabilities even when the high-level brightness read/write works.
         // A live, valid range is sufficient; capabilities only classify a target whose read is unknown.
         HardwareBrightnessRange? range;
-        try { range = api.Read(monitor); }
+        try { range = api.ReadInitial(monitor); }
         catch (Exception error) when (error is not (OperationCanceledException or OutOfMemoryException or StackOverflowException)) { range = null; }
         token.ThrowIfCancellationRequested();
         if (Map(range, 0).HasValue) return range;
@@ -196,6 +206,8 @@ internal static class HardwareBrightnessOperation
         }
         var success = succeeded > 0 && unknown == 0 && failed == 0 && cleanupFailed == 0;
         return (success, $"硬件屏幕亮度{(success ? "已确认" : succeeded > 0 ? "部分完成" : "未确认")}：已确认{succeeded}块{(delta.HasValue ? $"相对调整{delta.Value}个百分点（范围限幅）" : $"为{percent}%")}，已知不支持而跳过{unsupported}块，状态或范围未知而未写入{unknown}个目标，写入/读回未确认{failed}块" +
-            (cleanupFailed == 0 ? "。" : $"，{cleanupFailed}组句柄释放未确认。") + "新亮度保留，不重试、不恢复旧值；需要屏幕与连接支持且启用硬件亮度控制。");
+            (cleanupFailed == 0 ? "。" : $"，{cleanupFailed}组句柄释放未确认。") +
+            (succeeded == 0 && failed == 0 ? "本次未写入亮度。" : "已写入的亮度保留，不重复写入、不恢复旧值。") +
+            "初始通信故障仅有限重读；任务后续重试按任务设置执行。" + api.Diagnostics);
     }
 }

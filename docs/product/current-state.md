@@ -1,6 +1,13 @@
 # 当前交接
 
-更新：2026-10-28。分支codex/window-previsibility-research；[PR43](https://github.com/Nanpkin/Axiom/pull/43)草稿，未合并/发Release。外层旧检出禁止推送，开发用此检出。
+更新：2026-10-29。当前分支codex/brightness-startup-recovery，基于codex/window-previsibility-research；[PR43](https://github.com/Nanpkin/Axiom/pull/43)草稿仍未合并/发Release。外层旧检出禁止推送，开发用此检出。
+
+## 早晨亮度失败修复
+
+- 用户确认09:46首次任务失败，期间亲自调亮；09:47成功不能作为自动恢复证据，历史类似记录也不能推断自动恢复。
+- 原生初始读取仅对一种报文错误短暂重读，其他通信错误直接失败且丢失错误码。初始通信错误现最多250/750/1500毫秒三次只读重试；有效范围才写入。权限/不支持/未知错误不盲试，运行中恢复保护与固定读写接口保持。
+- 活动补接口/阶段/错误码，未写入提示纠正；不改任务配置、间隔或开机资格。旧日志无法追溯具体底层错误，当前只读实机通信正常，真实下次冷启动尚待验证。
+- 相关HardwareBrightness/HardwareBrightnessVcp共14项通过、零跳过；原生Provider构建零警告。真实初始读取与注入两次通信失败后重新读取通过，零亮度写入、句柄释放确认；证据artifacts/brightness-startup-smoke。当前运行仍为下文旧预览，待统一安全更新。
 
 ## 启动遮蔽当前行为
 
