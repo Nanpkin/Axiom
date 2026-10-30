@@ -1,2 +1,4 @@
 # HDR fresh round baselines, late physical receipts, and existing status/persistence boundaries.
 Axiom.Engine.Tests.GameHdrPersistenceTests
+Axiom.Engine.Tests.ExecutionTests.SameTargetRuleEditChangesGenerationAndOldReceiptNeedsNewObservation
+Axiom.Engine.Tests.ExecutionTests.ReceiptNeverFakesObservedSuccessAndFreshObservationConfirms

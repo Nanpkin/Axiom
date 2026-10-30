@@ -7,6 +7,69 @@ namespace Axiom.Engine.Tests;
 public sealed class GameHdrPersistenceTests
 {
     [Fact(Timeout = 10000)]
+    public async Task RealEngineRestoresAfterExitDuringApplyUsingOnePostReceiptObservation()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "axiom-hdr-engine-round-" + Guid.NewGuid().ToString("N") + ".db");
+        var target = HdrDisplayTargets.Named("Synthetic HDR");
+        var display = new GameHdrDisplayDto("Synthetic HDR", target, true, false, false, null, "synthetic-connection");
+        var generation = ""; var applies = 0; var reads = 0; var canceledAfterWrite = false;
+        var restored = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Axiom.ServiceHost.GameHdrRuntime? runtime = null;
+        var bridge = new ReceiptBridge();
+        async Task<GameHdrMessage> Request(GameHdrMessage request, CancellationToken token)
+        {
+            if (request.Type == "watch") generation = request.RequestId;
+            if (request.Type == "displays") reads++;
+            if (request.Type == "apply")
+            {
+                Assert.Equal(display.Enabled, request.ExpectedEnabled);
+                applies++; display = display with { Enabled = request.Enabled, Active = request.Enabled };
+                if (applies == 1)
+                {
+                    await runtime!.ProcessEventAsync(new(1, "event", "exit", Generation: generation, ProcessName: "synthetic.exe", ProcessId: 42,
+                        StartedAtUtc: DateTimeOffset.UnixEpoch, Running: false, Displays: [display]), default);
+                    canceledAfterWrite = token.IsCancellationRequested;
+                }
+                else restored.TrySetResult();
+            }
+            return new(1, request.Type == "apply" ? "applied" : request.Type, request.RequestId, Displays: [display]);
+        }
+        try
+        {
+            using var store = new SqliteGameHdrStore(path);
+            await store.SaveAsync(new(Guid.NewGuid().ToString("D"), 0, "synthetic", "synthetic.exe", target, true, false));
+            var clock = new RuntimeClock(TimeProvider.System);
+            using var scheduler = new DeadlineScheduler(clock);
+            using var engine = new EngineHost(clock, scheduler, bridge); engine.Start();
+            using var owner = runtime = new(engine, store, "synthetic-owner", Request); bridge.Runtime = runtime;
+            try
+            {
+                await runtime.InitializeAsync(); await runtime.RefreshAgentAsync(default);
+                await runtime.ProcessEventAsync(new(1, "event", "snapshot", Generation: generation, Reason: "snapshot-complete", Displays: [display]), default);
+                await runtime.ProcessEventAsync(new(1, "event", "start", Generation: generation, ProcessName: "synthetic.exe", ProcessId: 42,
+                    StartedAtUtc: DateTimeOffset.UnixEpoch, Running: true, Displays: [display]), default);
+                await restored.Task.WaitAsync(TimeSpan.FromSeconds(6));
+                await engine.WaitForIdleAsync();
+                Assert.True(canceledAfterWrite); Assert.Equal(2, applies); Assert.False(display.Enabled);
+                Assert.Equal(2, reads); // Initial discovery plus one fresh post-receipt read.
+                Assert.Equal("已恢复", (await runtime.StatusAsync(default)).State);
+                await runtime.EnsureSafeToStopAsync(default);
+            }
+            finally { using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(2)); await engine.StopAndWaitAsync(stop.Token); }
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
+
+    private sealed class ReceiptBridge : Axiom.Engine.ICapabilityExecutor, Axiom.Engine.IDesiredReceiptObserver
+    {
+        internal Axiom.ServiceHost.GameHdrRuntime Runtime = null!;
+        public ValueTask<Axiom.Domain.Outcome> ExecuteCommandAsync(Axiom.Domain.Command command, CancellationToken token) => Runtime.ExecuteCommandAsync(command, token);
+        public ValueTask<Axiom.Domain.Outcome> ApplyDesiredAsync(Axiom.Domain.DesiredState desired, CancellationToken token) => Runtime.ApplyDesiredAsync(desired, token);
+        public ValueTask RefreshAfterDesiredReceiptAsync(Axiom.Domain.ResourceKey key, CancellationToken token)
+        => Runtime.RefreshAfterDesiredReceiptAsync(key, token);
+    }
+
+    [Fact(Timeout = 10000)]
     public async Task NewRoundUsesFreshEventStateForExpectedValueAndRestoresThatBaselineInBothDirections()
     {
         foreach (var initial in new[] { false, true })

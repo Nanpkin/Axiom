@@ -24,6 +24,14 @@ public interface ICapabilityExecutor
     ValueTask<Outcome> ApplyDesiredAsync(DesiredState desired, CancellationToken cancellationToken);
 }
 
+// A canceled generation may have written successfully. Refresh its real observation
+// once, after Engine has fenced the old receipt; this is never a write or a retry.
+// Called outside Engine's gate with a bounded token.
+public interface IDesiredReceiptObserver
+{
+    ValueTask RefreshAfterDesiredReceiptAsync(ResourceKey key, CancellationToken cancellationToken);
+}
+
 // Optional, narrow lifecycle for executors that own removable requests (for example power requests).
 // Called under Engine's gate: implementations must only update memory and signal asynchronously.
 // Cancelled applies revoke their owned lease. Real native work and handle cleanup may outlive

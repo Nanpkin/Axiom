@@ -153,6 +153,28 @@ internal sealed class GameHdrRuntime : ICapabilityExecutor, IAuthorizationPolicy
         }
     }
 
+    public async ValueTask RefreshAfterDesiredReceiptAsync(ResourceKey key, CancellationToken token)
+    {
+        Guid round;
+        await gate.WaitAsync(token);
+        try
+        {
+            if (key.CapabilityId != "display.hdr" || key.Scope != scope || shutdownRequested || !ready || !agentConnected ||
+                !rounds.TryGetValue(key.ResourceId, out round)) return;
+        }
+        finally { gate.Release(); }
+        var reply = await AgentRequestAsync(new(1, "displays", Guid.NewGuid().ToString("N")), token);
+        if (reply.Type != "displays" || reply.Error is not null || reply.Displays is null)
+            throw new IOException(reply.Error ?? "HDR 回执后的状态读取未确认；等待后续显示/进程事件。");
+        await gate.WaitAsync(token);
+        try
+        {
+            if (!shutdownRequested && ready && agentConnected && rounds.GetValueOrDefault(key.ResourceId) == round)
+                UpdateDisplays(reply.Displays, false);
+        }
+        finally { gate.Release(); }
+    }
+
     public async Task<GameHdrStatusDto> StatusAsync(CancellationToken token)
     {
         await gate.WaitAsync(token);
