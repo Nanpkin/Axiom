@@ -1,3 +1,2 @@
-# Hardware brightness initial communication recovery, write/restore guards and fixed I/O pairing.
-Axiom.Engine.Tests.HardwareBrightnessTests
-Axiom.Engine.Tests.HardwareBrightnessVcpTests
+# HDR fresh round baselines, late physical receipts, and existing status/persistence boundaries.
+Axiom.Engine.Tests.GameHdrPersistenceTests

@@ -7,6 +7,118 @@ namespace Axiom.Engine.Tests;
 public sealed class GameHdrPersistenceTests
 {
     [Fact(Timeout = 10000)]
+    public async Task NewRoundUsesFreshEventStateForExpectedValueAndRestoresThatBaselineInBothDirections()
+    {
+        foreach (var initial in new[] { false, true })
+        {
+            var path = Path.Combine(Path.GetTempPath(), "axiom-hdr-fresh-" + Guid.NewGuid().ToString("N") + ".db");
+            var target = HdrDisplayTargets.Named("Synthetic HDR");
+            var display = new GameHdrDisplayDto("Synthetic HDR", target, true, !initial, !initial, null, "synthetic-connection");
+            var generation = ""; var expected = new List<bool>();
+            Task<GameHdrMessage> Request(GameHdrMessage request, CancellationToken token)
+            {
+                if (request.Type == "watch") generation = request.RequestId;
+                if (request.Type == "apply")
+                {
+                    expected.Add(request.ExpectedEnabled!.Value);
+                    if (display.Enabled != request.ExpectedEnabled)
+                        return Task.FromResult(new GameHdrMessage(1, "applied", request.RequestId, Error: "stale expected state", Displays: [display]));
+                    display = display with { Enabled = request.Enabled, Active = request.Enabled };
+                }
+                return Task.FromResult(new GameHdrMessage(1, request.Type == "apply" ? "applied" : request.Type, request.RequestId, Displays: [display]));
+            }
+            try
+            {
+                using var store = new SqliteGameHdrStore(path);
+                await store.SaveAsync(new(Guid.NewGuid().ToString("D"), 0, "synthetic", "synthetic.exe", target, !initial, false));
+                var clock = new FakeClock();
+                using var engine = new EngineHost(clock, new FakeScheduler(clock), new FakeExecutor()); engine.Start();
+                using var runtime = new Axiom.ServiceHost.GameHdrRuntime(engine, store, "synthetic-owner", Request);
+                await runtime.InitializeAsync(); await runtime.RefreshAgentAsync(default);
+                await runtime.ProcessEventAsync(new(1, "event", "snapshot", Generation: generation, Reason: "snapshot-complete", Displays: [display]), default);
+                display = display with { Enabled = initial, Active = initial }; // Changed while no game was controlled.
+                await runtime.ProcessEventAsync(new(1, "event", "start", Generation: generation, ProcessName: "synthetic.exe", ProcessId: 42,
+                    StartedAtUtc: DateTimeOffset.UnixEpoch, Running: true, Displays: [display]), default);
+                var key = new Axiom.Domain.ResourceKey("display.hdr", target,
+                    Axiom.Domain.ResourceScope.Session("synthetic-owner", System.Diagnostics.Process.GetCurrentProcess().SessionId));
+                async Task Apply(bool value)
+                {
+                    var result = await runtime.ApplyDesiredAsync(new(key, Axiom.Domain.StateValue.From(new("axiom.bool", 1), value), "synthetic-owner", 0, 1, "synthetic"), default);
+                    Assert.Equal(Axiom.Domain.OutcomeStatus.Succeeded, result.Status);
+                }
+                await Apply(!initial);
+                await runtime.ProcessEventAsync(new(1, "event", "exit", Generation: generation, ProcessName: "synthetic.exe", ProcessId: 42,
+                    StartedAtUtc: DateTimeOffset.UnixEpoch, Running: false, Displays: [display]), default);
+                await Apply(initial);
+                Assert.Equal(new[] { initial, !initial }, expected); Assert.Equal(initial, display.Enabled);
+                await runtime.EnsureSafeToStopAsync(default);
+            }
+            finally { if (File.Exists(path)) File.Delete(path); }
+        }
+    }
+
+    [Fact(Timeout = 10000)]
+    public async Task ConfirmedReceiptSurvivesCancellationAndExitButCannotReacquireAnEndedRound()
+    {
+        foreach (var mode in new[] { "cancel", "exit", "restore-exit", "external", "disconnect" })
+        {
+            var path = Path.Combine(Path.GetTempPath(), "axiom-hdr-receipt-" + Guid.NewGuid().ToString("N") + ".db");
+            var target = HdrDisplayTargets.Named("Synthetic HDR");
+            var display = new GameHdrDisplayDto("Synthetic HDR", target, true, false, false, null, "synthetic-connection");
+            var generation = ""; var applies = 0;
+            Axiom.ServiceHost.GameHdrRuntime? runtime = null;
+            using var cancel = new CancellationTokenSource();
+            GameHdrMessage Exit() => new(1, "event", "exit", Generation: generation, ProcessName: "synthetic.exe", ProcessId: 42,
+                StartedAtUtc: DateTimeOffset.UnixEpoch, Running: false, Displays: [display]);
+            async Task<GameHdrMessage> Request(GameHdrMessage request, CancellationToken token)
+            {
+                if (request.Type == "watch") generation = request.RequestId;
+                if (request.Type == "apply")
+                {
+                    applies++;
+                    if (display.Enabled != request.ExpectedEnabled) return new(1, "applied", request.RequestId, Error: "stale expected state");
+                    display = display with { Enabled = request.Enabled, Active = request.Enabled };
+                    if (applies == (mode == "restore-exit" ? 2 : 1))
+                    {
+                        cancel.Cancel();
+                        if (mode is "exit" or "restore-exit") await runtime!.ProcessEventAsync(Exit(), default);
+                        if (mode == "disconnect") await runtime!.AgentDisconnectedAsync("connection");
+                    }
+                }
+                return new(1, request.Type == "apply" ? "applied" : request.Type, request.RequestId, Displays: [display]);
+            }
+            try
+            {
+                using var store = new SqliteGameHdrStore(path);
+                await store.SaveAsync(new(Guid.NewGuid().ToString("D"), 0, "synthetic", "synthetic.exe", target, true, false));
+                var clock = new FakeClock();
+                using var engine = new EngineHost(clock, new FakeScheduler(clock), new FakeExecutor()); engine.Start();
+                using var owner = runtime = new(engine, store, "synthetic-owner", Request);
+                await runtime.InitializeAsync(); await runtime.RefreshAgentAsync(default); await runtime.MarkAgentConnectionAsync("connection");
+                await runtime.ProcessEventAsync(new(1, "event", "snapshot", Generation: generation, Reason: "snapshot-complete", Displays: [display]), default);
+                await runtime.ProcessEventAsync(new(1, "event", "start", Generation: generation, ProcessName: "synthetic.exe", ProcessId: 42,
+                    StartedAtUtc: DateTimeOffset.UnixEpoch, Running: true, Displays: [display]), default);
+                var key = new Axiom.Domain.ResourceKey("display.hdr", target,
+                    Axiom.Domain.ResourceScope.Session("synthetic-owner", System.Diagnostics.Process.GetCurrentProcess().SessionId));
+                var result = await runtime.ApplyDesiredAsync(new(key, Axiom.Domain.StateValue.From(new("axiom.bool", 1), true), "synthetic-owner", 0, 1, "synthetic"), cancel.Token);
+                Assert.Equal(Axiom.Domain.OutcomeStatus.Succeeded, result.Status);
+                if (mode != "disconnect")
+                {
+                    if (mode == "external") display = display with { Enabled = false, Active = false };
+                    if (mode != "exit") await runtime.ProcessEventAsync(Exit(), default);
+                    var restored = await runtime.ApplyDesiredAsync(new(key, Axiom.Domain.StateValue.From(new("axiom.bool", 1), false), "synthetic-owner", 0, 2, "restore"), default);
+                    Assert.Equal(mode == "external" ? Axiom.Domain.OutcomeStatus.Rejected : Axiom.Domain.OutcomeStatus.Succeeded, restored.Status);
+                    Assert.False(display.Enabled);
+                    Assert.Equal(mode == "external" ? "已让出控制" : "已恢复", (await runtime.StatusAsync(default)).State);
+                }
+                Assert.Equal(mode is "disconnect" or "external" ? 1 : 2, applies);
+                await runtime.EnsureSafeToStopAsync(default);
+            }
+            finally { if (File.Exists(path)) File.Delete(path); }
+        }
+    }
+
+    [Fact(Timeout = 10000)]
     public async Task CurrentHdrReadReplacesHistoricalSuccessWithoutApplyingOrRecapturing()
     {
         var path = Path.Combine(Path.GetTempPath(), "axiom-hdr-current-" + Guid.NewGuid().ToString("N") + ".db");
