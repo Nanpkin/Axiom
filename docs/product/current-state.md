@@ -1,6 +1,6 @@
 # 当前交接
 
-更新：2026-10-30。分支codex/hdr-round-state-recovery，基于[PR44](https://github.com/Nanpkin/Axiom/pull/44)及[PR43](https://github.com/Nanpkin/Axiom/pull/43)；未合并/发Release。外层旧检出禁止推送，开发用此检出。
+更新：2026-10-30。分支codex/hdr-round-state-recovery，[PR45](https://github.com/Nanpkin/Axiom/pull/45)草稿，叠于PR44/PR43；未合并/发Release。外层旧检出禁止推送，开发用此检出。
 
 ## 当前：HDR反复切换失败
 
@@ -8,7 +8,7 @@
 - 新游戏轮次以本次事件的最新有效显示状态捕获基线，不沿用上次缓存。完整发出的请求有限等回执；成功结果不因Desired取消而丢弃。轮次身份阻止迟到回执重新接管；在途切换不被进程事件误认作外部修改或提前清掉恢复。
 - 原生写前核验、真实外部修改让出、Unknown与断线/配置变动保护保持；不增加轮询、重切HDR或放宽驱动未生效判断。契约见[HDR预览](../development/game-hdr-preview-contracts.md)。
 - GameHdrPersistenceTests相关8项通过、零跳过；补充恢复/重复退出/真实外部修改检查通过。原版两项失败证据与当前验证：artifacts/hdr-round-recovery，不提交本机原始材料。
-- 当前有受控游戏仍运行，HDR开关/实际均true；未停止后台、未运行实机HDR往返、未替换预览。先完成构建，正常退出游戏且恢复确认后才能应用，不能强杀或保存配置绕过保护。
+- 修复包0.2.0-local.20261030.1已统一构建至artifacts/package-stage，干净源码eafc702；发布脚本按保护拒绝替换运行中的预览。受控游戏仍运行，HDR开关/实际均true；未停后台、未实机HDR往返、未应用。需正常退出游戏且恢复确认后继续，不能强杀或保存配置绕过保护。交付证据delivery.json。
 
 ## 本机与配置保护
 
