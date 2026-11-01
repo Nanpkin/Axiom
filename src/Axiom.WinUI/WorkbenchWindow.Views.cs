@@ -69,7 +69,7 @@ public sealed partial class WorkbenchWindow
         pageTools.Children.Add(BuildCollectionStrip()); pageTools.Children.Add(toolbar);
         if (collectionsError is not null) content.Children.Add(Text(collectionsError, 12, Amber));
         if (!reachable || status?.DetectionAvailable != true)
-            content.Children.Add(Text(reachable ? "检测暂不可用。请重新打开 Axiom，然后刷新状态。" : "后台状态未确认，显示上次读取的内容。", 13, Amber));
+            content.Children.Add(Text(reachable ? "正在重新连接检测，恢复后会自动更新。" : "后台状态未确认，显示上次读取的内容。", 13, Amber));
         var cards = Column(0); content.Children.Add(Card(cards, Surface, 0));
         search.TextChanged += (_, _) => { ruleSearch = search.Text; ShowRules(); };
         state.SelectionChanged += (_, _) => { ruleStateFilter = Math.Max(0, state.SelectedIndex); ShowRules(); };

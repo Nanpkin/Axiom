@@ -1,4 +1,3 @@
-# HDR fresh round baselines, late physical receipts, and existing status/persistence boundaries.
-Axiom.Engine.Tests.GameHdrPersistenceTests
-Axiom.Engine.Tests.ExecutionTests.SameTargetRuleEditChangesGenerationAndOldReceiptNeedsNewObservation
-Axiom.Engine.Tests.ExecutionTests.ReceiptNeverFakesObservedSuccessAndFreshObservationConfirms
+# Detection readiness push after task changes and reconnect; existing run-condition stream/protocol boundaries.
+Axiom.Engine.Tests.PluginRuntimeTests.DetectionReadinessPushesRecoveryAfterCreatePauseAndProviderDisconnect
+Axiom.Engine.Tests.TaskRunConditionsTests

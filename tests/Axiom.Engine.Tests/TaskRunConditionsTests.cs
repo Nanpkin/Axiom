@@ -121,7 +121,7 @@ public sealed class TaskRunConditionsTests
     }
 
     [Fact]
-    public void VersionFourRequiresConditionsAndOlderCompilersCannotIgnoreThem()
+    public async Task VersionFourRequiresConditionsAndOlderCompilersCannotIgnoreThem()
     {
         var task = Config(new("off", new(540, 1020, 127)));
         Assert.Single(TaskDetectionExpressions.ValidateTask(task));
@@ -137,6 +137,11 @@ public sealed class TaskRunConditionsTests
         AutomationProtocol.ValidateRequest(watch, DateTimeOffset.UtcNow);
         Assert.Throws<InvalidDataException>(() => AutomationProtocol.ValidateRequest(watch, DateTimeOffset.UtcNow, shortcutAgent: true));
         Assert.Throws<InvalidDataException>(() => AutomationProtocol.ValidateRequest(watch with { RunStatesSequence = 0 }, DateTimeOffset.UtcNow));
+        Assert.Throws<InvalidDataException>(() => AutomationProtocol.ValidateRequest(watch with { DetectionAvailable = true }, DateTimeOffset.UtcNow));
+        var update = new AutomationMessage(1, "run-states", "test", RunStates: [], RunStatesSequence: 0, DetectionAvailable: false);
+        using var wire = new MemoryStream();
+        await AutomationProtocol.WriteAsync(wire, update, default); wire.Position = 0;
+        Assert.Equal(update.DetectionAvailable, (await AutomationProtocol.ReadAsync(wire, default)).DetectionAvailable);
     }
 
     [Fact]

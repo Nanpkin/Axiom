@@ -93,14 +93,15 @@ public sealed partial class WorkbenchWindow
     {
         try
         {
-            await foreach (var states in WorkbenchClient.WatchRunStatesAsync(lifetime.Token))
+            await foreach (var update in WorkbenchClient.WatchRunStatesAsync(lifetime.Token))
             {
                 DispatcherQueue.TryEnqueue(() =>
                 {
                     if (closed || lifetime.IsCancellationRequested || !ReferenceEquals(runStatesStop, lifetime) || status is null) return;
-                    var updated = states.ToImmutableArray();
-                    var changed = status.RunStates.IsDefault || !status.RunStates.SequenceEqual(updated);
-                    status = status with { RunStates = updated }; runStatesFailed = false;
+                    var updated = update.RunStates!.ToImmutableArray();
+                    var available = update.DetectionAvailable ?? status.DetectionAvailable;
+                    var changed = runStatesFailed || status.DetectionAvailable != available || status.RunStates.IsDefault || !status.RunStates.SequenceEqual(updated);
+                    status = status with { RunStates = updated, DetectionAvailable = available }; runStatesFailed = false;
                     if (changed) Render();
                 });
             }
