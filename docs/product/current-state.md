@@ -4,11 +4,11 @@
 
 ## 当前：检测状态提示滞留
 
-- 分支codex/detection-status-sync，叠于codex/hdr-round-state-recovery（PR45）；尚未合并/发Release。
+- 分支codex/detection-status-sync，[PR46](https://github.com/Nanpkin/Axiom/pull/46)草稿，叠于PR45；尚未合并/发Release。
 - 暂停/新建改变检测订阅，保存快照可能读到短暂未就绪；旧UI只更新自动暂停状态，恢复后提示仍滞留。现在通过既有有界事件流推送检测可用性，保持无轮询；保存/刷新重建UI订阅，拒绝旧消息覆盖新快照。
 - 连接恢复自动更新提示；真实未就绪仍显示重新连接。未将启用/保存当作执行成功，未更改检测与动作语义。
 - 精确回归覆盖新建、暂停、Provider断线恢复及原自动暂停/协议边界，13项通过；WinUI Release零警告零错误。受限环境testhost通信失败，正常Windows会话的同一清单通过。
-- 本机正常退出已确认，9任务指纹、托盘配置和登录启动基线保留；固定预览更新/重启核对待本轮完成。证据仅本地artifacts/detection-status-sync，不提交本机材料。
+- 本机已正常退出→统一更新→重启0.2.0-local.20261101.1，干净445a93d；三角色准确来源/版本、真实状态流与UI连接通过，未显示不可用提示；9任务指纹、托盘配置和登录启动保持。证据仅本地artifacts/detection-status-sync/lifecycle-verify.json及live-result.json，不提交本机材料。
 
 ## 既有修复与边界
 
