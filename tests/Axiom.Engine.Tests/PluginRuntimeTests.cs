@@ -21,6 +21,9 @@ public sealed class PluginRuntimeTests
             var userSid = System.Security.Principal.WindowsIdentity.GetCurrent().User!.Value;
             using var observation = LocalPipeFactory.Create(ProviderProtocol.PipeName(sid), userSid); var accepted = observation.WaitForConnectionAsync(token);
             using var fixture = new AutomationFixture(); using var store = new SqliteAutomationTaskStore(Path.Combine(directory, "tasks.db"));
+            using var history = new SqliteActivityStore(Path.Combine(directory, "activity.db"));
+            await using var journal = new ActivityJournal(history);
+            fixture.Engine.ConfigureActivityHistory(journal, sid);
             var action = new TaskInvocation("program.start", 1, ProgramCapabilities.Describe(true).Fields.Where(f => f.DefaultValue is not null)
                 .ToImmutableDictionary(f => f.Id, f => f.DefaultValue!).Add("executable", @"C:\Apps\target.exe"));
             await store.SaveAsync(new(Guid.NewGuid().ToString("D"), 0, "occupied hotkey", false,
@@ -42,8 +45,12 @@ public sealed class PluginRuntimeTests
                 Samples: [new(process, StateQuality.Known, "axiom.bool", 1, Boolean: true)]), token);
             await called.WaitAsync(TimeSpan.FromSeconds(2)); var command = await ProviderProtocol.ReadAsync(invoked, token);
             Assert.Equal("program.start", command.Invocation!.CapabilityId);
-            await ProviderProtocol.WriteAsync(invoked, new(1, "result", command.RequestId, CommandId: command.CommandId, Status: OutcomeStatus.Succeeded, Reason: "unrelated action ran"), token);
+            await ProviderProtocol.WriteAsync(invoked, new(1, "result", command.RequestId, CommandId: command.CommandId, Status: OutcomeStatus.Failed, Reason: "synthetic launch failure"), token);
             await runtime.EnsureSafeToStopAsync(token);
+            var activity = await fixture.Engine.ReadActivityAsync(sid, null, 64, token);
+            var failure = Assert.Single(activity.Records, row => row.Event.Title == "自动化动作未完成");
+            Assert.Equal("process", failure.Event.Subject);
+            Assert.Equal("synthetic launch failure", failure.Event.Detail);
         }
         finally { Directory.Delete(directory, true); }
     }
