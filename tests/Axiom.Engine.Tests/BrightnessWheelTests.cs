@@ -151,7 +151,10 @@ public sealed class BrightnessWheelTests
         await using (var session = await Open())
         {
             Assert.True((await session.ApplyAsync(parameters, default)).Success); Assert.Equal(50u, current);
-            var wheel = await BrightnessNativeOwnership.Coordinate(new("primary", 5, 150, 18, 0, () => 3, 30, default))!;
+            var targets = new List<(int, int)>();
+            var wheel = await BrightnessNativeOwnership.Coordinate(new("primary", 5, 150, 18, 0, () => 3, 30, default,
+                (low, high) => targets.Add((low, high))))!;
+            Assert.Equal([(65, 65)], targets);
             Assert.True(wheel.Success); Assert.Equal(65u, current);
             Assert.True((await session.ApplyAsync(parameters, default)).Success); Assert.Equal(65u, current);
             // Expiry never fights a user who remains in this active scene.
@@ -331,6 +334,7 @@ public sealed class BrightnessWheelTests
     public void ContinuousInputRetargetsOneCaptureClampsBoundsAndConfirmsLatestEndpoint()
     {
         var time = new ManualTimeProvider(); uint current = 73; long latest = -1;
+        var targets = new List<(int, int)>();
         var values = new List<uint>(); var at = new List<TimeSpan>(); var reads = 0;
         var target = new BrightnessRestoreTarget(73, p => (uint)p, () => { reads++; return current; }, value =>
         { values.Add(value); at.Add(time.GetElapsedTime(0)); current = value; time.Advance(TimeSpan.FromMilliseconds(55)); return true; }, hardwareBurst: true);
@@ -339,7 +343,8 @@ public sealed class BrightnessWheelTests
         {
             time.Advance(delay);
             if (time.GetElapsedTime(0) >= TimeSpan.FromMilliseconds(100)) latest = -5;
-        });
+        }, reportTarget: (low, high) => targets.Add((low, high)));
+        Assert.Equal([(71, 71), (63, 63)], targets);
         Assert.True(result.Success); Assert.Equal(-5, result.ConsumedSteps); Assert.Equal(63u, current); Assert.Equal(63u, target.Transaction.Confirmed);
         Assert.False(target.Transaction.HasPendingFadeWrite); Assert.Equal(values.Distinct(), values); Assert.Equal(values.OrderDescending(), values);
         Assert.True(at[^1] - at[^2] >= TimeSpan.FromMilliseconds(100)); Assert.InRange(reads, 2, 3);

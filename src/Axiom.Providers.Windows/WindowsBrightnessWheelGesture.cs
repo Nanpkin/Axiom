@@ -16,7 +16,7 @@ public static class WindowsBrightnessWheelGesture
     }
     internal static BrightnessWheelGestureResult RunCaptured(BrightnessRestoreCapture capture, int step, int smoothMilliseconds,
         int frequency, long fromSteps, Func<long> latestSteps, CancellationToken token, TimeProvider? clock = null,
-        Action<TimeSpan, CancellationToken>? wait = null, bool retainBaseline = false)
+        Action<TimeSpan, CancellationToken>? wait = null, bool retainBaseline = false, Action<int, int>? reportTarget = null)
     {
         if (step is < 1 or > 20 || smoothMilliseconds is < 50 or > 1000 || frequency is < 1 or > 60) throw new ArgumentException("滚轮亮度参数无效。");
         var time = clock ?? TimeProvider.System; var start = time.GetTimestamp(); var consumed = fromSteps;
@@ -69,6 +69,11 @@ public static class WindowsBrightnessWheelGesture
                     state.Percent = change.Percent; state.Initial = state.Target.Transaction.FadeExpected; state.End = change.End; state.Started = time.GetElapsedTime(start);
                 }
                 consumed = latest;
+                if (reportTarget is not null && changes.Length > 0)
+                {
+                    int Percent(double value) => (int)Math.Round(value, MidpointRounding.AwayFromZero);
+                    reportTarget(Percent(changes.Min(change => change.Percent)), Percent(changes.Max(change => change.Percent)));
+                }
             }
             var done = true;
             foreach (var state in states)

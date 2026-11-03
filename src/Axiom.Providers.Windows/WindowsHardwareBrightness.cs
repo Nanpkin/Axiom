@@ -10,10 +10,11 @@ namespace Axiom.Providers.Windows;
 public static partial class WindowsHardwareBrightness
 {
     public static Task<BrightnessWheelGestureResult> RunWheelGestureAsync(string target, string sid, int step, int smoothMilliseconds,
-        int writesPerSecond, long fromSteps, Func<long> latestSteps, CancellationToken token, bool coordinateAutomatic = false, int preferenceMinutes = 30)
+        int writesPerSecond, long fromSteps, Func<long> latestSteps, CancellationToken token, bool coordinateAutomatic = false, int preferenceMinutes = 30,
+        Action<int, int>? reportTarget = null)
     {
         if (coordinateAutomatic && BrightnessNativeOwnership.Coordinate(new(target, step, smoothMilliseconds, writesPerSecond,
-            fromSteps, latestSteps, preferenceMinutes, token)) is { } coordinated) return coordinated;
+            fromSteps, latestSteps, preferenceMinutes, token, reportTarget)) is { } coordinated) return coordinated;
         var completion = new TaskCompletionSource<BrightnessWheelGestureResult>(TaskCreationOptions.RunContinuationsAsynchronously);
         new Thread(() =>
         {
@@ -25,7 +26,7 @@ public static partial class WindowsHardwareBrightness
                 ownership = BrightnessNativeOwnership.TryAcquire(manualGesture: !coordinateAutomatic) ?? throw new IOException("旧亮度原生工作尚未清理或没有手动授权。");
                 capture = WindowsHardwareBrightness.Capture(target, sid, token, directVcp: true);
                 if (capture.Targets.Count == 0 || capture.Unknown != 0) throw new IOException("目标亮度未知；本次未修改。");
-                result = WindowsBrightnessWheelGesture.RunCaptured(capture, step, smoothMilliseconds, writesPerSecond, fromSteps, latestSteps, token);
+                result = WindowsBrightnessWheelGesture.RunCaptured(capture, step, smoothMilliseconds, writesPerSecond, fromSteps, latestSteps, token, reportTarget: reportTarget);
             }
             catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
             { result = result with { Reason = "亮度手势已停止或未确认；没有补写或恢复旧值。" }; }

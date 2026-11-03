@@ -52,7 +52,8 @@ public sealed class WindowsGlobalHotkeys : IDisposable
         {
             while (GetMessage(out var message, 0, 0, 0) > 0)
             {
-                if (message.Id == WorkMessage) while (work.Reader.TryRead(out var action)) action();
+                if (message.Window != 0) DispatchMessage(ref message);
+                else if (message.Id == WorkMessage) while (work.Reader.TryRead(out var action)) action();
                 else if (message.Id == HotkeyMessage) Pressed?.Invoke((int)message.WParam);
             }
         }
@@ -72,6 +73,7 @@ public sealed class WindowsGlobalHotkeys : IDisposable
     { public nint Window; public uint Id; public nint WParam; public nint LParam; public uint Time; public int X; public int Y; public uint Private; }
     [DllImport("user32.dll", SetLastError = true)] private static extern bool RegisterHotKey(nint window, int id, uint modifiers, uint key);
     [DllImport("user32.dll")] private static extern bool UnregisterHotKey(nint window, int id);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern nint DispatchMessage(ref Message message);
     [DllImport("user32.dll")] private static extern int GetMessage(out Message message, nint window, uint min, uint max);
     [DllImport("user32.dll")] private static extern bool PeekMessage(out Message message, nint window, uint min, uint max, uint remove);
     [DllImport("user32.dll", SetLastError = true)] private static extern bool PostThreadMessage(uint threadId, uint message, nint wparam, nint lparam);

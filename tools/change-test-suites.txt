@@ -1,3 +1,2 @@
-# Detection readiness push after task changes and reconnect; existing run-condition stream/protocol boundaries.
-Axiom.Engine.Tests.PluginRuntimeTests.DetectionReadinessPushesRecoveryAfterCreatePauseAndProviderDisconnect
-Axiom.Engine.Tests.TaskRunConditionsTests
+Axiom.Engine.Tests.BrightnessWheelTests.ContinuousInputRetargetsOneCaptureClampsBoundsAndConfirmsLatestEndpoint
+Axiom.Engine.Tests.BrightnessWheelTests.CoordinatedWheelRetainsBaselineAndReusesOnlyMatchingUnexpiredPreference
