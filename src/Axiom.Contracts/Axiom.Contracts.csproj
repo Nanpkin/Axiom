@@ -1,5 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-  <ItemGroup>
-    <ProjectReference Include="../Axiom.Domain/Axiom.Domain.csproj" />
-  </ItemGroup>
-</Project>
