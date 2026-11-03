@@ -83,7 +83,11 @@ public static class WindowsBrightnessWheelGesture
                 var elapsed = time.GetElapsedTime(start);
                 if (tx.HasPendingFadeWrite && (tx.FadeExpected == state.End || state.Closing || tx.HardwareBurstFull || elapsed - state.BurstStarted >= TimeSpan.FromSeconds(1)))
                 {
-                    var confirmed = tx.FadeExpected == state.End
+                    var atEndpoint = tx.FadeExpected == state.End;
+                    // Some panels still report the pre-write value immediately after accepting a Set.
+                    // Allow the final Set to settle, including when it was the only write of the gesture.
+                    if (atEndpoint) WaitUntil(state.LastWrite + TimeSpan.FromMilliseconds(100));
+                    var confirmed = atEndpoint
                         ? tx.ConfirmHardwareBurst(token, time, (delay, _) => Wait(delay))
                         : tx.CheckpointHardwareBurst(token);
                     if (!confirmed) return new(false, consumed, "亮度段末结果未确认；不重试。");
