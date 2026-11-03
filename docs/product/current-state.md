@@ -1,5 +1,7 @@
 # 当前交接
 
+2026-11-04：实验性草稿 [PR43](https://github.com/Nanpkin/Axiom/pull/43) 已同步 main 的公开仓库及分支维护规范。后续桌面修复在 [PR48](https://github.com/Nanpkin/Axiom/pull/48)，本分支保留以下验收边界。
+
 更新：2026-10-28。分支codex/window-previsibility-research；[PR43](https://github.com/Nanpkin/Axiom/pull/43)草稿，未合并/发Release。外层旧检出禁止推送，开发用此检出。
 
 ## 启动遮蔽当前行为
