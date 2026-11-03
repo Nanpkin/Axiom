@@ -1,6 +1,6 @@
 # 当前交接
 
-2026-11-04 维护：仓库公开。分支、PR 依赖和工作树按 [AGENTS](../../AGENTS.md) 的收尾约定管理。下列发布记录为 10 月 28 日的快照。
+2026-11-04 维护：仓库公开。分支、PR 依赖和工作树按 [AGENTS](../../AGENTS.md) 的收尾约定管理。[PR43](https://github.com/Nanpkin/Axiom/pull/43) 跟踪实验性启动遮蔽，[PR48](https://github.com/Nanpkin/Axiom/pull/48) 基于它整合后续桌面修复。历史分支恢复方法见[云端工作边界](../development/cloud-workflow.md)。下列发布记录为 10 月 28 日的快照。
 
 2026-10-28。所有者要求集中处理全部开放PR；PR40、汇总PR39及启动修复PR41已合入main，其余PR28–38已核对覆盖后关闭，开放PR为0，分支及历史保留。
 
