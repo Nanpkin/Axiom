@@ -5,25 +5,35 @@ namespace Axiom.SessionAgent;
 // Owned by the existing shortcut message loop. The window and its timer live only during feedback.
 internal sealed class BrightnessWheelOverlay
 {
-    private const uint Popup = 0x80000000, Layered = 0x80000, NoActivate = 0x08000000, ToolWindow = 0x80, Transparent = 0x20;
+    private const uint Topmost = 8, Popup = 0x80000000, Layered = 0x80000, NoActivate = 0x08000000, ToolWindow = 0x80, Transparent = 0x20;
     private const int HoldMilliseconds = 850, FadeMilliseconds = 180, Alpha = 224;
-    private nint window, font;
+    private nint window, font, reorderHook;
     private int low, high, dpi;
     private long lastInput;
     private readonly SubclassProc procedure;
+    private readonly WinEventProc onReorder;
 
-    internal BrightnessWheelOverlay() => procedure = WindowProc;
+    internal BrightnessWheelOverlay()
+    {
+        procedure = WindowProc;
+        onReorder = OnReorder;
+    }
     private int Scale(int value) => (int)Math.Round(value * dpi / 96d);
 
     internal void Show(int minimum, int maximum)
     {
-        if (!SystemParametersInfo(0x30, 0, out var work, 0)) return; // SPI_GETWORKAREA, primary display
+        var monitor = MonitorFromWindow(GetForegroundWindow(), 1); // Primary fallback during a desktop transition.
+        var info = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
+        if (!GetMonitorInfo(monitor, ref info)) return;
+        var work = info.Work;
         if (window == 0)
         {
-            window = CreateWindowEx(Layered | Transparent | NoActivate | ToolWindow, "STATIC", "Axiom 亮度",
+            window = CreateWindowEx(Topmost | Layered | Transparent | NoActivate | ToolWindow, "STATIC", "Axiom 亮度",
                 Popup, work.Left, work.Top, 0, 0, 0, 0, 0, 0);
             if (window == 0) return;
             if (!SetWindowSubclass(window, procedure, 1, 0)) { Close(); return; }
+            const uint objectReorder = 0x8004;
+            reorderHook = SetWinEventHook(objectReorder, objectReorder, 0, onReorder, 0, 0, 0);
         }
         var scale = (int)GetDpiForWindow(window);
         if (dpi != scale)
@@ -41,6 +51,23 @@ internal sealed class BrightnessWheelOverlay
         SetWindowPos(window, -1, work.Right - Scale(238), work.Bottom - Scale(72), Scale(214), Scale(48), 0x50); // TOPMOST, SHOWWINDOW, NOACTIVATE
         InvalidateRect(window, 0, false);
         if (SetTimer(window, 1, HoldMilliseconds, 0) == 0) Close();
+    }
+
+    private void OnReorder(nint hook, uint eventId, nint source, int objectId, int childId, uint thread, uint time)
+    {
+        // Top-level z-order changes are reported on the desktop. Ignore control-tree reordering.
+        if (hook != reorderHook || window == 0 || source != GetDesktopWindow()) return;
+        var foreground = GetForegroundWindow();
+        if (foreground == 0) return;
+        // EnumWindows visits top-level windows front to back. Reassert only if the foreground
+        // actually overtook us; our own reorder notification then has nothing to do.
+        EnumWindows((hwnd, _) =>
+        {
+            if (hwnd == window) return false;
+            if (hwnd != foreground) return true;
+            SetWindowPos(window, -1, 0, 0, 0, 0, 0x13); // NOSIZE | NOMOVE | NOACTIVATE
+            return false;
+        }, 0);
     }
 
     private nint WindowProc(nint hwnd, uint message, nuint wParam, nint lParam, nuint id, nuint data)
@@ -93,6 +120,7 @@ internal sealed class BrightnessWheelOverlay
 
     internal void Close()
     {
+        if (reorderHook != 0) { UnhookWinEvent(reorderHook); reorderHook = 0; }
         if (window != 0) DestroyWindow(window); // Also releases its timer and window region.
         if (font != 0) DeleteObject(font);
         window = font = 0;
@@ -107,7 +135,16 @@ internal sealed class BrightnessWheelOverlay
     [DllImport("comctl32")] private static extern nint DefSubclassProc(nint hwnd, uint msg, nuint wParam, nint lParam);
     [DllImport("user32", CharSet = CharSet.Unicode)] private static extern nint CreateWindowEx(uint ex, string cls, string title, uint style, int x, int y, int w, int h, nint parent, nint menu, nint instance, nint param);
     [DllImport("user32")] private static extern bool DestroyWindow(nint hwnd);
-    [DllImport("user32")] private static extern bool SystemParametersInfo(uint action, uint param, out Rect rect, uint flags);
+    [StructLayout(LayoutKind.Sequential)] private struct MonitorInfo { public int Size; public Rect Monitor, Work; public uint Flags; }
+    private delegate void WinEventProc(nint hook, uint eventId, nint source, int objectId, int childId, uint thread, uint time);
+    private delegate bool WindowVisitor(nint hwnd, nint data);
+    [DllImport("user32")] private static extern nint GetForegroundWindow();
+    [DllImport("user32")] private static extern nint GetDesktopWindow();
+    [DllImport("user32")] private static extern nint MonitorFromWindow(nint hwnd, uint flags);
+    [DllImport("user32", CharSet = CharSet.Unicode)] private static extern bool GetMonitorInfo(nint monitor, ref MonitorInfo info);
+    [DllImport("user32")] private static extern nint SetWinEventHook(uint first, uint last, nint module, WinEventProc callback, uint pid, uint thread, uint flags);
+    [DllImport("user32")] private static extern bool UnhookWinEvent(nint hook);
+    [DllImport("user32")] private static extern bool EnumWindows(WindowVisitor visit, nint data);
     [DllImport("user32")] private static extern uint GetDpiForWindow(nint hwnd);
     [DllImport("user32")] private static extern bool SetWindowPos(nint hwnd, nint after, int x, int y, int w, int h, uint flags);
     [DllImport("user32")] private static extern int SetWindowRgn(nint hwnd, nint region, bool redraw);
