@@ -16,6 +16,19 @@ namespace Axiom.Engine.Tests;
 public sealed class BrightnessWheelTests
 {
     [Fact]
+    public void ObservationReadinessAcceptsInstalledWheelHandlerAlongsideRegularRules()
+    {
+        string[] required = ["process.running", BrightnessWheelTool.Command];
+        bool Registered(string id) => id == "process.running";
+
+        SessionCapabilityReadiness.Require(required, Registered, hasWheelHandler: true);
+        Assert.Contains(BrightnessWheelTool.Command, Assert.Throws<ArgumentException>(() =>
+            SessionCapabilityReadiness.Require(required, Registered, hasWheelHandler: false)).Message);
+        Assert.Contains("unknown.command", Assert.Throws<ArgumentException>(() =>
+            SessionCapabilityReadiness.Require([.. required, "unknown.command"], Registered, hasWheelHandler: true)).Message);
+    }
+
+    [Fact]
     public async Task ToolAndProviderEnvelopesRejectUnrelatedFieldsAndValidateChordsAndBounds()
     {
         var now = DateTimeOffset.UtcNow; var settings = new BrightnessWheelSettings(Enabled: true);
@@ -472,6 +485,7 @@ public sealed class BrightnessWheelTests
         var marked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var complete = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var invoked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var wheelReadiness = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var disconnected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var clients = new List<Task>();
         async Task Handle(NamedPipeServerStream pipe)
@@ -482,10 +496,20 @@ public sealed class BrightnessWheelTests
                 ProviderProtocol.Validate(request, DateTimeOffset.UtcNow);
                 if (request.Type == "observe")
                 {
+                    var required = request.RequiredCapabilities!;
+                    SessionCapabilityReadiness.Require(required, id => id is BuiltInBrightnessCapabilities.Set or BuiltInBrightnessAdjustCapabilities.Adjust
+                        or HardwareBrightnessCapabilities.Set or HardwareBrightnessAdjustCapabilities.Adjust
+                        or BuiltInBrightnessRestoreCapabilities.Set or HardwareBrightnessRestoreCapabilities.Set, hasWheelHandler: true);
                     // Rebinding may close this observation while its first snapshot is still writing.
                     try
                     {
-                        await ProviderProtocol.WriteAsync(pipe, new(1, "snapshot", request.RequestId, Sequence: 0, Samples: []), limit.Token);
+                        var samples = request.Resources!.Select(resource =>
+                        {
+                            Assert.True(resource.CapabilityId is BuiltInBrightnessRestoreCapabilities.Set or HardwareBrightnessRestoreCapabilities.Set);
+                            return new ProviderSample(resource, StateQuality.Known, RestorableSettingInvocations.Schema.Id, 1, Text: "");
+                        }).ToArray();
+                        await ProviderProtocol.WriteAsync(pipe, new(1, "snapshot", request.RequestId, Sequence: 0, Samples: samples), limit.Token);
+                        if (required.Contains(BrightnessWheelTool.Command)) wheelReadiness.TrySetResult();
                         await ProviderProtocol.ReadAsync(pipe, serverStop.Token);
                     }
                     catch (Exception error) when (error is IOException or OperationCanceledException) { }
@@ -550,6 +574,8 @@ public sealed class BrightnessWheelTests
             await invoked.Task.WaitAsync(limit.Token);
             Assert.Equal(!coordinated, runtime.ReadBrightnessWheel().ManualTakenOver);
             while (runtime.ReadBrightnessWheel().Running) await Task.Delay(5, limit.Token);
+            await wheelReadiness.Task.WaitAsync(limit.Token);
+            while (!(await runtime.ReadAsync(limit.Token)).DetectionAvailable) await Task.Delay(5, limit.Token);
             var live = runtime.ReadBrightnessWheel(); Assert.Contains("synthetic strict", live.LastResult);
             if (resumeSucceeds)
             {
