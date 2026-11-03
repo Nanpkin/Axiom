@@ -14,6 +14,7 @@ internal sealed class BrightnessWheelAgent(ShortcutAgent shortcuts, string sid)
         internal readonly CancellationTokenSource Lifetime = CancellationTokenSource.CreateLinkedTokenSource(token);
         internal readonly Channel<byte> Signals = Channel.CreateBounded<byte>(new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropWrite });
         internal readonly SemaphoreSlim Gesture = new(1, 1);
+        internal readonly BrightnessWheelOverlay Overlay = new();
         internal long Steps, Consumed;
         public void Dispose() { Lifetime.Dispose(); Gesture.Dispose(); }
     }
@@ -54,7 +55,7 @@ internal sealed class BrightnessWheelAgent(ShortcutAgent shortcuts, string sid)
         finally
         {
             subscription.Lifetime.Cancel();
-            if (hook is not null) await shortcuts.OnMessageThreadAsync(() => { hook.Dispose(); return true; });
+            if (hook is not null) await shortcuts.OnMessageThreadAsync(() => { hook.Dispose(); subscription.Overlay.Close(); return true; });
             await subscription.Gesture.WaitAsync(); subscription.Gesture.Release();
             lock (gate) if (ReferenceEquals(active, subscription)) active = null;
             try { await disconnected; } catch (Exception error) when (error is IOException or OperationCanceledException) { }
@@ -73,7 +74,19 @@ internal sealed class BrightnessWheelAgent(ShortcutAgent shortcuts, string sid)
             if (gesture.FromSteps != Interlocked.Read(ref current.Consumed)) throw new IOException("滚轮累计步数与授权起点不符。");
             var result = await WindowsHardwareBrightness.RunWheelGestureAsync(current.Settings.Target, sid, current.Settings.Step,
                 current.Settings.SmoothMilliseconds, current.Settings.WritesPerSecond, gesture.FromSteps, () => Interlocked.Read(ref current.Steps), lifetime.Token,
-                current.Settings.CoordinateAutomatic, current.Settings.PreferenceMinutes);
+                current.Settings.CoordinateAutomatic, current.Settings.PreferenceMinutes, (low, high) => _ = ShowTargetAsync(low, high));
+            async Task ShowTargetAsync(int low, int high)
+            {
+                try
+                {
+                    await shortcuts.OnMessageThreadAsync(() =>
+                    {
+                        if (!current.Lifetime.IsCancellationRequested) current.Overlay.Show(low, high);
+                        return true;
+                    });
+                }
+                catch (InvalidOperationException) { /* The message loop is busy or stopping. */ }
+            }
             Interlocked.Exchange(ref current.Consumed, result.ConsumedSteps);
             if (!result.Success) current.Lifetime.Cancel();
             return result;

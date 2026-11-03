@@ -19,7 +19,7 @@ internal sealed class ShortcutAgent : IDisposable
     {
         this.sid = sid;
         var actions = new ShortcutActionRegistry();
-        actions.Register(new(KeyboardShortcuts.ShowWindow, "显示 / 关闭 Axiom 窗口", "按一次打开 Axiom，再按一次关闭窗口；后台继续运行。"), ToggleWindow);
+        actions.Register(new(KeyboardShortcuts.ShowWindow, "显示 / 关闭 Axiom 窗口", "从其他应用按下可唤出 Axiom；在 Axiom 前台再次按下可收起窗口。"), ToggleWindow);
         Hotkeys = new(new Native(listener));
         registrations = new(actions, new SharedNative(this));
         listener.Pressed += Hotkeys.Press;
@@ -50,12 +50,8 @@ internal sealed class ShortcutAgent : IDisposable
                 if (!string.Equals(ui.MainModule?.FileName, uiPath, StringComparison.OrdinalIgnoreCase))
                     throw new InvalidOperationException("另一份 Axiom 窗口正在运行，请先关闭旧版本。");
                 var handle = FindWorkbench(ui.Id);
-                if (handle != 0 && (!IsWindowVisible(handle) || IsIconic(handle))) {
-                    AllowSetForegroundWindow((uint)ui.Id);
-                    ShowWindow(handle, 9); SetForegroundWindow(handle); return;
-                }
-                if (handle != 0 && !PostMessage(handle, 0x0010, 0, 0))
-                    throw new InvalidOperationException("无法关闭 Axiom 窗口，请稍后重试。");
+                if (handle == 0) throw new InvalidOperationException("Axiom 窗口尚未就绪，请稍后重试。");
+                ToggleWorkbench(handle);
                 return;
             }
         }
@@ -65,6 +61,24 @@ internal sealed class ShortcutAgent : IDisposable
             ?? throw new InvalidOperationException("无法打开 Axiom。");
         AllowSetForegroundWindow((uint)launched.Id);
     }
+    private static void ToggleWorkbench(nint window)
+    {
+        var foreground = GetForegroundWindow();
+        if (IsWindowVisible(window) && !IsIconic(window) && (foreground == window || GetAncestor(foreground, 3) == window)) // GA_ROOTOWNER
+        {
+            if (!PostMessage(window, 0x0010, 0, 0))
+                throw new InvalidOperationException("无法关闭 Axiom 窗口，请稍后重试。");
+            return;
+        }
+
+        if (IsIconic(window)) ShowWindow(window, 9); // SW_RESTORE
+        else if (!IsWindowVisible(window)) ShowWindow(window, 5); // SW_SHOW preserves maximization.
+        var popup = GetLastActivePopup(window);
+        var target = IsWindowVisible(popup) ? popup : window;
+        if (!SetForegroundWindow(target) && GetForegroundWindow() != target)
+            throw new InvalidOperationException("Axiom 已打开，Windows 未允许切到前台。");
+    }
+
     public async Task RunAsync(CancellationToken token)
     {
         while (!token.IsCancellationRequested)
@@ -129,6 +143,9 @@ internal sealed class ShortcutAgent : IDisposable
         }, 0);
         return found;
     }
+    [DllImport("user32.dll")] private static extern nint GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern nint GetAncestor(nint window, uint flags);
+    [DllImport("user32.dll")] private static extern nint GetLastActivePopup(nint window);
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(nint window);
     [DllImport("user32.dll")] private static extern bool IsIconic(nint window);
     [DllImport("user32.dll")] private static extern bool ShowWindow(nint window, int command);

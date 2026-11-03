@@ -423,6 +423,7 @@ public sealed partial class WorkbenchWindow : Window
         {
             var response = await WorkbenchClient.RequestAsync(new(1, "read", Guid.NewGuid().ToString("N")));
             if (response.Type != "snapshot" || response.Snapshot is null) throw new InvalidDataException(response.Error);
+            StopRunStatesWatch();
             status = response.Snapshot; reachable = true; readAt = DateTimeOffset.Now;
             if (runStatesFailed) { StopRunStatesWatch(); runStatesFailed = false; }
             await ReadGroupsAsync();
@@ -484,6 +485,7 @@ public sealed partial class WorkbenchWindow : Window
             var response = await WorkbenchClient.RequestAsync(request);
             if (response.Type != expected || response.Snapshot is null)
             { ShowNotice(WorkbenchPresentation.SaveError(response.Error)); return; }
+            StopRunStatesWatch();
             status = response.Snapshot; reachable = true; readAt = DateTimeOffset.Now;
             if (leaveEditor) editing = false;
             Render(); ShowNotice(message, true);

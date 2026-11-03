@@ -6,7 +6,7 @@ namespace Axiom.WinUI;
 
 internal static class WorkbenchClient
 {
-    public static async IAsyncEnumerable<Axiom.Domain.TaskRunStatus[]> WatchRunStatesAsync(
+    public static async IAsyncEnumerable<AutomationMessage> WatchRunStatesAsync(
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken token)
     {
         var sid = WindowsIdentity.GetCurrent().User?.Value ?? throw new UnauthorizedAccessException();
@@ -23,7 +23,7 @@ internal static class WorkbenchClient
                 response.RunStatesSequence != sequence++ || response.RunStates is not { } states || states.Length > Axiom.Domain.AutomationTaskLimits.MaximumTasks ||
                 states.Select(state => state.TaskId).Distinct(StringComparer.Ordinal).Count() != states.Length)
                 throw new InvalidDataException("自动暂停状态流未确认。");
-            first = false; yield return states;
+            first = false; yield return response;
         }
     }
     public static async Task<AutomationMessage> RequestAsync(AutomationMessage request, CancellationToken token = default)

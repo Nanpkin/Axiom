@@ -12,7 +12,7 @@ internal sealed partial class PluginTaskRuntime
     private readonly SemaphoreSlim wheelToolGate = new(1, 1);
     private CancellationTokenSource? wheelCancel;
     private Task? wheelMonitor, wheelWork;
-    private TaskCompletionSource<Outcome>? wheelReceipt;
+    private (Guid CommandId, TaskCompletionSource<Outcome> Completion)? wheelReceipt;
     private string? wheelSubscription, wheelLastResult;
     private long wheelObservedSteps, wheelConsumedSteps;
     private bool wheelListening, wheelRunning, wheelHandoffReady;
@@ -138,8 +138,10 @@ internal sealed partial class PluginTaskRuntime
     }
     private async Task MonitorWheelAsync(BrightnessWheelSettings settings, CancellationToken token)
     {
+        var retryDelay = TimeSpan.FromMilliseconds(100);
         while (!token.IsCancellationRequested && !stopping)
         {
+            using var subscription = CancellationTokenSource.CreateLinkedTokenSource(token);
             try
             {
                 using var pipe = Client(); await pipe.ConnectForUserAsync(2000, token);
@@ -149,14 +151,15 @@ internal sealed partial class PluginTaskRuntime
                 long sequence = 0;
                 while (!token.IsCancellationRequested)
                 {
-                    var message = await ProviderProtocol.ReadAsync(pipe, token);
+                    var message = await ProviderProtocol.ReadAsync(pipe, subscription.Token);
                     if (message.Type != "brightness-wheel-state" || message.RequestId != id || message.Sequence != sequence++ || message.Status != OutcomeStatus.Succeeded ||
                         message.WheelSteps is not { } steps || Math.Abs((decimal)steps) > 1_000_000_000) throw new IOException("滚轮监听状态未确认。");
                     lock (statusGate)
                     {
+                        retryDelay = TimeSpan.FromMilliseconds(100);
                         wheelListening = true; wheelObservedSteps = steps;
                         if (steps != wheelConsumedSteps && !wheelRunning)
-                        { wheelRunning = true; wheelWork = RunWheelCommandsAsync(id, token); }
+                        { wheelRunning = true; wheelWork = RunWheelCommandsAsync(id, subscription); }
                     }
                     if (steps == 0 && wheelTakenOver && settings.CoordinateAutomatic)
                         await ResumeAutomaticBrightnessCoreAsync(WheelSettings(), token);
@@ -164,12 +167,17 @@ internal sealed partial class PluginTaskRuntime
             }
             catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
             {
-                lock (statusGate) { wheelListening = false; if (!token.IsCancellationRequested) wheelLastResult = "滚轮监听未就绪或中断：" + error.Message; }
-                if (token.IsCancellationRequested) return;
+                lock (statusGate) { wheelListening = false; wheelSubscription = null; }
                 if (wheelWork is not null) await wheelWork;
+                if (token.IsCancellationRequested) return;
+                // An unconfirmed gesture retires only this input generation. Its old steps are
+                // discarded, and a new hook can accept fresh physical input after cleanup.
+                if (subscription.IsCancellationRequested) continue;
+                lock (statusGate) wheelLastResult = "滚轮监听未就绪或中断：" + error.Message;
             }
             // Retry transport only while disconnected. Connected idle waits solely on the pipe.
-            try { await Task.Delay(TimeSpan.FromSeconds(5), token); } catch (OperationCanceledException) { return; }
+            try { await Task.Delay(retryDelay, token); } catch (OperationCanceledException) { return; }
+            retryDelay = TimeSpan.FromMilliseconds(Math.Min(5000, 2 * retryDelay.TotalMilliseconds));
         }
     }
     private async Task EnsureWheelHandoffAsync(CancellationToken token)
@@ -196,8 +204,9 @@ internal sealed partial class PluginTaskRuntime
         await DrainRestorableSettingsAsync(token);
         wheelHandoffReady = true;
     }
-    private async Task RunWheelCommandsAsync(string subscription, CancellationToken token)
+    private async Task RunWheelCommandsAsync(string id, CancellationTokenSource subscription)
     {
+        var token = subscription.Token;
         await Task.Yield();
         try
         {
@@ -205,11 +214,11 @@ internal sealed partial class PluginTaskRuntime
             await EnsureWheelHandoffAsync(handoff.Token);
             while (!token.IsCancellationRequested)
             {
-                long from; lock (statusGate) { if (wheelObservedSteps == wheelConsumedSteps) break; from = wheelConsumedSteps; }
-                var invocation = BrightnessWheelTool.Gesture(subscription, from);
+                long from; lock (statusGate) { if (wheelSubscription != id || wheelObservedSteps == wheelConsumedSteps) break; from = wheelConsumedSteps; }
+                var invocation = BrightnessWheelTool.Gesture(id, from);
                 var command = new Command(Guid.NewGuid(), WheelKey, StateValue.From(TaskInvocationCommands.Schema, JsonSerializer.Serialize(invocation)), sid, DateTimeOffset.UtcNow.AddSeconds(30), false);
                 var completion = new TaskCompletionSource<Outcome>(TaskCreationOptions.RunContinuationsAsynchronously);
-                lock (statusGate) wheelReceipt = completion;
+                lock (statusGate) wheelReceipt = (command.CommandId, completion);
                 var accepted = engine.SubmitManualCommand(command);
                 if (accepted.Status != OutcomeStatus.Accepted) throw new IOException("手势未获Engine准入：" + accepted.Reason);
                 var result = await completion.Task.WaitAsync(TimeSpan.FromSeconds(32), token);
@@ -219,22 +228,26 @@ internal sealed partial class PluginTaskRuntime
         }
         catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
         {
-            lock (statusGate) wheelLastResult = "手动亮度已停止或未确认，不自动重试：" + error.Message;
-            wheelCancel?.Cancel();
+            if (!token.IsCancellationRequested)
+            {
+                lock (statusGate) wheelLastResult = "本次调节未确认，已丢弃本轮输入：" + error.Message;
+                subscription.Cancel();
+            }
         }
         finally
         {
             lock (statusGate)
             {
                 wheelRunning = false; wheelReceipt = null;
-                if (!token.IsCancellationRequested && !stopping && wheelSubscription == subscription && wheelObservedSteps != wheelConsumedSteps)
-                { wheelRunning = true; wheelWork = RunWheelCommandsAsync(subscription, token); }
+                if (!token.IsCancellationRequested && !stopping && wheelSubscription == id && wheelObservedSteps != wheelConsumedSteps)
+                { wheelRunning = true; wheelWork = RunWheelCommandsAsync(id, subscription); }
             }
         }
     }
     private async ValueTask<Outcome> ExecuteWheelCommandAsync(Command command, TaskInvocation invocation, CancellationToken token)
     {
         Outcome outcome;
+        long? confirmedSteps = null;
         try
         {
             var gesture = BrightnessWheelTool.ValidateGesture(invocation);
@@ -248,11 +261,19 @@ internal sealed partial class PluginTaskRuntime
             var receipt = await ProviderProtocol.ReadAsync(pipe, lifetime.Token);
             if (receipt.Version != 1 || receipt.Type != "result" || receipt.RequestId != id || receipt.CommandId != command.CommandId || receipt.Status is not (OutcomeStatus.Succeeded or OutcomeStatus.Failed) || receipt.WheelSteps is null)
                 throw new IOException("亮度手势回执未确认；没有重试。");
-            lock (statusGate) { wheelConsumedSteps = receipt.WheelSteps.Value; wheelLastResult = receipt.Reason; }
+            confirmedSteps = receipt.WheelSteps.Value;
             outcome = new(receipt.Status.Value, receipt.Reason ?? "手势结束。", command.CommandId);
         }
         catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException)) { outcome = new(OutcomeStatus.Failed, error.Message, command.CommandId, FailureKind.Permanent); }
-        lock (statusGate) wheelReceipt?.TrySetResult(outcome);
+        lock (statusGate)
+        {
+            // A late reply after a timeout or disable must never advance the next command's cursor.
+            if (wheelReceipt is { } pending && pending.CommandId == command.CommandId)
+            {
+                if (confirmedSteps is { } steps) { wheelConsumedSteps = steps; wheelLastResult = outcome.Reason; }
+                pending.Completion.TrySetResult(outcome);
+            }
+        }
         return outcome;
     }
     private static CapabilityBinding WheelBinding() => new(new(BrightnessWheelTool.Command, TaskInvocationCommands.Schema, new("axiom.bool", 1),

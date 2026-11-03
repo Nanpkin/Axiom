@@ -10,6 +10,55 @@ namespace Axiom.Engine.Tests;
 [System.Runtime.Versioning.SupportedOSPlatform("windows")]
 public sealed class PluginRuntimeTests
 {
+    [Fact(Timeout = 15000)]
+    public async Task DetectionReadinessPushesRecoveryAfterCreatePauseAndProviderDisconnect()
+    {
+        var sid = "test-" + Guid.NewGuid().ToString("N");
+        var directory = Path.Combine(Path.GetTempPath(), "axiom-readiness-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(directory);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(12)); var token = timeout.Token;
+            var userSid = System.Security.Principal.WindowsIdentity.GetCurrent().User!.Value;
+            NamedPipeServerStream Pipe() => LocalPipeFactory.Create(ProviderProtocol.PipeName(sid), userSid);
+            using var fixture = new AutomationFixture();
+            using var store = new SqliteAutomationTaskStore(Path.Combine(directory, "tasks.db"));
+            var action = new TaskInvocation("program.start", 1, ProgramCapabilities.Describe(true).Fields.Where(f => f.DefaultValue is not null)
+                .ToImmutableDictionary(f => f.Id, f => f.DefaultValue!).Add("executable", @"C:\Apps\target.exe"));
+            AutomationTask Config(string process) => new(Guid.NewGuid().ToString("D"), 0, "synthetic", false,
+                new("process.running", 2, ImmutableDictionary<string, string>.Empty.Add("processNames", process)), action);
+            await using var runtime = new PluginTaskRuntime([new ProgramPlugin()], store, sid, fixture.Engine);
+            await runtime.InitializeAsync();
+            await using var states = runtime.WatchRunStatesAsync(token, includeDetectionChanges: true).GetAsyncEnumerator(token);
+            Assert.True(await states.MoveNextAsync()); Assert.True((await runtime.ReadAsync(token)).DetectionAvailable);
+            async Task Expect(bool available)
+            {
+                Assert.True(await states.MoveNextAsync());
+                Assert.Equal(available, (await runtime.ReadAsync(token)).DetectionAvailable);
+            }
+            async Task Ready(NamedPipeServerStream pipe)
+            {
+                await pipe.WaitForConnectionAsync(token);
+                var request = await ProviderProtocol.ReadAsync(pipe, token);
+                var next = states.MoveNextAsync().AsTask();
+                await ProviderProtocol.WriteAsync(pipe, new(1, "snapshot", request.RequestId, Samples: [.. request.Resources!.Select(resource =>
+                    new ProviderSample(resource, StateQuality.Known, "axiom.bool", 1, Boolean: false))]), token);
+                Assert.True(await next); Assert.True((await runtime.ReadAsync(token)).DetectionAvailable);
+            }
+            using var first = Pipe();
+            await runtime.SaveAsync(Config("first.exe"), token); await Expect(false); await Ready(first);
+            using var second = Pipe();
+            var created = await runtime.SaveAsync(Config("second.exe"), token); await Expect(false); await Ready(second);
+            using var third = Pipe();
+            await runtime.SaveAsync(created with { Paused = true }, token); await Expect(false); await Ready(third);
+            var unchanged = states.Current;
+            third.Dispose(); await Expect(false);
+            using var reconnected = Pipe(); await Ready(reconnected);
+            Assert.Equal(unchanged, states.Current);
+            await runtime.EnsureSafeToStopAsync(token);
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
     [Fact(Timeout = 10000)]
     public async Task UnavailableHotkeyDoesNotDisconnectOrBlockUnrelatedProgramRule()
     {

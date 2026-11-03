@@ -4,7 +4,7 @@ using System.Threading.Channels;
 namespace Axiom.Providers.Windows;
 
 internal sealed record BrightnessWheelRequest(string Target, int Step, int SmoothMilliseconds, int Frequency,
-    long FromSteps, Func<long> LatestSteps, int PreferenceMinutes, CancellationToken Token);
+    long FromSteps, Func<long> LatestSteps, int PreferenceMinutes, CancellationToken Token, Action<int, int>? ReportTarget = null);
 
 // WMI and DXVA2 can refer to the same screen. An owned restoration blocks other Axiom brightness writes.
 internal static class BrightnessNativeOwnership
@@ -235,7 +235,7 @@ internal sealed class BrightnessRestoreSession : IRestorableSettingSession
                     {
                         capture.UseToken(wheel.Token);
                         result = WindowsBrightnessWheelGesture.RunCaptured(capture, wheel.Step, wheel.SmoothMilliseconds, wheel.Frequency,
-                            wheel.FromSteps, wheel.LatestSteps, wheel.Token, time, wait, retainBaseline: true);
+                            wheel.FromSteps, wheel.LatestSteps, wheel.Token, time, wait, retainBaseline: true, reportTarget: wheel.ReportTarget);
                         if (wheel.Token.IsCancellationRequested && Volatile.Read(ref terminal) != 0) result = SceneEnded();
                         else if (result.Success)
                         {

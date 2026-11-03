@@ -108,11 +108,13 @@ internal sealed class GameHdrPipeServer(GameHdrRuntime runtime, string sid, Canc
     }
 }
 
-internal sealed class GameHdrExecutorBridge : Axiom.Engine.ICapabilityExecutor
+internal sealed class GameHdrExecutorBridge : Axiom.Engine.ICapabilityExecutor, Axiom.Engine.IDesiredReceiptObserver
 {
     internal GameHdrRuntime? Runtime;
     public ValueTask<Axiom.Domain.Outcome> ExecuteCommandAsync(Axiom.Domain.Command command, CancellationToken token) =>
         Runtime!.ExecuteCommandAsync(command, token);
     public ValueTask<Axiom.Domain.Outcome> ApplyDesiredAsync(Axiom.Domain.DesiredState desired, CancellationToken token) =>
         Runtime!.ApplyDesiredAsync(desired, token);
+    public ValueTask RefreshAfterDesiredReceiptAsync(Axiom.Domain.ResourceKey key, CancellationToken token) =>
+        Runtime!.RefreshAfterDesiredReceiptAsync(key, token);
 }

@@ -138,7 +138,7 @@ internal sealed class CapabilityProviderServer(string sid, IEnumerable<ISessionC
                 }
                 else
                 {
-                    if (request.RequiredCapabilities!.Any(id => !registry.ContainsKey(id))) throw new ArgumentException("会话程序缺少任务需要的能力。");
+                    SessionCapabilityReadiness.Require(request.RequiredCapabilities!, registry.ContainsKey, wheel is not null);
                     var groups = request.Resources!.GroupBy(r => registry.GetValueOrDefault(r.CapabilityId)
                         ?? throw new ArgumentException("未注册此检测能力。")).ToArray();
                     lifetime.CancelAfter(Timeout.InfiniteTimeSpan);

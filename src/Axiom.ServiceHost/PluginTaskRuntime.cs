@@ -35,6 +35,8 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
     private string? lastWatchError;
     private readonly Dictionary<ResourceKey, string> observationReasons = [];
     private volatile bool connected;
+    private bool DetectionAvailable => watching.Length == 0 || connected &&
+        (firstBoot is not null || !tasks.Any(t => !t.Paused && t.Detection.CapabilityId == AxiomStartupPlugin.CapabilityId && t.Detection.Parameters["frequency"] == "firstBoot"));
     private volatile bool stopping;
     private readonly object statusGate = new();
     private string state = "等待条件", reason = "程序任务等待下一次状态变化。";
@@ -225,8 +227,7 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
         await gate.WaitAsync(token);
         try
         {
-            lock (statusGate) return new([.. tasks.Where(t => !IsTrayToolTask(t) && !IsWheelToolTask(t))], [.. compiler.Catalog.Where(c => c.Id != TrayTool.Trigger)], [.. Combinations.Where(c => c.DetectionId != TrayTool.Trigger)], watching.Length == 0 || connected &&
-                (firstBoot is not null || !tasks.Any(t => !t.Paused && t.Detection.CapabilityId == AxiomStartupPlugin.CapabilityId && t.Detection.Parameters["frequency"] == "firstBoot")), state, reason, at,
+            lock (statusGate) return new([.. tasks.Where(t => !IsTrayToolTask(t) && !IsWheelToolTask(t))], [.. compiler.Catalog.Where(c => c.Id != TrayTool.Trigger)], [.. Combinations.Where(c => c.DetectionId != TrayTool.Trigger)], DetectionAvailable, state, reason, at,
                 [.. engine.ReadSnapshot().States.Where(p => watching.Contains(p.Key) || p.Key == GameKey).Select(p => new TaskObservation(
                     p.Key.CapabilityId == GameModeCapabilities.State ? "游戏模式" : p.Key.CapabilityId == HdrStateCapabilities.State ? "主屏HDR状态" : p.Key.CapabilityId == ScreenContentCapabilities.Bright ? "主屏画面分析" : p.Key.CapabilityId == KeepAwakeCapabilities.Hold ? p.Key.ResourceId == "display" ? "系统及屏幕保持唤醒" : "系统保持唤醒" : p.Key.CapabilityId == AxiomStartupPlugin.CapabilityId ? tasks.SingleOrDefault(t => t.Id == p.Key.ResourceId)?.Title ?? "Axiom 启动" : p.Key.CapabilityId == SystemEventCapabilities.Event ? SystemEventName(p.Key.ResourceId) : p.Key.CapabilityId == AudioCapabilities.Changed ? p.Key.ResourceId == "output" ? "默认播放设备变化" : "默认通信麦克风变化" : p.Key.CapabilityId == OnceTimeCapabilities.Due ? OnceTimeCapabilities.Label(p.Key.ResourceId) : p.Key.CapabilityId == FileArrivalCapabilities.Arrived ? FileArrivalCapabilities.Label(p.Key.ResourceId) : p.Key.CapabilityId == WindowOnceCapabilities.Due ? WindowOnceCapabilities.Label(p.Key.ResourceId) : p.Key.CapabilityId == WindowedIntervalCapabilities.Due ? WindowedIntervalCapabilities.Label(p.Key.ResourceId) : p.Key.CapabilityId == MonthlyTimeCapabilities.Due ? MonthlyTimeCapabilities.Label(p.Key.ResourceId) : p.Key.CapabilityId == DailyTimeCapabilities.Due ? DailyTimeCapabilities.Label(p.Key.ResourceId) : p.Key.CapabilityId == IntervalCapabilities.Elapsed ? "每隔 " + p.Key.ResourceId + " 分钟" : p.Key.ResourceId,
                     p.Key.CapabilityId == ScreenContentCapabilities.Bright ? observationReasons.GetValueOrDefault(p.Key, "正在等待主屏画面检测。") : p.Value.Observation.Quality != StateQuality.Known ? observationReasons.GetValueOrDefault(p.Key, "状态未知") : p.Key.CapabilityId == WindowOnceCapabilities.Due ? observationReasons.GetValueOrDefault(p.Key, "等待选定时段，成功后本时段不再重复。") : p.Key.CapabilityId == OnceTimeCapabilities.Due ? observationReasons.GetValueOrDefault(p.Key, "等待指定日期和时刻") : p.Key.CapabilityId == HotkeyCapabilities.Pressed
@@ -261,7 +262,7 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
             watchCancel.Cancel(); if (watcher is not null) await watcher; watchCancel.Dispose();
             watchCancel = null; watcher = null;
         }
-        watching = resources; connected = false;
+        lock (statusGate) { watching = resources; connected = false; PublishRunStates(); }
         lock (statusGate) foreach (var key in observationReasons.Keys.Where(k => !resources.Contains(k)).ToArray()) observationReasons.Remove(key);
         if (resources.Length == 0) { engine.AcknowledgeObservationPlan(plan.Version, plan.References.Keys, guarantees: plan.Requirements); return; }
         watchCancel = new(); watcher = WatchAsync(resources, watchCancel.Token);
@@ -364,7 +365,7 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
                         // A concurrent refresh must not acknowledge this snapshot first and
                         // make the first connection silently skip eligible startup edges.
                         lastWatchError = null;
-                        connected = true;
+                        lock (statusGate) { connected = true; PublishRunStates(); }
                         if (acknowledged)
                         {
                             lock (statusGate) FlushTrayTrigger();
@@ -418,7 +419,8 @@ internal sealed partial class PluginTaskRuntime : IAutomationTaskBackend, ICapab
                     }
                 }
                 lock (statusGate) { if (!token.IsCancellationRequested || stopping) { gameProcesses.Clear(); PublishGameMode(); } }
-                connected = false; EndWindowWatch(currentWatch); if (source is not null) engine.ReleaseSource(source);
+                lock (statusGate) { connected = false; PublishRunStates(); }
+                EndWindowWatch(currentWatch); if (source is not null) engine.ReleaseSource(source);
             }
             try { await Task.Delay(TimeSpan.FromSeconds(5), token); } catch (OperationCanceledException) { break; }
         }

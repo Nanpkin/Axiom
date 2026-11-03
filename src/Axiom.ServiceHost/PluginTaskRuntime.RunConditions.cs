@@ -28,18 +28,22 @@ internal sealed partial class PluginTaskRuntime
     private void WakeRunConditions() => runWake.Writer.TryWrite(1);
     private void PublishRunStates()
     { foreach (var subscriber in runStateSubscribers) subscriber.Writer.TryWrite(1); }
-    internal async IAsyncEnumerable<TaskRunStatus[]> WatchRunStatesAsync([EnumeratorCancellation] CancellationToken token)
+    internal async IAsyncEnumerable<TaskRunStatus[]> WatchRunStatesAsync([EnumeratorCancellation] CancellationToken token, bool includeDetectionChanges = false)
     {
         var signal = Channel.CreateBounded<byte>(new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropWrite });
         TaskRunStatus[] initial;
-        lock (statusGate) { runStateSubscribers.Add(signal); initial = [.. CurrentRunStates()]; }
+        bool available;
+        lock (statusGate) { runStateSubscribers.Add(signal); initial = [.. CurrentRunStates()]; available = DetectionAvailable; }
         try
         {
             yield return initial;
             await foreach (var _ in signal.Reader.ReadAllAsync(token))
             {
                 TaskRunStatus[] states;
-                lock (statusGate) states = [.. CurrentRunStates()];
+                bool currentAvailable;
+                lock (statusGate) { states = [.. CurrentRunStates()]; currentAvailable = DetectionAvailable; }
+                if (initial.SequenceEqual(states) && (!includeDetectionChanges || available == currentAvailable)) continue;
+                initial = states; available = currentAvailable;
                 yield return states;
             }
         }

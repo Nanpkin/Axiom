@@ -67,7 +67,7 @@ internal sealed class AutomationPipeServer(ImmutableArray<IAutomationTaskBackend
                     var runtime = backends.OfType<PluginTaskRuntime>().Single();
                     deadline.CancelAfter(Timeout.InfiniteTimeSpan);
                     var disconnected = pipe.ReadExactlyAsync(new byte[1], deadline.Token).AsTask();
-                    await using var states = runtime.WatchRunStatesAsync(deadline.Token).GetAsyncEnumerator(deadline.Token);
+                    await using var states = runtime.WatchRunStatesAsync(deadline.Token, includeDetectionChanges: true).GetAsyncEnumerator(deadline.Token);
                     long sequence = 0;
                     try
                     {
@@ -77,7 +77,8 @@ internal sealed class AutomationPipeServer(ImmutableArray<IAutomationTaskBackend
                             if (await Task.WhenAny(disconnected, changed) == disconnected) { deadline.Cancel(); try { await changed; } catch (OperationCanceledException) { } break; }
                             if (!await changed) break;
                             using var write = CancellationTokenSource.CreateLinkedTokenSource(exit.Token); write.CancelAfter(TimeSpan.FromSeconds(3));
-                            await AutomationProtocol.WriteAsync(pipe, new(1, "run-states", request.RequestId, RunStates: states.Current, RunStatesSequence: sequence++), write.Token);
+                            var snapshot = await ReadAsync(write.Token);
+                            await AutomationProtocol.WriteAsync(pipe, new(1, "run-states", request.RequestId, RunStates: [.. snapshot.RunStates], RunStatesSequence: sequence++, DetectionAvailable: snapshot.DetectionAvailable), write.Token);
                         }
                     }
                     finally { deadline.Cancel(); try { await disconnected; } catch (Exception error) when (error is IOException or OperationCanceledException) { } }

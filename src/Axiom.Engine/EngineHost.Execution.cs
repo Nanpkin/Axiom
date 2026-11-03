@@ -346,6 +346,7 @@ public sealed partial class EngineHost
             catch (Exception exception) { outcome = new(OutcomeStatus.Unknown, $"Executor exception: {exception.GetType().Name}", work.Id); }
             flight.FirstReceipt.TrySetResult(outcome);
             Task? cancellation;
+            var refreshAfterReceipt = false;
             lock (gate)
             {
                 flights.Remove(work.Key);
@@ -353,7 +354,12 @@ public sealed partial class EngineHost
                 try
                 {
                     CancelDeadline(("timeout", work.Key));
-                    if (session.Active && running && authorization is not null) CompleteWork(flight, outcome);
+                    if (session.Active && running && authorization is not null)
+                    {
+                        refreshAfterReceipt = work.Action.Kind == RuleActionKind.Desired && outcome.Status == OutcomeStatus.Succeeded &&
+                            decisions.TryGetValue(work.Key, out var latest) && latest.Generation != work.Generation;
+                        CompleteWork(flight, outcome);
+                    }
                 }
                 catch when (RuntimeFault is not null && !running)
                 { /* Scheduling already stopped Engine and preserved the cause. The physical call has ended. */ }
@@ -361,6 +367,13 @@ public sealed partial class EngineHost
             }
             if (cancellation is not null) { try { await cancellation.ConfigureAwait(false); } catch (Exception) { /* Cancellation failure cannot imply rollback. */ } }
             flight.Cancellation.Dispose();
+            if (refreshAfterReceipt && Executor is IDesiredReceiptObserver observer)
+            {
+                using var refreshTimeout = new CancellationTokenSource(work.Capability.Timeout);
+                try { await observer.RefreshAfterDesiredReceiptAsync(work.Key, refreshTimeout.Token).ConfigureAwait(false); }
+                catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
+                { /* No fresh observation: retain the existing fence and wait for an external event. */ }
+            }
         }
     }
     private void SignalIdle() { if (pendingWork.Count == 0 && flights.Count == 0) idleSignal.TrySetResult(); }

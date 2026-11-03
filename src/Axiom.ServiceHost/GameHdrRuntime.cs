@@ -25,6 +25,8 @@ internal sealed class GameHdrRuntime : ICapabilityExecutor, IAuthorizationPolicy
     private readonly Dictionary<string, HashSet<(int, DateTimeOffset)>> instances = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, bool> baselines = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, bool> lastApplied = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, Guid> rounds = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, Guid> pendingApplies = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> restoreRules = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> overriddenPaths = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, long> restoreVersions = new(StringComparer.OrdinalIgnoreCase);
@@ -83,11 +85,12 @@ internal sealed class GameHdrRuntime : ICapabilityExecutor, IAuthorizationPolicy
     public async ValueTask<Outcome> ApplyDesiredAsync(DesiredState desired, CancellationToken token)
     {
         var id = Guid.NewGuid();
+        var path = desired.Key.ResourceId;
+        Guid round = default;
         try
         {
             if (desired.Key.CapabilityId != "display.hdr" || desired.Key.Scope != scope || desired.Target.Boolean is not { } target)
                 return new(OutcomeStatus.Rejected, "Target is not an authorized HDR state.", id);
-            var path = desired.Key.ResourceId;
             bool expected;
             await gate.WaitAsync(token);
             try
@@ -96,6 +99,8 @@ internal sealed class GameHdrRuntime : ICapabilityExecutor, IAuthorizationPolicy
                     !rules.Any(x => !x.Paused && x.DisplayPath == path) && !restoreRules.Contains(RestoreId(path)))
                     return new(OutcomeStatus.Rejected, "No verified game start or connected observer owns this display.", id);
                 expected = lastApplied.TryGetValue(path, out var applied) ? applied : baselines[path];
+                round = rounds[path];
+                pendingApplies[path] = round;
             }
             finally { gate.Release(); }
             var response = await AgentRequestAsync(new(1, "apply", Guid.NewGuid().ToString("N"),
@@ -108,9 +113,13 @@ internal sealed class GameHdrRuntime : ICapabilityExecutor, IAuthorizationPolicy
                 finally { gate.Release(); }
                 return new(OutcomeStatus.Failed, failure, id, FailureKind.Permanent);
             }
-            await gate.WaitAsync(token);
+            // A confirmed physical write must be accounted for even if the game
+            // exited and canceled this desired generation while the reply arrived.
+            await gate.WaitAsync(CancellationToken.None);
             try
             {
+                if (rounds.GetValueOrDefault(path) != round)
+                    return new(OutcomeStatus.Succeeded, "HDR 已切换并确认；原控制轮次已结束，不重新接管。", id);
                 lastApplied[path] = target;
                 UpdateDisplays(response.Displays ?? [], false);
                 SetStatus("已切换", $"已将 {DisplayName(path)} HDR {(target ? "打开" : "关闭")}，并重新读取确认。 ", forceRecord: true);
@@ -118,6 +127,7 @@ internal sealed class GameHdrRuntime : ICapabilityExecutor, IAuthorizationPolicy
                 {
                     engine.RemoveRule(RestoreId(path)); restoreRules.Remove(RestoreId(path));
                     baselines.Remove(path); lastApplied.Remove(path);
+                    rounds.Remove(path);
                     AcknowledgePlan();
                     SetStatus("已恢复", "游戏退出，已恢复接管前的 HDR 状态。 ", forceRecord: true);
                 }
@@ -132,6 +142,37 @@ internal sealed class GameHdrRuntime : ICapabilityExecutor, IAuthorizationPolicy
             finally { gate.Release(); }
             return new(OutcomeStatus.Failed, error.Message, id, FailureKind.Permanent);
         }
+        finally
+        {
+            if (round != default)
+            {
+                await gate.WaitAsync(CancellationToken.None);
+                try { if (pendingApplies.GetValueOrDefault(path) == round) pendingApplies.Remove(path); }
+                finally { gate.Release(); }
+            }
+        }
+    }
+
+    public async ValueTask RefreshAfterDesiredReceiptAsync(ResourceKey key, CancellationToken token)
+    {
+        Guid round;
+        await gate.WaitAsync(token);
+        try
+        {
+            if (key.CapabilityId != "display.hdr" || key.Scope != scope || shutdownRequested || !ready || !agentConnected ||
+                !rounds.TryGetValue(key.ResourceId, out round)) return;
+        }
+        finally { gate.Release(); }
+        var reply = await AgentRequestAsync(new(1, "displays", Guid.NewGuid().ToString("N")), token);
+        if (reply.Type != "displays" || reply.Error is not null || reply.Displays is null)
+            throw new IOException(reply.Error ?? "HDR 回执后的状态读取未确认；等待后续显示/进程事件。");
+        await gate.WaitAsync(token);
+        try
+        {
+            if (!shutdownRequested && ready && agentConnected && rounds.GetValueOrDefault(key.ResourceId) == round)
+                UpdateDisplays(reply.Displays, false);
+        }
+        finally { gate.Release(); }
     }
 
     public async Task<GameHdrStatusDto> StatusAsync(CancellationToken token)
@@ -375,16 +416,16 @@ internal sealed class GameHdrRuntime : ICapabilityExecutor, IAuthorizationPolicy
             if (!ready) return;
             engine.RecordActivity(new(DateTimeOffset.UtcNow, "检测", message.Running == true ? "程序已启动" : "程序已退出",
                 $"已核实 {name} 的进程身份（PID {message.ProcessId}）。", Subject: name));
-            var before = displays;
             var latest = message.Displays ?? [];
             foreach (var path in baselines.Keys.ToArray())
             {
                 var current = HdrDisplayTargets.Resolve(latest, path)?.Enabled;
-                if (lastApplied.TryGetValue(path, out var expected) && current is { } actual && actual != expected)
+                if (!pendingApplies.ContainsKey(path) && lastApplied.TryGetValue(path, out var expected) && current is { } actual && actual != expected)
                 {
                     engine.TakeOverride(DisplayKey(path), sid, "HDR was changed outside Axiom");
                     overriddenPaths.Add(path);
                     baselines.Remove(path); lastApplied.Remove(path);
+                    rounds.Remove(path);
                     if (restoreRules.Remove(RestoreId(path))) engine.RemoveRule(RestoreId(path));
                     SetStatus("已让出控制", "检测到 HDR 被手动更改，本次游戏退出后不会覆盖你的设置。 ");
                 }
@@ -399,11 +440,12 @@ internal sealed class GameHdrRuntime : ICapabilityExecutor, IAuthorizationPolicy
                     if (!baselines.ContainsKey(path))
                     {
                         if (overriddenPaths.Contains(path)) continue;
-                        var display = HdrDisplayTargets.Resolve(before, path);
+                        var display = HdrDisplayTargets.Resolve(latest, path);
                         if (GameHdrTaskPresentation.UnavailableDisplayReason(display) is { } problem)
                         { unavailable = true; SetStatus("未切换", problem); continue; }
                         var initial = display!.Enabled!.Value;
                         baselines[path] = initial;
+                        rounds[path] = Guid.NewGuid();
                         InstallRestoreRule(path, initial);
                     }
                 }
@@ -419,10 +461,11 @@ internal sealed class GameHdrRuntime : ICapabilityExecutor, IAuthorizationPolicy
                 if (selected.Length > 1) SetStatus("规则冲突", "同时运行的游戏要求相反的 HDR 状态，已停止切换。 ");
                 else if (selected.Length == 1 && state == "规则冲突")
                     SetStatus("监控中", "冲突已解除，正在按仍运行的游戏规则判断 HDR。 ");
-                if (selected.Length == 0 && baselines[path] == HdrDisplayTargets.Resolve(latest, path)?.Enabled)
+                if (selected.Length == 0 && !pendingApplies.ContainsKey(path) && baselines[path] == HdrDisplayTargets.Resolve(latest, path)?.Enabled)
                 {
                     if (restoreRules.Remove(RestoreId(path))) engine.RemoveRule(RestoreId(path));
                     baselines.Remove(path); lastApplied.Remove(path);
+                    rounds.Remove(path);
                     SetStatus("已恢复", "游戏退出，HDR 保持启动前状态。 ");
                 }
             }
@@ -449,6 +492,8 @@ internal sealed class GameHdrRuntime : ICapabilityExecutor, IAuthorizationPolicy
         restoreRules.Clear();
         baselines.Clear();
         lastApplied.Clear();
+        rounds.Clear();
+        pendingApplies.Clear();
     }
 
     private void RegisterRule(GameHdrRuleDto rule)
@@ -547,7 +592,11 @@ internal sealed class GameHdrRuntime : ICapabilityExecutor, IAuthorizationPolicy
         timeout.CancelAfter(TimeSpan.FromSeconds(10));
         await pipe.ConnectForUserAsync(2000, timeout.Token);
         await GameHdrProtocol.WriteAsync(pipe, request with { DeadlineUtc = DateTimeOffset.UtcNow.AddSeconds(9) }, timeout.Token);
-        var reply = await GameHdrProtocol.ReadAsync(pipe, timeout.Token) ?? throw new EndOfStreamException("Agent disconnected.");
+        // Once an apply has been dispatched it may already have changed Windows.
+        // Drain its bounded receipt instead of discarding it on rule cancellation.
+        using var receiptTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var reply = await GameHdrProtocol.ReadAsync(pipe, request.Type == "apply" ? receiptTimeout.Token : timeout.Token)
+            ?? throw new EndOfStreamException("Agent disconnected.");
         if (reply.Version != 1 || reply.Minor != 0 || reply.Schema != 1 || reply.Scope != "user-session" ||
             reply.RequestId != request.RequestId) throw new InvalidDataException("Agent reply rejected.");
         return reply;

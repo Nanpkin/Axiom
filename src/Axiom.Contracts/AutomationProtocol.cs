@@ -25,7 +25,8 @@ public sealed record AutomationMessage(int Version, string Type, string RequestI
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? RunStatesSequence = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] GameModeSettings? GameModeSettings = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] GameModeSnapshot? GameMode = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ActivityRecord? ActivityDetail = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ActivityRecord? ActivityDetail = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? DetectionAvailable = null);
 
 public sealed record LoginStartupStatus(bool Registered, bool CurrentLocation, bool LauncherAvailable, string? Error = null);
 
@@ -55,7 +56,7 @@ public static class AutomationProtocol
             if (request.GameModeSettings is not null) GameModeCapabilities.Normalize(request.GameModeSettings);
             return;
         }
-        if (request.RunStates is not null || request.RunStatesSequence is not null) throw new InvalidDataException("运行状态只用于后台回执。");
+        if (request.RunStates is not null || request.RunStatesSequence is not null || request.DetectionAvailable is not null) throw new InvalidDataException("运行状态只用于后台回执。");
         if (request.Type == "watch-run-states")
         {
             if (shortcutAgent) throw new InvalidDataException("运行状态只允许用户界面订阅。");

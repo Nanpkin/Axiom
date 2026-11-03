@@ -101,6 +101,54 @@ public sealed class HardwareBrightnessTests
         Assert.Equal(0, unconfirmed.CapabilityQueries); Assert.Equal(1, unconfirmed.Groups[1].Closes);
     }
     [Fact]
+    public void InitialCommunicationRecoveryIsBoundedAndNeverRetriesUnsupportedAccessOrSuccessfulInvalidRanges()
+    {
+        foreach (var error in new[] { unchecked((int)0xC0262582), unchecked((int)0xC0262583), unchecked((int)0xC0262585),
+            HardwareBrightnessReadPolicy.InvalidMessageCommand, unchecked((int)0xC026258A), unchecked((int)0xC026258B) })
+        foreach (var recovers in new[] { true, false })
+        {
+            var reads = 0; var delays = new List<double>();
+            var result = HardwareBrightnessReadPolicy.Read(() => (++reads == 4 && recovers ? new HardwareBrightnessRange(0, 60, 100) : null, error),
+                default, (delay, _) => delays.Add(delay.TotalMilliseconds), initial: true);
+            Assert.Equal(4, reads); Assert.Equal(new double[] { 250, 750, 1500 }, delays);
+            Assert.Equal(recovers, result is not null);
+        }
+        foreach (var error in new[] { 0, 5, 6, unchecked((int)0xC0262580), unchecked((int)0xC0262581), unchecked((int)0xC0262584) })
+        {
+            var reads = 0;
+            Assert.Null(HardwareBrightnessReadPolicy.Read(() => { reads++; return (null, error); }, default,
+                (_, _) => throw new InvalidOperationException("Permanent or unclassified failures must not wait."), initial: true));
+            Assert.Equal(1, reads);
+        }
+        var invalid = new HardwareBrightnessRange(0, 101, 100);
+        Assert.Same(invalid, HardwareBrightnessReadPolicy.Read(() => (invalid, HardwareBrightnessReadPolicy.InvalidMessageCommand), default,
+            (_, _) => throw new InvalidOperationException("Successful invalid ranges must not be retried."), initial: true));
+    }
+    [Fact]
+    public void InitialRecoveryWritesOnceAndReadbackFailureCancellationAndExhaustionNeverReplayWrites()
+    {
+        var communication = unchecked((int)0xC0262583);
+        foreach (var mode in new[] { "recover", "exhaust", "cancel", "readback", "write" })
+        {
+            using var stop = new CancellationTokenSource();
+            var api = new Api { InitialRecovery = true, ReadToken = stop.Token };
+            for (var i = 0; i < (mode == "exhaust" ? 4 : 2); i++) api.NativeReadErrors.Enqueue(communication);
+            if (mode == "cancel") api.AfterReadWait = stop.Cancel;
+            if (mode == "readback") api.AfterSet = () => api.NativeReadErrors.Enqueue(communication);
+            if (mode == "write") api.Refused.Add(11);
+            if (mode == "cancel") Assert.ThrowsAny<OperationCanceledException>(() => HardwareBrightnessOperation.Apply(api, "primary", 100, stop.Token));
+            else
+            {
+                var result = HardwareBrightnessOperation.Apply(api, "primary", 100, stop.Token);
+                Assert.Equal(mode == "recover", result.Success);
+                if (mode == "exhaust") Assert.Contains("本次未写入亮度", result.Reason);
+            }
+            Assert.Equal(mode is "exhaust" or "cancel" ? 0 : 1, api.SetCounts.GetValueOrDefault(11));
+            Assert.Equal(mode == "cancel" ? 1 : mode == "exhaust" ? 3 : 2, api.ReadWaits);
+            Assert.Equal(1, api.Groups[1].Closes);
+        }
+    }
+    [Fact]
     public void ReadPolicyOnlyRequeriesObservedFramingFailuresUpToThreeTimesAndReturnsEverySuccessfulReplyImmediately()
     {
         var transient = HardwareBrightnessReadPolicy.InvalidMessageCommand;
@@ -260,7 +308,7 @@ public sealed class HardwareBrightnessTests
         internal readonly Dictionary<nint, uint> Writes = []; internal readonly Dictionary<nint, int> SetCounts = [];
         internal readonly HashSet<nint> Refused = [], AcquireErrors = [], ReadErrors = []; internal readonly List<nint> Acquired = [];
         internal readonly Queue<int> NativeReadErrors = [];
-        internal bool Authorized = true; internal int Discoveries, CapabilityQueries, NativeReads, ReadWaits; internal Action? AfterAcquire, AfterRead, AfterSet, AfterReadWait;
+        internal bool Authorized = true, InitialRecovery; internal int Discoveries, CapabilityQueries, NativeReads, ReadWaits; internal Action? AfterAcquire, AfterRead, AfterSet, AfterReadWait;
         internal CancellationToken ReadToken;
         public bool IsAuthorized() => Authorized;
         public IReadOnlyList<HardwareLogicalMonitor> ReadLogicalMonitors() { Discoveries++; return Logical; }
@@ -271,7 +319,9 @@ public sealed class HardwareBrightnessTests
             Acquired.Add(monitor); AfterAcquire?.Invoke(); return lease;
         }
         public uint? Capabilities(nint monitor) { CapabilityQueries++; return Caps.TryGetValue(monitor, out var caps) ? caps : 2; }
-        public HardwareBrightnessRange? Read(nint monitor)
+        public HardwareBrightnessRange? ReadInitial(nint monitor) => ReadCore(monitor, InitialRecovery);
+        public HardwareBrightnessRange? Read(nint monitor) => ReadCore(monitor, false);
+        private HardwareBrightnessRange? ReadCore(nint monitor, bool initial)
         {
             return HardwareBrightnessReadPolicy.Read(() =>
             {
@@ -280,7 +330,7 @@ public sealed class HardwareBrightnessTests
                 var error = NativeReadErrors.Count > 0 ? NativeReadErrors.Dequeue() : 0;
                 HardwareBrightnessRange? range = error != 0 ? null : Writes.TryGetValue(monitor, out var value) ? Readbacks.GetValueOrDefault(monitor, new(10, value, 110)) : Ranges.GetValueOrDefault(monitor, new(10, 70, 110));
                 AfterRead?.Invoke(); return (range, error);
-            }, ReadToken, (delay, _) => { Assert.Equal(TimeSpan.FromMilliseconds(150), delay); ReadWaits++; AfterReadWait?.Invoke(); });
+            }, ReadToken, (delay, _) => { if (!initial) Assert.Equal(TimeSpan.FromMilliseconds(150), delay); ReadWaits++; AfterReadWait?.Invoke(); }, initial);
         }
         public bool Set(nint monitor, uint brightness) { SetCounts[monitor] = SetCounts.GetValueOrDefault(monitor) + 1; if (Refused.Contains(monitor)) return false; Writes[monitor] = brightness; AfterSet?.Invoke(); return true; }
     }

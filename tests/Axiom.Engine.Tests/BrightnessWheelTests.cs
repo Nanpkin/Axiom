@@ -15,6 +15,50 @@ namespace Axiom.Engine.Tests;
 [System.Runtime.Versioning.SupportedOSPlatform("windows")]
 public sealed class BrightnessWheelTests
 {
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void FirstEndpointWriteWaitsForMonitorToSettleBeforeStrictRead(bool applied)
+    {
+        var time = new ManualTimeProvider();
+        TimeSpan? writtenAt = null;
+        var writes = 0;
+        var target = new BrightnessRestoreTarget(73, percent => (uint)percent, () =>
+        {
+            if (writtenAt is null)
+            {
+                // A slow initial check lets the very first Set already be the endpoint.
+                time.Advance(TimeSpan.FromMilliseconds(65));
+                return 73u;
+            }
+            return applied && time.GetElapsedTime(0) - writtenAt.Value >= TimeSpan.FromMilliseconds(100) ? 75u : 73u;
+        }, value =>
+        {
+            Assert.Equal(75u, value);
+            writtenAt = time.GetElapsedTime(0);
+            writes++;
+            return true;
+        }, hardwareBurst: true);
+        using var capture = new BrightnessRestoreCapture([target], 0, 0, _ => { }, () => { });
+        var result = WindowsBrightnessWheelGesture.RunCaptured(capture, 2, 50, 18, 0, () => 1, default,
+            time, (delay, _) => time.Advance(delay));
+        Assert.True(applied == result.Success, $"{result.Reason} / written {writtenAt}, now {time.GetElapsedTime(0)}, writes {writes}");
+        Assert.Equal(1, writes);
+    }
+
+    [Fact]
+    public void ObservationReadinessAcceptsInstalledWheelHandlerAlongsideRegularRules()
+    {
+        string[] required = ["process.running", BrightnessWheelTool.Command];
+        bool Registered(string id) => id == "process.running";
+
+        SessionCapabilityReadiness.Require(required, Registered, hasWheelHandler: true);
+        Assert.Contains(BrightnessWheelTool.Command, Assert.Throws<ArgumentException>(() =>
+            SessionCapabilityReadiness.Require(required, Registered, hasWheelHandler: false)).Message);
+        Assert.Contains("unknown.command", Assert.Throws<ArgumentException>(() =>
+            SessionCapabilityReadiness.Require([.. required, "unknown.command"], Registered, hasWheelHandler: true)).Message);
+    }
+
     [Fact]
     public async Task ToolAndProviderEnvelopesRejectUnrelatedFieldsAndValidateChordsAndBounds()
     {
@@ -151,7 +195,10 @@ public sealed class BrightnessWheelTests
         await using (var session = await Open())
         {
             Assert.True((await session.ApplyAsync(parameters, default)).Success); Assert.Equal(50u, current);
-            var wheel = await BrightnessNativeOwnership.Coordinate(new("primary", 5, 150, 18, 0, () => 3, 30, default))!;
+            var targets = new List<(int, int)>();
+            var wheel = await BrightnessNativeOwnership.Coordinate(new("primary", 5, 150, 18, 0, () => 3, 30, default,
+                (low, high) => targets.Add((low, high))))!;
+            Assert.Equal([(65, 65)], targets);
             Assert.True(wheel.Success); Assert.Equal(65u, current);
             Assert.True((await session.ApplyAsync(parameters, default)).Success); Assert.Equal(65u, current);
             // Expiry never fights a user who remains in this active scene.
@@ -331,6 +378,7 @@ public sealed class BrightnessWheelTests
     public void ContinuousInputRetargetsOneCaptureClampsBoundsAndConfirmsLatestEndpoint()
     {
         var time = new ManualTimeProvider(); uint current = 73; long latest = -1;
+        var targets = new List<(int, int)>();
         var values = new List<uint>(); var at = new List<TimeSpan>(); var reads = 0;
         var target = new BrightnessRestoreTarget(73, p => (uint)p, () => { reads++; return current; }, value =>
         { values.Add(value); at.Add(time.GetElapsedTime(0)); current = value; time.Advance(TimeSpan.FromMilliseconds(55)); return true; }, hardwareBurst: true);
@@ -339,7 +387,8 @@ public sealed class BrightnessWheelTests
         {
             time.Advance(delay);
             if (time.GetElapsedTime(0) >= TimeSpan.FromMilliseconds(100)) latest = -5;
-        });
+        }, reportTarget: (low, high) => targets.Add((low, high)));
+        Assert.Equal([(71, 71), (63, 63)], targets);
         Assert.True(result.Success); Assert.Equal(-5, result.ConsumedSteps); Assert.Equal(63u, current); Assert.Equal(63u, target.Transaction.Confirmed);
         Assert.False(target.Transaction.HasPendingFadeWrite); Assert.Equal(values.Distinct(), values); Assert.Equal(values.OrderDescending(), values);
         Assert.True(at[^1] - at[^2] >= TimeSpan.FromMilliseconds(100)); Assert.InRange(reads, 2, 3);
@@ -455,7 +504,16 @@ public sealed class BrightnessWheelTests
     [InlineData(true, false)]
     [InlineData(false, false)]
     [InlineData(true, true)]
-    public async Task HostWaitsForMarkedAndCompleteAndDisableResumesOnlyAfterNativeCleanupConfirmed(bool resumeSucceeds, bool coordinated)
+    public Task HostWaitsForMarkedAndCompleteAndDisableResumesOnlyAfterNativeCleanupConfirmed(bool resumeSucceeds, bool coordinated)
+        => RunWheelHostScenario(resumeSucceeds, coordinated, failFirstGesture: false);
+
+    [Theory(Timeout = 15000)]
+    [InlineData(false)]
+    [InlineData(true)]
+    public Task FailedGestureDiscardsOldInputAndRearmsForNewPhysicalInput(bool coordinated)
+        => RunWheelHostScenario(resumeSucceeds: true, coordinated, failFirstGesture: true);
+
+    private static async Task RunWheelHostScenario(bool resumeSucceeds, bool coordinated, bool failFirstGesture)
     {
         var path = Path.Combine(Path.GetTempPath(), "axiom-wheel-pipe-synthetic-" + Guid.NewGuid().ToString("N"), "tasks.db");
         var sid = "wheel-test-" + Guid.NewGuid().ToString("N");
@@ -467,7 +525,14 @@ public sealed class BrightnessWheelTests
         var marked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var complete = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var invoked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var wheelReadiness = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var disconnected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var rearmed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var freshInput = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var firstInvoke = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var oldStreamClosed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var subscriptions = 0; var invokes = 0;
+        string? firstSubscription = null;
         var clients = new List<Task>();
         async Task Handle(NamedPipeServerStream pipe)
         {
@@ -477,20 +542,44 @@ public sealed class BrightnessWheelTests
                 ProviderProtocol.Validate(request, DateTimeOffset.UtcNow);
                 if (request.Type == "observe")
                 {
+                    var required = request.RequiredCapabilities!;
+                    SessionCapabilityReadiness.Require(required, id => id is BuiltInBrightnessCapabilities.Set or BuiltInBrightnessAdjustCapabilities.Adjust
+                        or HardwareBrightnessCapabilities.Set or HardwareBrightnessAdjustCapabilities.Adjust
+                        or BuiltInBrightnessRestoreCapabilities.Set or HardwareBrightnessRestoreCapabilities.Set, hasWheelHandler: true);
                     // Rebinding may close this observation while its first snapshot is still writing.
                     try
                     {
-                        await ProviderProtocol.WriteAsync(pipe, new(1, "snapshot", request.RequestId, Sequence: 0, Samples: []), limit.Token);
+                        var samples = request.Resources!.Select(resource =>
+                        {
+                            Assert.True(resource.CapabilityId is BuiltInBrightnessRestoreCapabilities.Set or HardwareBrightnessRestoreCapabilities.Set);
+                            return new ProviderSample(resource, StateQuality.Known, RestorableSettingInvocations.Schema.Id, 1, Text: "");
+                        }).ToArray();
+                        await ProviderProtocol.WriteAsync(pipe, new(1, "snapshot", request.RequestId, Sequence: 0, Samples: samples), limit.Token);
+                        if (required.Contains(BrightnessWheelTool.Command)) wheelReadiness.TrySetResult();
                         await ProviderProtocol.ReadAsync(pipe, serverStop.Token);
                     }
                     catch (Exception error) when (error is IOException or OperationCanceledException) { }
                 }
                 else if (request.Type == "observe-brightness-wheel")
                 {
+                    var generation = Interlocked.Increment(ref subscriptions);
+                    if (generation == 1) firstSubscription = request.RequestId;
                     await ProviderProtocol.WriteAsync(pipe, new(1, "brightness-wheel-state", request.RequestId, Sequence: 0, Status: OutcomeStatus.Succeeded, WheelSteps: 0), limit.Token);
-                    ready.TrySetResult(); await wheel.Task.WaitAsync(limit.Token);
-                    await ProviderProtocol.WriteAsync(pipe, new(1, "brightness-wheel-state", request.RequestId, Sequence: 1, Status: OutcomeStatus.Succeeded, WheelSteps: -2), limit.Token);
-                    try { await ProviderProtocol.ReadAsync(pipe, limit.Token); } catch (IOException) { disconnected.TrySetResult(); }
+                    if (generation == 1) { ready.TrySetResult(); await wheel.Task.WaitAsync(limit.Token); }
+                    else
+                    {
+                        Assert.True(failFirstGesture); Assert.Equal(2, generation);
+                        Assert.NotEqual(firstSubscription, request.RequestId);
+                        rearmed.TrySetResult(); await freshInput.Task.WaitAsync(limit.Token);
+                    }
+                    await ProviderProtocol.WriteAsync(pipe, new(1, "brightness-wheel-state", request.RequestId, Sequence: 1, Status: OutcomeStatus.Succeeded, WheelSteps: generation == 1 ? -2 : 3), limit.Token);
+                    if (failFirstGesture && generation == 1 && coordinated)
+                    {
+                        // The real Agent can finish tearing down its observer before its failed invoke receipt arrives.
+                        await firstInvoke.Task.WaitAsync(limit.Token); pipe.Dispose(); oldStreamClosed.TrySetResult(); return;
+                    }
+                    try { await ProviderProtocol.ReadAsync(pipe, limit.Token); }
+                    catch (IOException) { if (!failFirstGesture || generation == 2) disconnected.TrySetResult(); }
                 }
                 else if (request.Type == "abandon-brightness")
                 {
@@ -510,9 +599,20 @@ public sealed class BrightnessWheelTests
                 {
                     if (!coordinated) Assert.True(complete.Task.IsCompletedSuccessfully); Assert.Equal("invoke", request.Type);
                     Assert.Equal(BrightnessWheelTool.Command, request.Invocation!.CapabilityId); Assert.NotNull(request.CommandId);
-                    Assert.Equal(0, BrightnessWheelTool.ValidateGesture(request.Invocation).FromSteps);
+                    var gesture = BrightnessWheelTool.ValidateGesture(request.Invocation);
+                    Assert.Equal(0, gesture.FromSteps);
+                    var count = Interlocked.Increment(ref invokes);
+                    if (failFirstGesture && count == 1)
+                    {
+                        firstInvoke.TrySetResult();
+                        if (coordinated) await oldStreamClosed.Task.WaitAsync(limit.Token);
+                        await ProviderProtocol.WriteAsync(pipe, new(1, "result", request.RequestId, CommandId: request.CommandId,
+                            Status: OutcomeStatus.Failed, Reason: "synthetic endpoint unconfirmed", WheelSteps: -1), limit.Token);
+                        return;
+                    }
+                    if (failFirstGesture) { Assert.True(freshInput.Task.IsCompleted); Assert.NotEqual(firstSubscription, gesture.Subscription); }
                     await ProviderProtocol.WriteAsync(pipe, new(1, "result", request.RequestId, CommandId: request.CommandId,
-                        Status: OutcomeStatus.Succeeded, Reason: "synthetic strict endpoint confirmed", WheelSteps: -2), limit.Token);
+                        Status: OutcomeStatus.Succeeded, Reason: "synthetic strict endpoint confirmed", WheelSteps: failFirstGesture ? 3 : -2), limit.Token);
                     invoked.TrySetResult();
                 }
             }
@@ -542,9 +642,21 @@ public sealed class BrightnessWheelTests
                 Assert.False(invoked.Task.IsCompleted); Assert.True(runtime.ReadBrightnessWheel().ManualTakenOver);
                 complete.TrySetResult();
             }
+            if (failFirstGesture)
+            {
+                await rearmed.Task.WaitAsync(TimeSpan.FromSeconds(3), limit.Token);
+                while (!runtime.ReadBrightnessWheel().Listening) await Task.Delay(5, limit.Token);
+                Assert.Contains("synthetic endpoint unconfirmed", runtime.ReadBrightnessWheel().LastResult);
+                Assert.Equal(1, Volatile.Read(ref invokes));
+                Assert.False(runtime.ReadBrightnessWheel().Running);
+                freshInput.TrySetResult();
+            }
             await invoked.Task.WaitAsync(limit.Token);
+            Assert.Equal(failFirstGesture ? 2 : 1, Volatile.Read(ref invokes));
             Assert.Equal(!coordinated, runtime.ReadBrightnessWheel().ManualTakenOver);
             while (runtime.ReadBrightnessWheel().Running) await Task.Delay(5, limit.Token);
+            await wheelReadiness.Task.WaitAsync(limit.Token);
+            while (!(await runtime.ReadAsync(limit.Token)).DetectionAvailable) await Task.Delay(5, limit.Token);
             var live = runtime.ReadBrightnessWheel(); Assert.Contains("synthetic strict", live.LastResult);
             if (resumeSucceeds)
             {
