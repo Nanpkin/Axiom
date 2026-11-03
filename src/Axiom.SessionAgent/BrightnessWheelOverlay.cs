@@ -7,7 +7,7 @@ internal sealed class BrightnessWheelOverlay
 {
     private const uint Topmost = 8, Popup = 0x80000000, Layered = 0x80000, NoActivate = 0x08000000, ToolWindow = 0x80, Transparent = 0x20;
     private const int HoldMilliseconds = 850, FadeMilliseconds = 180, Alpha = 224;
-    private nint window, font, reorderHook;
+    private nint window, font, sunFont, reorderHook;
     private int low, high, dpi;
     private long lastInput;
     private readonly SubclassProc procedure;
@@ -40,6 +40,8 @@ internal sealed class BrightnessWheelOverlay
         {
             dpi = scale;
             if (font != 0) DeleteObject(font);
+            if (sunFont != 0) DeleteObject(sunFont);
+            sunFont = CreateFont(-Scale(18), 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 5, 0, "Segoe Fluent Icons");
             font = CreateFont(-Scale(15), 0, 0, 0, 600, 0, 0, 0, 1, 0, 0, 5, 0, "Segoe UI");
             var region = CreateRoundRectRgn(0, 0, Scale(214) + 1, Scale(48) + 1, Scale(24), Scale(24));
             if (region != 0 && SetWindowRgn(window, region, false) == 0) DeleteObject(region);
@@ -106,14 +108,22 @@ internal sealed class BrightnessWheelOverlay
             RoundRect(dc, Scale(x), Scale(y), Scale(x + width), Scale(y + height), Scale(radius), Scale(radius));
         }
         Pill(0, 0, 215, 49, 0, 0x29251F);
-        int track = low == high ? 129 : 98;
-        Pill(17, 21, track, 6, 6, 0x59534C);
-        if (low != high) Pill(17, 21, (track * high + 50) / 100, 6, 6, 0x94886A);
-        Pill(17, 21, (track * low + 50) / 100, 6, 6, 0xC7D49A);
-        if (font != 0) SelectObject(dc, font);
         SetBkMode(dc, 1);
+        if (sunFont != 0)
+        {
+            SelectObject(dc, sunFont);
+            SetTextColor(dc, 0xB8D4EC);
+            var icon = new Rect { Left = Scale(12), Right = Scale(36), Bottom = Scale(48) };
+            DrawText(dc, "\uE706", 1, ref icon, 0x25); // Brightness, centered in the icon column.
+        }
+        const int trackLeft = 44;
+        int track = low == high ? 102 : 71;
+        Pill(trackLeft, 21, track, 6, 6, 0x59534C);
+        if (low != high) Pill(trackLeft, 21, (track * high + 50) / 100, 6, 6, 0x94886A);
+        Pill(trackLeft, 21, (track * low + 50) / 100, 6, 6, 0xC7D49A);
+        if (font != 0) SelectObject(dc, font);
         SetTextColor(dc, 0xFAF9F6);
-        var bounds = new Rect { Left = Scale(track + 20), Right = Scale(198), Bottom = Scale(48) };
+        var bounds = new Rect { Left = Scale(trackLeft + track + 3), Right = Scale(198), Bottom = Scale(48) };
         DrawText(dc, low == high ? $"{low}%" : $"{low}–{high}%", -1, ref bounds, 0x26);
         RestoreDC(dc, saved);
     }
@@ -123,7 +133,8 @@ internal sealed class BrightnessWheelOverlay
         if (reorderHook != 0) { UnhookWinEvent(reorderHook); reorderHook = 0; }
         if (window != 0) DestroyWindow(window); // Also releases its timer and window region.
         if (font != 0) DeleteObject(font);
-        window = font = 0;
+        if (sunFont != 0) DeleteObject(sunFont);
+        window = font = sunFont = 0;
         dpi = 0;
     }
 
