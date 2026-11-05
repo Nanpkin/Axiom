@@ -11,6 +11,73 @@ namespace Axiom.Engine.Tests;
 [Collection("Brightness native ownership")]
 public sealed class HardwareBrightnessTests
 {
+    [Fact]
+    public void MissingPhysicalAssociationDiscardsOldHandlesAndRediscoversBeforeAnyWrite()
+    {
+        var api = new Api { FailAcquireMonitor = 2, AcquireFailureCode = HardwareBrightnessOperation.NoPhysicalMonitors, AcquireFailuresRemaining = 1 };
+        api.BeforeDiscovery = () =>
+        {
+            if (api.Discoveries != 2) return;
+            Assert.Equal(1, api.Groups[1].Closes); Assert.Empty(api.Writes); Assert.Equal(0, api.NativeReads);
+            api.Logical = [new(3, true), new(4, false)]; api.Groups[3] = new([31]); api.Groups[4] = new([41]);
+        };
+        var waits = new List<TimeSpan>();
+        var result = HardwareBrightnessOperation.Apply(api, "all", 100, default, wait: (delay, _) => waits.Add(delay));
+        Assert.True(result.Success); Assert.Contains("重新发现1次", result.Reason);
+        Assert.Equal(new[] { TimeSpan.FromMilliseconds(250) }, waits); Assert.Equal(2, api.Discoveries);
+        Assert.Equal(new nint[] { 1, 3, 4 }, api.Acquired); Assert.Equal(new nint[] { 31, 41 }, api.Writes.Keys);
+        Assert.All(api.SetCounts.Values, count => Assert.Equal(1, count));
+        Assert.Equal(1, api.Groups[1].Closes); Assert.Equal(1, api.Groups[3].Closes); Assert.Equal(1, api.Groups[4].Closes);
+    }
+
+    [Fact]
+    public void DiscoveryRecoveryIsBoundedAndDoesNotRetryOtherErrorsOrAnyPostWriteFailure()
+    {
+        foreach (var error in new[] { HardwareBrightnessOperation.NoPhysicalMonitors, 5, 6, unchecked((int)0xC026258D) })
+        {
+            var api = new Api { AcquireFailureCode = error, AcquireFailuresRemaining = 4 };
+            var waits = new List<double>();
+            var result = HardwareBrightnessOperation.Apply(api, "primary", 100, default, wait: (delay, _) => waits.Add(delay.TotalMilliseconds));
+            Assert.False(result.Success); Assert.Empty(api.Writes); Assert.Equal(0, api.NativeReads);
+            Assert.Equal(error == HardwareBrightnessOperation.NoPhysicalMonitors ? 4 : 1, api.Discoveries);
+            Assert.Equal(error == HardwareBrightnessOperation.NoPhysicalMonitors ? new double[] { 250, 750, 1500 } : [], waits);
+        }
+        var readback = new Api();
+        readback.AfterRead = () => { if (readback.Writes.Count > 0) throw new System.ComponentModel.Win32Exception(HardwareBrightnessOperation.NoPhysicalMonitors); };
+        Assert.False(HardwareBrightnessOperation.Apply(readback, "primary", 100, default,
+            wait: (_, _) => throw new InvalidOperationException("Post-write errors must not rediscover or wait")).Success);
+        Assert.Equal(1, readback.Discoveries); Assert.Equal(1, readback.SetCounts[11]); Assert.Equal(1, readback.Groups[1].Closes);
+    }
+
+    [Fact]
+    public void DiscoveryRecoveryHonorsCancellationCleanupAuthorizationAndLayoutGuards()
+    {
+        foreach (var mode in new[] { "cancel", "cleanup", "authorization", "layout", "discovery" })
+        {
+            using var stop = new CancellationTokenSource();
+            var api = new Api { FailAcquireMonitor = 2, AcquireFailureCode = HardwareBrightnessOperation.NoPhysicalMonitors, AcquireFailuresRemaining = 1 };
+            if (mode == "cleanup") api.Groups[1].FailClose = true;
+            api.BeforeDiscovery = () =>
+            {
+                if (api.Discoveries != 2) return;
+                if (mode == "layout") api.Logical = [new(3, false)];
+                if (mode == "discovery") throw new IOException("synthetic discovery unavailable");
+            };
+            var waits = 0;
+            void Wait(TimeSpan _, CancellationToken token)
+            {
+                waits++; Assert.Equal(1, api.Groups[1].Closes);
+                if (mode == "cancel") stop.Cancel();
+                if (mode == "authorization") api.Authorized = false;
+            }
+            if (mode == "cancel") Assert.ThrowsAny<OperationCanceledException>(() => HardwareBrightnessOperation.Apply(api, "all", 100, stop.Token, wait: Wait));
+            else Assert.False(HardwareBrightnessOperation.Apply(api, "all", 100, stop.Token, wait: Wait).Success);
+            Assert.Empty(api.Writes); Assert.Equal(0, api.NativeReads); Assert.Equal(1, api.Groups[1].Closes);
+            Assert.Equal(mode == "cleanup" ? 0 : 1, waits);
+            Assert.Equal(mode is "layout" or "discovery" ? 2 : 1, api.Discoveries);
+        }
+    }
+
     private static TaskInvocation Invocation(string target = "primary", string percent = "30", string delay = "0") => new(HardwareBrightnessCapabilities.Set, 1,
         new Dictionary<string, string> { ["target"] = target, ["percent"] = percent, ["delaySeconds"] = delay }.ToImmutableDictionary());
     [Fact]
@@ -310,10 +377,15 @@ public sealed class HardwareBrightnessTests
         internal readonly Queue<int> NativeReadErrors = [];
         internal bool Authorized = true, InitialRecovery; internal int Discoveries, CapabilityQueries, NativeReads, ReadWaits; internal Action? AfterAcquire, AfterRead, AfterSet, AfterReadWait;
         internal CancellationToken ReadToken;
+        internal int AcquireFailureCode, AcquireFailuresRemaining;
+        internal nint FailAcquireMonitor = 1;
+        internal Action? BeforeDiscovery;
         public bool IsAuthorized() => Authorized;
-        public IReadOnlyList<HardwareLogicalMonitor> ReadLogicalMonitors() { Discoveries++; return Logical; }
+        public IReadOnlyList<HardwareLogicalMonitor> ReadLogicalMonitors() { Discoveries++; BeforeDiscovery?.Invoke(); return Logical; }
         public IHardwareMonitorLease Acquire(nint monitor, int remainingCapacity)
         {
+            if (monitor == FailAcquireMonitor && AcquireFailuresRemaining > 0)
+            { AcquireFailuresRemaining--; throw new System.ComponentModel.Win32Exception(AcquireFailureCode); }
             if (AcquireErrors.Contains(monitor)) throw new IOException("synthetic unknown physical targets");
             var lease = Groups[monitor]; if (lease.Handles.Count > Math.Min(8, remainingCapacity)) throw new HardwareBrightnessLimitException();
             Acquired.Add(monitor); AfterAcquire?.Invoke(); return lease;

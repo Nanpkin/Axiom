@@ -64,6 +64,7 @@ internal static class HardwareBrightnessReadPolicy
 
 internal static class HardwareBrightnessOperation
 {
+    internal const int NoPhysicalMonitors = unchecked((int)0xC02625E5);
     internal static HardwareBrightnessRange? VcpRange(int type, uint current, uint maximum) =>
         type == 1 && maximum > 0 && current <= maximum ? new(0, current, maximum) : null; // MC_SET_PARAMETER
     internal static HardwareBrightnessRange? ReadKnown(IHardwareBrightnessApi api, nint monitor, CancellationToken token, out bool unsupported)
@@ -128,29 +129,65 @@ internal static class HardwareBrightnessOperation
         }
         catch (Exception error) when (error is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
         { return (false, "无法确认当前会话或完整显示布局，本次未修改屏幕亮度。"); }
-        if (logical.Count is < 1 or > 64 || logical.Any(m => m.Handle == 0) || logical.Select(m => m.Handle).Distinct().Count() != logical.Count ||
-            logical.Count(m => m.Primary) != 1)
+        static bool ValidLayout(IReadOnlyList<HardwareLogicalMonitor> monitors) => monitors.Count is >= 1 and <= 64 &&
+            monitors.All(m => m.Handle != 0) && monitors.Select(m => m.Handle).Distinct().Count() == monitors.Count && monitors.Count(m => m.Primary) == 1;
+        if (!ValidLayout(logical))
             return (false, "当前显示布局为空、超出范围或主屏无法确认，本次未修改屏幕亮度。");
         var leases = new List<IHardwareMonitorLease>(); var handles = new List<nint>();
         var unknown = 0; var unsupported = 0; var failed = 0; var succeeded = 0; var cleanupFailed = 0; var ownedCount = 0;
+        var rediscoveries = 0;
+        void CloseLeases()
+        {
+            while (leases.Count > 0)
+            {
+                var lease = leases[^1]; leases.RemoveAt(leases.Count - 1);
+                try { lease.Dispose(); }
+                catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException)) { cleanupFailed++; }
+            }
+        }
         try
         {
-            foreach (var monitor in logical.Where(m => target == "all" || m.Primary))
+            for (var attempt = 0; ; attempt++)
             {
+                var missingPhysical = false;
+                foreach (var monitor in logical.Where(m => target == "all" || m.Primary))
+                {
+                    token.ThrowIfCancellationRequested();
+                    try
+                    {
+                        var lease = api.Acquire(monitor.Handle, 64 - ownedCount); leases.Add(lease);
+                        token.ThrowIfCancellationRequested();
+                        ownedCount += lease.Handles.Count;
+                        if (ownedCount > 64) return (false, "物理屏幕总数超出64块，本次未修改；已取得的句柄将释放。");
+                        if (lease.Handles.Count is < 1 or > 8 || lease.Handles.Any(h => h == 0) || lease.Handles.Distinct().Count() != lease.Handles.Count)
+                        { unknown++; continue; }
+                        if (lease.Handles.Any(handles.Contains)) return (false, "物理屏幕句柄存在重复，目标无法确认，本次未修改。");
+                        handles.AddRange(lease.Handles);
+                    }
+                    catch (HardwareBrightnessLimitException) { return (false, "物理屏幕数量超出每个逻辑显示8块或总计64块的范围，本次未修改；已取得的句柄将释放。"); }
+                    catch (System.ComponentModel.Win32Exception error) when (error.NativeErrorCode == NoPhysicalMonitors)
+                    { missingPhysical = true; break; }
+                    catch (Exception error) when (error is not (OperationCanceledException or OutOfMemoryException or StackOverflowException)) { unknown++; }
+                }
+                if (!missingPhysical) break;
+                // No target has been read or written yet. Discard this entire discovery,
+                // including valid handles, before asking Windows for the current layout.
+                CloseLeases(); handles.Clear(); ownedCount = 0; unknown = 0;
+                if (cleanupFailed != 0) return (false, "显示器发现中断且句柄释放未确认，本次未写入，不重新发现。" + api.Diagnostics);
+                if (attempt == 3) return (false, "Windows仍未将显示设备关联到物理屏幕；已有限重新发现3次，本次未写入亮度。" + api.Diagnostics);
+                var delay = TimeSpan.FromMilliseconds(attempt switch { 0 => 250, 1 => 750, _ => 1500 });
+                if (wait is not null) wait(delay, token);
+                else if (token.WaitHandle.WaitOne(delay)) token.ThrowIfCancellationRequested();
                 token.ThrowIfCancellationRequested();
                 try
                 {
-                    var lease = api.Acquire(monitor.Handle, 64 - ownedCount); leases.Add(lease); // own before checking cancellation after native acquisition
-                    token.ThrowIfCancellationRequested();
-                    ownedCount += lease.Handles.Count;
-                    if (ownedCount > 64) return (false, "物理屏幕总数超出64块，本次未修改；已取得的句柄将释放。");
-                    if (lease.Handles.Count is < 1 or > 8 || lease.Handles.Any(h => h == 0) || lease.Handles.Distinct().Count() != lease.Handles.Count)
-                    { unknown++; continue; }
-                    if (lease.Handles.Any(handles.Contains)) return (false, "物理屏幕句柄存在重复，目标无法确认，本次未修改。");
-                    handles.AddRange(lease.Handles);
+                    if (!api.IsAuthorized()) return (false, "显示器重新发现前会话授权已改变，本次未写入亮度。" + api.Diagnostics);
+                    logical = api.ReadLogicalMonitors(); token.ThrowIfCancellationRequested();
+                    if (!ValidLayout(logical)) return (false, "重新发现的显示布局或主屏未确认，本次未写入亮度。" + api.Diagnostics);
                 }
-                catch (HardwareBrightnessLimitException) { return (false, "物理屏幕数量超出每个逻辑显示8块或总计64块的范围，本次未修改；已取得的句柄将释放。"); }
-                catch (Exception error) when (error is not (OperationCanceledException or OutOfMemoryException or StackOverflowException)) { unknown++; }
+                catch (Exception error) when (error is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
+                { return (false, "无法重新确认显示布局，本次未写入亮度。" + api.Diagnostics); }
+                rediscoveries++;
             }
             var transitions = new List<(BrightnessRestoreTarget Target, uint Value)>();
             for (var index = 0; index < handles.Count; index++)
@@ -201,13 +238,13 @@ internal static class HardwareBrightnessOperation
         finally
         {
             // Always close every acquired lease, including failed/partial discovery and canceled or blocked native calls.
-            foreach (var lease in leases)
-                try { lease.Dispose(); } catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException)) { cleanupFailed++; }
+            CloseLeases();
         }
         var success = succeeded > 0 && unknown == 0 && failed == 0 && cleanupFailed == 0;
         return (success, $"硬件屏幕亮度{(success ? "已确认" : succeeded > 0 ? "部分完成" : "未确认")}：已确认{succeeded}块{(delta.HasValue ? $"相对调整{delta.Value}个百分点（范围限幅）" : $"为{percent}%")}，已知不支持而跳过{unsupported}块，状态或范围未知而未写入{unknown}个目标，写入/读回未确认{failed}块" +
             (cleanupFailed == 0 ? "。" : $"，{cleanupFailed}组句柄释放未确认。") +
             (succeeded == 0 && failed == 0 ? "本次未写入亮度。" : "已写入的亮度保留，不重复写入、不恢复旧值。") +
+            (rediscoveries == 0 ? "" : $"物理屏幕关联暂未就绪，重新发现{rediscoveries}次后继续。") +
             "初始通信故障仅有限重读；任务后续重试按任务设置执行。" + api.Diagnostics);
     }
 }
