@@ -6,10 +6,10 @@
 
 ## 当前：早晨亮度首次失败
 
-- 分支codex/brightness-display-discovery，基于PR48当前4adcf97，未合并/发版。11/5初次失败已有具体诊断：物理显示器枚举返回0xC02625E5；下次尝试原生占用。后续成功不推断为自动恢复或忽略用户手动操作。
+- 分支codex/brightness-display-discovery，[PR50](https://github.com/Nanpkin/Axiom/pull/50)草稿，基于PR48当前4adcf97，未合并/发版。11/5初次失败已有具体诊断：物理显示器枚举返回0xC02625E5；下次尝试原生占用。后续成功不推断为自动恢复或忽略用户手动操作。
 - 前次仅重读亮度，未覆盖物理发现。本轮仅在首次写入前、此明确错误下释放整批句柄并有限重新发现，重新核对布局/会话/主屏；失败零写入，写后不重放、恢复租约不重新抓基线，契约见ADR0011。
 - 相关HardwareBrightness/HardwareBrightnessVcp共17项通过、零跳过；原生Provider及framework-dependent夹具构建零警告。证据与待实机夹具artifacts/brightness-discovery-smoke，不上传本机日志/配置。
-- 当前受控游戏仍运行，固定预览仍为下文11/4版。保留现场，尚未正常停后台、实机验证或替换；先完成打包，游戏正常退出且恢复确认后继续。分支/PR及待验收夹具需保留，不整理其他对话工作。
+- 0.2.0-local.20261105.1已统一构建至artifacts/package-stage，干净源码60557cd。当前受控游戏仍运行，固定预览仍为下文11/4版；发布脚本保护未替换。未停后台、未实机/冷启动验收；游戏退出且恢复确认后继续。证据delivery.json及focused-tests.trx，夹具二进制已清理、源码保留待验；分支/PR及待应用包保留，不整理其他对话工作。
 
 ## 待合入的桌面修复
 
