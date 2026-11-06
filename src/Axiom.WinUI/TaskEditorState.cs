@@ -74,6 +74,40 @@ internal sealed class TaskEditorState
             Action = Defaults(descriptor);
         }
     }
+    public TaskCapability? RestoreAlternative(AutomationSnapshot snapshot)
+    {
+        var current = snapshot.Capabilities.FirstOrDefault(c => c.Kind == TaskCapabilityKind.Action && c.Id == Action?.CapabilityId);
+        if (current is null) return null;
+        return current.OriginalActionId is { } original
+            ? snapshot.Capabilities.FirstOrDefault(c => c.Kind == TaskCapabilityKind.Action && c.Id == original)
+            : snapshot.Capabilities.FirstOrDefault(c => c.Kind == TaskCapabilityKind.Action && c.OriginalActionId == current.Id);
+    }
+    public bool CanSwitchRestore(AutomationSnapshot snapshot) => RestoreAlternative(snapshot) is { } alternative &&
+        SupportsAction(alternative, snapshot.Combinations) && (alternative.OriginalActionId is null ||
+            Detections().Any() && Detections().All(d => snapshot.Capabilities.Any(c => c.Id == d.CapabilityId && c.IsStateCondition)));
+    public void SwitchRestore(AutomationSnapshot snapshot)
+    {
+        if (!CanSwitchRestore(snapshot)) throw new ArgumentException("当前检测不支持此恢复方式；需要兼容的持续状态条件。");
+        var target = RestoreAlternative(snapshot)!;
+        var source = snapshot.Capabilities.Single(c => c.Kind == TaskCapabilityKind.Action && c.Id == Action!.CapabilityId);
+        var parameters = Defaults(target).Parameters;
+        foreach (var pair in Action!.Parameters)
+        {
+            var field = target.Fields.FirstOrDefault(f => f.Id == pair.Key);
+            if (field is null)
+            {
+                var oldField = source.Fields.FirstOrDefault(f => f.Id == pair.Key);
+                if (pair.Value != (oldField?.DefaultValue ?? ""))
+                    throw new ArgumentException($"恢复方式不支持当前“{oldField?.Label ?? pair.Key}”设置；请先清除或改回默认值。输入已保留。");
+                continue;
+            }
+            if (pair.Value.Length > field.MaximumLength || field.Kind == TaskFieldKind.FilePath && pair.Value.Any(char.IsControl) ||
+                field.Kind == TaskFieldKind.Choice && !field.Choices.Any(c => c.Value == pair.Value))
+                throw new ArgumentException($"当前“{field.Label}”不支持此恢复方式；请先选择单个目标或受支持的选项。输入已保留。");
+            parameters = parameters.SetItem(pair.Key, pair.Value);
+        }
+        Action = new(target.Id, target.SchemaVersion, parameters);
+    }
     public void SetParameter(TaskCapabilityKind kind, string key, string value)
     {
         if (kind == TaskCapabilityKind.Detection && Detection is not null)
