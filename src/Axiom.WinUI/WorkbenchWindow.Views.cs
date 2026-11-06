@@ -229,6 +229,36 @@ public sealed partial class WorkbenchWindow
                     else AddField(host, descriptor, current!, fields[i]);
                 }
             }
+            if (kind == TaskCapabilityKind.Action && status is { } snapshot)
+            {
+                var alternative = editor.RestoreAlternative(snapshot);
+                if (alternative is not null)
+                {
+                    var restore = new ToggleSwitch { Header = "条件结束后恢复原状态", IsOn = descriptor.OriginalActionId is not null,
+                        OnContent = "结束后尝试恢复本轮执行前的状态", OffContent = "只执行动作，结束后保留结果",
+                        IsEnabled = editor.CanSwitchRestore(snapshot) };
+                    restore.Toggled += (_, _) =>
+                    {
+                        try
+                        {
+                            editor.SwitchRestore(snapshot);
+                            picker.Content = Selection(); ShowParameters(Current()); changed(kind);
+                        }
+                        catch (ArgumentException failure)
+                        {
+                            ShowNotice(failure.Message);
+                            ShowParameters(Current());
+                        }
+                    };
+                    parameters.Children.Add(restore);
+                    parameters.Children.Add(Text(restore.IsEnabled
+                        ? "开启后在条件成立期间控制设置；条件结束时尝试恢复执行前的值。外部调整、目标变化或结果未确认时不会强行恢复。切换方式会更新下方可用参数与执行说明。"
+                        : descriptor.OriginalActionId is not null
+                            ? "当前条件只支持恢复型动作，不能切换为一次执行。恢复行为保持开启。"
+                            : "当前检测不支持此恢复方式；请使用兼容的持续状态条件。一次事件没有可判断的结束状态。", 12, Muted));
+                }
+                else parameters.Children.Add(Text("此动作没有可选恢复方式；执行与结束行为见运行设置。", 12, Muted));
+            }
             Fields(parameters, descriptor.Fields.Where(f => f.Group is null));
             foreach (var group in descriptor.Fields.Where(f => f.Group is not null).GroupBy(f => f.Group))
             {

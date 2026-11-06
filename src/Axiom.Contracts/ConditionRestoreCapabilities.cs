@@ -29,7 +29,7 @@ public static class ConditionRestoreCapabilities
     };
     private static TaskCapability Describe(TaskCapability original, string id, string name) => original with
     {
-        Id = id, Name = name, Description = "条件成立期间请求所选设置，结束时有条件恢复本轮最初设置。",
+        OriginalActionId = original.Id, Id = id, Name = name, Description = "条件成立期间请求所选设置，结束时有条件恢复本轮最初设置。",
         Fields = [.. original.Fields.Select(f => f.Id == "delaySeconds" ? f with { Hint = "条件须持续满足所设延迟；首次已知成立也可应用。" } : f.Id == "operation" ? f with { Hint = "只控制所选字段；明确设置，不使用切换操作。" } : f)],
         Behavior = "真实读取已知基线才写入并读回；同资源规则经仲裁，同一租约的获胜值更新保留最初基线。条件结束、Unknown、暂停、删除、断开连接或正常停止后，仅当前仍等于Axiom最后确认值才恢复。外部改变或身份未知让出，不证明是人为操作，不周期重写。",
         EditWarning = "观察显示Axiom确认的本轮控制租约，不代表全系统设置。固定本次实际目标，不改新默认端点或替代设备；超时/未确认写入不假称成功或恢复，不重试。默认播放只改所选音量或静音，麦克风只改通信输入静音；取消静音可能发声或收音。电源方案原自定义GUID只在内存中恢复，不创建缺失方案。UI退出继续，暂停收回控制。"

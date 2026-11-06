@@ -17,7 +17,8 @@ public sealed record TaskCapability(string Id, int SchemaVersion, TaskCapability
     string Category, string Name, string Description, ImmutableArray<TaskField> Fields,
     string Behavior, string EditWarning, bool SupportsTimeWindow = false,
     bool IsStateCondition = false,
-    bool SupportsCompositeDetection = false, bool SupportsRunConditions = true);
+    bool SupportsCompositeDetection = false, bool SupportsRunConditions = true,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] string? OriginalActionId = null);
 public sealed record TaskInvocation(string CapabilityId, int SchemaVersion, ImmutableDictionary<string, string> Parameters);
 public sealed record AutomationTask(string Id, long Version, string Title, bool Paused,
     TaskInvocation Detection, TaskInvocation Action, int SchemaVersion = 1, WeeklyTimeWindow? TimeWindow = null,
