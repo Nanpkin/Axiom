@@ -457,6 +457,7 @@ public static class UsageAnalysis
             if (resolved.CapabilityId == SessionLockStateCapabilities.State) SessionLockStateCapabilities.Validate(resolved);
             if (resolved.CapabilityId == SessionLockCapabilities.Lock) SessionLockCapabilities.Validate(resolved);
             if (resolved.CapabilityId == CurrentMediaCapabilities.Control) CurrentMediaCapabilities.Validate(resolved);
+            if (resolved.CapabilityId is BluetoothDeviceCapabilities.Connected or BluetoothDeviceCapabilities.Disconnected) BluetoothDeviceCapabilities.Validate(resolved);
             if (resolved.CapabilityId is UsbDeviceCapabilities.Present or UsbDeviceCapabilities.Absent) UsbDeviceCapabilities.Validate(resolved);
             if (resolved.CapabilityId == ForegroundWindowMonitorCapabilities.Move) ForegroundWindowMonitorCapabilities.Validate(resolved);
             if (resolved.CapabilityId == ForegroundWindowLayoutCapabilities.Layout) ForegroundWindowLayoutCapabilities.Validate(resolved);

@@ -29,6 +29,51 @@ public sealed class TrayActionTests
         foreach(var value in new[]{"SampleAudio.exe",@"C:\Windows\cmd.exe",@"C:\Axiom.exe"})Assert.Throws<ArgumentException>(()=>TrayCapabilities.ValidateTargets(task.Action with{Parameters=task.Action.Parameters.SetItem("executable",value)}));
         Assert.Throws<ArgumentException>(()=>TrayCapabilities.ValidateTargets(task.Action with{Parameters=task.Action.Parameters.Add("inject","true")}));
     }
+    [Fact]
+    public void ShowCompilesAsBoundedCommandAndValidatesProviderDeadline()
+    {
+        var config = new TaskInvocation(TrayCapabilities.Show, 1, ImmutableDictionary<string, string>.Empty
+            .Add("executable", @"C:\Apps\TraySample.exe").Add("waitSeconds", "120").Add("delaySeconds", "2"));
+        var compiler = new ShowTrayTaskAction(); var scope = ResourceScope.Session("owner", 1);
+        var action = compiler.Compile(config, scope);
+        Assert.Equal(TrayCapabilities.Show, action.Key.CapabilityId); Assert.Equal(RuleActionKind.Command, action.Kind);
+        Assert.Equal(TimeSpan.FromSeconds(2), compiler.Timing(config).MinimumDuration);
+        var plugin = new TrayPlugin();
+        Assert.Contains(plugin.Actions, a => a.Descriptor.Id == TrayCapabilities.Show);
+        Assert.Contains(new("process.running", TrayCapabilities.Show), plugin.Combinations);
+        Assert.Contains(plugin.Bindings, b => b.Descriptor.Id == TrayCapabilities.Show);
+        var now = DateTimeOffset.UtcNow;
+        var request = new ProviderMessage(1, "invoke", "show-tray", now.AddSeconds(130), Invocation: config, CommandId: Guid.NewGuid());
+        ProviderProtocol.Validate(request, now);
+        Assert.Throws<ArgumentException>(() => ProviderProtocol.Validate(request with
+        { Invocation = config with { Parameters = config.Parameters.SetItem("waitSeconds", "121") } }, now));
+        Assert.Throws<InvalidDataException>(() => ProviderProtocol.Validate(request with { Type = "observe-tray", CommandId = null }, now));
+        Assert.Throws<ArgumentException>(() => compiler.Compile(config with { Parameters = config.Parameters.SetItem("executable", "TraySample.exe") }, scope));
+    }
+    [Fact(Timeout = 15000)]
+    public async Task ShowRequestsOwnerRecreationAfterHideAndConfirmsRealIcon()
+    {
+        using var target = new IconWindow(true, true, true);
+        target.Add(false);
+        Assert.True((await WindowsTrayActions.HideAsync(Environment.ProcessPath!, TimeSpan.FromSeconds(2), default)).Success);
+        Assert.False(target.Exists(false));
+        var shown = await WindowsTrayActions.ShowAsync(Environment.ProcessPath!, TimeSpan.FromSeconds(3), default);
+        Assert.True(shown.Success, shown.Reason); Assert.False(shown.Skipped);
+        Assert.True(target.Exists(false)); Assert.True(target.Alive); Assert.Equal(1, target.RecreationRequests);
+        var already = await WindowsTrayActions.ShowAsync(Environment.ProcessPath!, TimeSpan.FromSeconds(1), default);
+        Assert.True(already.Success); Assert.True(already.Skipped); Assert.Equal(1, target.RecreationRequests);
+    }
+    [Fact(Timeout = 15000)]
+    public async Task ShowCannotClaimSuccessForUnsupportedProgramAndCancellationPreventsRequests()
+    {
+        using var target = new IconWindow(false, true);
+        var unsupported = await WindowsTrayActions.ShowAsync(Environment.ProcessPath!, TimeSpan.FromSeconds(1), default);
+        Assert.False(unsupported.Success); Assert.Contains("未确认显示", unsupported.Reason); Assert.False(target.Exists(false));
+        using var cancelled = new CancellationTokenSource(); cancelled.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => WindowsTrayActions.ShowAsync(Environment.ProcessPath!, TimeSpan.FromSeconds(1), cancelled.Token));
+        var missing = await WindowsTrayActions.ShowAsync(Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".exe"), TimeSpan.FromSeconds(1), default);
+        Assert.False(missing.Success); Assert.True(target.Alive);
+    }
     [Fact(Timeout=15000)]
     public async Task CurrentCatalogIncludesDynamicWindowUidAndDropsRemovedIcons()
     {
@@ -201,14 +246,21 @@ public sealed class TrayActionTests
         private readonly Thread thread;
         private readonly TaskCompletionSource ready=new(TaskCreationOptions.RunContinuationsAsynchronously);
         private nint window;private uint threadId;
-        internal IconWindow(bool messageOnly, bool dynamicUid = false)
+        internal int RecreationRequests;
+        internal IconWindow(bool messageOnly, bool dynamicUid = false, bool recreate = false)
         {
             thread=new Thread(()=>{
                 threadId=GetCurrentThreadId();
                 window=CreateWindowEx(0,"STATIC","Axiom tray test",0,0,0,0,0,messageOnly?-3:0,0,0,0);
                 if (dynamicUid) id = unchecked((uint)window.ToInt64());
                 if(window==0){ready.TrySetException(new InvalidOperationException("Fixture window failed"));return;}ready.TrySetResult();
-                while(GetMessage(out var msg,0,0,0)>0){TranslateMessage(ref msg);DispatchMessage(ref msg);}DestroyWindow(window);
+                var taskbarCreated = RegisterWindowMessage("TaskbarCreated");
+                while(GetMessage(out var msg,0,0,0)>0)
+                {
+                    if (msg.Id == taskbarCreated && recreate) { Interlocked.Increment(ref RecreationRequests); Add(false); }
+                    TranslateMessage(ref msg);DispatchMessage(ref msg);
+                }
+                DestroyWindow(window);
             }){IsBackground=true};thread.Start();ready.Task.GetAwaiter().GetResult();
         }
         internal bool Alive=>IsWindow(window);
@@ -233,6 +285,7 @@ public sealed class TrayActionTests
         [DllImport("user32.dll")]private static extern bool DestroyWindow(nint window);
         [DllImport("user32.dll")]private static extern bool IsWindow(nint window);
         [DllImport("user32.dll")]private static extern bool PostThreadMessage(uint thread,uint message,nint w,nint l);
+        [DllImport("user32.dll",CharSet=CharSet.Unicode)]private static extern uint RegisterWindowMessage(string name);
         [DllImport("kernel32.dll")]private static extern uint GetCurrentThreadId();
         [DllImport("shell32.dll",CharSet=CharSet.Unicode)]private static extern bool Shell_NotifyIcon(uint operation,ref IconData data);
         [DllImport("shell32.dll")]private static extern int Shell_NotifyIconGetRect(ref Identifier id,out Rect rect);

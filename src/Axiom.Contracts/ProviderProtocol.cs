@@ -24,7 +24,7 @@ public static class ProviderProtocol
     public static void Validate(ProviderMessage message, DateTimeOffset now)
     {
         var maximumDeadlineSeconds = 45;
-        if (message.Type == "invoke" && message.Invocation?.CapabilityId == TrayCapabilities.Hide)
+        if (message.Type == "invoke" && message.Invocation?.CapabilityId is TrayCapabilities.Hide or TrayCapabilities.Show)
         {
             // Only a validated, bounded tray wait may outlive the ordinary provider request window.
             _ = TrayCapabilities.ValidateTargets(message.Invocation);
@@ -43,7 +43,7 @@ public static class ProviderProtocol
             message.RequiredCapabilities is null && message.CommandId is null && message.UsageOptions is null && message.WheelSettings is null) return;
         if (message.Type == "observe-usage" && message.UsageOptions is not null && message.Invocation is null && message.CommandId is null && message.Resources is null && message.RequiredCapabilities is null) { UsageValidation.Options(message.UsageOptions); return; }
         if (message.UsageOptions is not null) throw new InvalidDataException("Unexpected observation options.");
-        if (message.Type == "observe-tray" && message.Invocation is not null && message.CommandId is null && message.Resources is null && message.RequiredCapabilities is null) { TrayCapabilities.ValidateTargets(message.Invocation); return; }
+        if (message.Type == "observe-tray" && message.Invocation?.CapabilityId == TrayCapabilities.Hide && message.CommandId is null && message.Resources is null && message.RequiredCapabilities is null) { TrayCapabilities.ValidateTargets(message.Invocation); return; }
         if (message.Type == "read-tray" && message.Invocation is null && message.CommandId is null && message.Resources is null && message.RequiredCapabilities is null) return;
         if (message.Type == "observe" && message.Invocation is null && message.CommandId is null && message.Resources is { Length: <= 128 } resources &&
             message.RequiredCapabilities is { Length: > 0 and <= 128 } capabilities && capabilities.All(c => !string.IsNullOrWhiteSpace(c) && c.Length <= 128) &&

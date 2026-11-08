@@ -138,6 +138,49 @@ public static class WindowsTrayActions
         catch (OperationCanceledException) when (deadline.IsCancellationRequested && !token.IsCancellationRequested)
         { token.ThrowIfCancellationRequested(); return new(true, "未发现可识别图标，无需处理。") { Skipped = true }; }
     }
+    public static async Task<ProgramControlResult> ShowAsync(string path, TimeSpan wait, CancellationToken token)
+    {
+        if (wait < TimeSpan.FromSeconds(1) || wait > TimeSpan.FromSeconds(120)) throw new ArgumentOutOfRangeException(nameof(wait));
+        if (!File.Exists(path)) return new(false, "目标程序不存在，请重新选择路径。");
+        token.ThrowIfCancellationRequested();
+        using var notifications = new WindowsTrayEvents();
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token); deadline.CancelAfter(wait);
+        var message = RegisterWindowMessage("TaskbarCreated");
+        if (message == 0) throw new Win32Exception(Marshal.GetLastWin32Error());
+        var requested = new HashSet<(nint Window, int Process)>();
+        var sent = false;
+        try
+        {
+            while (true)
+            {
+                deadline.Token.ThrowIfCancellationRequested();
+                var matches = WindowsProgramControl.Matching(path);
+                try
+                {
+                    var active = matches.Count == 0 ? [] : FindActive(path, ReadRegistrations(), matches, token);
+                    if (active.Length > 0)
+                        return new(true, $"{Path.GetFileName(path)}：已确认 {active.Length} 个托盘图标" + (sent ? "重新出现。" : "已存在，无需处理。")) { Skipped = !sent };
+                    // NIM_DELETE discards the icon's callback and image. Ask the verified owner to recreate
+                    // its real icon via the standard Explorer restart message; never manufacture an inert icon.
+                    foreach (var window in matches.Count == 0 ? [] : FindOwnedWindows(matches, deadline.Token))
+                    {
+                        deadline.Token.ThrowIfCancellationRequested();
+                        if (GetWindowThreadProcessId(window, out var pid) == 0 || !matches.Any(p => p.Id == pid && !p.HasExited)) continue;
+                        if (!requested.Add((window, (int)pid))) continue;
+                        if (!PostMessage(window, message, 0, 0)) throw new Win32Exception(Marshal.GetLastWin32Error());
+                        sent = true;
+                    }
+                }
+                finally { foreach (var process in matches) process.Dispose(); }
+                await notifications.Events.Reader.ReadAsync(deadline.Token);
+            }
+        }
+        catch (OperationCanceledException) when (deadline.IsCancellationRequested && !token.IsCancellationRequested)
+        {
+            token.ThrowIfCancellationRequested();
+            return new(false, sent ? "已请求程序重建托盘图标，但等待后未确认显示；程序可能不支持重建通知。" : "未找到可请求重建的目标程序窗口，未确认显示托盘图标。");
+        }
+    }
     private sealed record Registration(string Path, uint? Id, Guid Guid);
     private static Registration[] ReadRegistrations()
     {
@@ -211,18 +254,7 @@ public static class WindowsTrayActions
     {
         var selected = registrations.Where(r => r.Path.Equals(path,StringComparison.OrdinalIgnoreCase)).ToArray();
         if (selected.Length > 64) throw new InvalidOperationException("目标托盘记录过多，未修改图标。");
-        var ids = matches.Select(p => p.Id).ToHashSet(); var windows = new HashSet<nint>();
-        bool Collect(nint window,nint state)
-        {
-            GetWindowThreadProcessId(window,out var pid);
-            if (ids.Contains((int)pid)) windows.Add(window);
-            return true;
-        }
-        EnumWindows((window,state) => { Collect(window,state); EnumChildWindows(window,Collect,0); return true; },0);
-        nint message = 0; var count = 0;
-        while ((message = FindWindowEx(-3,message,null,null)) != 0)
-        { token.ThrowIfCancellationRequested(); if (++count > 4096) throw new InvalidOperationException("消息窗口数量超过识别范围，未修改图标。"); Collect(message,0); EnumChildWindows(message,Collect,0); }
-        if (windows.Count > 256) throw new InvalidOperationException("目标窗口数量超过识别范围，未修改图标。");
+        var windows = FindOwnedWindows(matches, token);
         var candidates = new HashSet<(nint Window,uint Id,Guid Guid)>();
         foreach (var record in selected)
         {
@@ -249,6 +281,22 @@ public static class WindowsTrayActions
         }
         return [.. active];
     }
+    private static HashSet<nint> FindOwnedWindows(List<Process> matches, CancellationToken token)
+    {
+        var ids = matches.Select(p => p.Id).ToHashSet(); var windows = new HashSet<nint>();
+        bool Collect(nint window,nint state)
+        {
+            GetWindowThreadProcessId(window,out var pid);
+            if (ids.Contains((int)pid)) windows.Add(window);
+            return true;
+        }
+        EnumWindows((window,state) => { Collect(window,state); EnumChildWindows(window,Collect,0); return true; },0);
+        nint message = 0; var count = 0;
+        while ((message = FindWindowEx(-3,message,null,null)) != 0)
+        { token.ThrowIfCancellationRequested(); if (++count > 4096) throw new InvalidOperationException("消息窗口数量超过识别范围，未修改图标。"); Collect(message,0); EnumChildWindows(message,Collect,0); }
+        if (windows.Count > 256) throw new InvalidOperationException("目标窗口数量超过识别范围，未修改图标。");
+        return windows;
+    }
     private delegate bool EnumCallback(nint window,nint state);
     [StructLayout(LayoutKind.Sequential)] private struct IconIdentifier { public uint Size; public nint Window; public uint Id; public Guid Guid; }
     [StructLayout(LayoutKind.Sequential)] private struct Rect { public int Left,Top,Right,Bottom; }
@@ -266,6 +314,8 @@ public static class WindowsTrayActions
     [DllImport("user32.dll")] private static extern bool EnumChildWindows(nint window,EnumCallback callback,nint state);
     [DllImport("user32.dll",CharSet=CharSet.Unicode)] private static extern nint FindWindowEx(nint parent,nint after,string? cls,string? title);
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(nint window,out uint pid);
+    [DllImport("user32.dll", CharSet=CharSet.Unicode, SetLastError=true)] private static extern uint RegisterWindowMessage(string name);
+    [DllImport("user32.dll", SetLastError=true)] private static extern bool PostMessage(nint window,uint message,nint wparam,nint lparam);
     [DllImport("shell32.dll")] private static extern int SHGetKnownFolderPath(ref Guid id,uint flags,nint token,out nint path);
     [DllImport("shell32.dll",CharSet=CharSet.Unicode)] private static extern bool Shell_NotifyIcon(uint operation,ref IconData data);
     [DllImport("shell32.dll")] private static extern int Shell_NotifyIconGetRect(ref IconIdentifier id,out Rect rect);
