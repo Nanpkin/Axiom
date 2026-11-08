@@ -1,3 +1,5 @@
-# Physical monitor discovery before the first hardware brightness write.
-Axiom.Engine.Tests.HardwareBrightnessTests
-Axiom.Engine.Tests.HardwareBrightnessVcpTests
+# Optional restoration editor and declaration transport boundaries.
+Axiom.Engine.Tests.RestoreSwitchTests
+Axiom.Engine.Tests.CapabilityPickerTests
+Axiom.Engine.Tests.ConditionRestoreTests.WinnerUpdatesKeepFirstBaselineAndReleaseOnlyConfirmedValue
+Axiom.Engine.Tests.UsageObservationTests.FullProductionCatalogAndMaximumObjectDictionaryFitExportWithoutDeviceIdentityOrLostParameters
