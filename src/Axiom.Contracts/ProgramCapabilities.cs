@@ -17,7 +17,11 @@ public static class ProgramCapabilities
                 [new("normal", "正常显示"), new("minimized", "最小化"), new("hidden", "隐藏"), new("startup-hidden", "启动遮蔽（实验性）")], Group: "更多选项"),
             new("startupProtectionSeconds", "启动保护最长时间（秒）", TaskFieldKind.Number, false, "仅用于启动遮蔽，1–20 整数秒，默认 15。再次启动同路径程序时尝试提前解除保护；动作完成后手动打开不再拦截。极快退出的启动器可能无法确认，保护期内请稍候。晚于保护期的弹窗仍可能显示，安全软件可能阻止保护组件。", "15", 2, [], 1, 20, "更多选项"),
             new("ifRunning", "程序已运行时", TaskFieldKind.Choice, true, "按完整路径识别当前用户的程序实例。", "skip", 16,
-                [new("skip", "跳过启动"), new("new", "再开一个实例")], Group: "更多选项")]
+                [new("skip", "跳过启动"), new("new", "再开一个实例")], Group: "更多选项"),
+            new("hideTrayIcon", "启动后隐藏托盘图标", TaskFieldKind.Boolean, false,
+                "程序已运行且跳过启动时也隐藏。最多等待 30 秒，启动保护耗时会缩短等待；未确认隐藏会报告失败，已启动的程序仍保留。只隐藏本次可识别图标，不持续压制。", "false", 5, [], Group: "更多选项"),
+            new("trayExecutable", "托盘所属程序（可选）", TaskFieldKind.FilePath, false,
+                "留空使用所启动程序；启动器与托盘程序不同时，明确选择实际托盘程序的完整 .exe 路径，不自动推断。仅开启启动后隐藏托盘时执行。", "", 1024, [], Group: "更多选项", BrowseLocalPath: true)]
         : [new("executable", "目标程序", TaskFieldKind.ExecutableSelection, true,
             "可批量选择或输入最多 32 个本机程序的完整 .exe 路径；关闭选项应用于每个目标。", null, ExecutablePaths.MaximumTextLength, []), Delay,
             new("mode", "关闭方式", TaskFieldKind.Choice, true, "正常关闭会请求窗口退出；强制结束可能丢失未保存内容。", "graceful", 16,
@@ -35,6 +39,8 @@ public static class ProgramCapabilities
     public static string Value(TaskInvocation config, string id) => config.Parameters.GetValueOrDefault(id)
         ?? Describe(config.CapabilityId == "program.start").Fields.Single(f => f.Id == id).DefaultValue ?? "";
     public static decimal Number(TaskInvocation config, string id) => decimal.Parse(Value(config, id), CultureInfo.InvariantCulture);
+    public static string TrayTarget(TaskInvocation config) => ExecutablePaths.ValidatePath(
+        Value(config, "trayExecutable") is { Length: > 0 } path ? path : Value(config, "executable"));
     public static string Validate(TaskInvocation config) => ValidateTargets(config).Single();
     public static string[] ValidateTargets(TaskInvocation config)
     {
@@ -48,10 +54,13 @@ public static class ProgramCapabilities
             if (field.Required && string.IsNullOrWhiteSpace(value) || value.Length > field.MaximumLength)
                 throw new ArgumentException("请正确填写" + field.Label + "。");
             if (field.Kind == TaskFieldKind.Choice && !field.Choices.Any(c => c.Value == value)) throw new ArgumentException(field.Label + "无效。");
+            if (field.Kind == TaskFieldKind.Boolean && value is not ("true" or "false")) throw new ArgumentException(field.Label + "必须为开或关。");
             if (field.Kind == TaskFieldKind.Number && (!decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out var n) ||
                 n < field.Minimum || n > field.Maximum)) throw new ArgumentException(field.Label + "超出范围。");
         }
         var paths = config.CapabilityId == "program.start" ? [ExecutablePaths.ValidatePath(Value(config, "executable"))] : ExecutablePaths.Parse(Value(config, "executable"));
+        if (config.CapabilityId == "program.start" && Value(config, "trayExecutable") is { Length: > 0 } trayPath)
+            _ = ExecutablePaths.ValidatePath(trayPath);
         if (config.CapabilityId == "program.start" && Number(config, "startupProtectionSeconds") % 1 != 0)
             throw new ArgumentException("启动保护时长必须为整数秒。");
         if (config.CapabilityId == "program.start" && Value(config, "workingDirectory") is { Length: > 0 } directory &&

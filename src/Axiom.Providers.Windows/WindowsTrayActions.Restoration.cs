@@ -101,6 +101,22 @@ public static partial class WindowsTrayActions
         protected override RestorableSettingResult ReleaseCore(CancellationToken token)
         {
             currentToken = token;
+            try
+            {
+                token.ThrowIfCancellationRequested();
+                // The retained process handle identifies this lease's original instance. Its
+                // confirmed exit is a completed empty release, never permission to bind a new PID.
+                if (process.HasExited)
+                {
+                    visibility.Relinquish();
+                    return new(true, "本轮原程序实例已退出，已无可恢复的原托盘目标，无需恢复；未操作同路径的新实例。", false);
+                }
+            }
+            catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
+            {
+                visibility.Relinquish();
+                return new(false, "无法确认本轮原程序实例是否已退出，未恢复托盘，也未操作同路径的新实例。", false);
+            }
             return visibility.Release(token);
         }
 

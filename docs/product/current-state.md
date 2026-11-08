@@ -1,24 +1,26 @@
 # 当前交接
 
-更新：2026-11-08。公开仓库，开发/推送仅内层检出；历史分支入口见[仓库维护说明](../development/cloud-workflow.md)，收尾见[AGENTS](../../AGENTS.md)。
+更新：2026-11-08。公开仓库，仅内层检出开发/推送；历史入口见[仓库维护](../development/cloud-workflow.md)，收尾见[AGENTS](../../AGENTS.md)。
 
-## 已交付本机：托盘显示接入条件结束恢复，单规则
+## 当前：启动程序增加启动后隐藏托盘
 
-- 所有者要求复用既有恢复开关，将此前DS5连接显示/断开隐藏两条改为一条。分支codex/device-name-tray，[PR52](https://github.com/Nanpkin/Axiom/pull/52)草稿，目标codex/optional-condition-restore；前置链52→51→50→48→43仍未合并，不清理其他对话分支。
-- 新增tray.show.restore，OriginalActionId配对tray.show，复用RestorableSettingTaskAction、通用Host/Agent租约、SerializedRestorableSettingSession与ConditionalSettingTransaction<bool>。一个已运行程序路径/实例，固定进程句柄、创建时间、SID、会话、路径及Shell身份；同进程更新图标UID/窗口仍按可见性判断。
-- 已知基线才显示，首次已连接也能应用。条件结束、Unknown、暂停、删除或正常停止时，当前可见性仍等于最后确认值才恢复首次可见性；原隐藏才恢复隐藏，原显示保持显示。外部已隐藏不覆盖；进程替代、身份未知或未确认写入不恢复。重建最多5秒，不周期重写。
-- 编辑页复用“条件结束后恢复原状态”开关；恢复版只支持单程序，不接受一次性动作自定义等待，不能无损切换时保留草稿说明。两个蓝牙模板改为单个bluetooth-tray-visibility；蓝牙状态允许组合既有条件恢复动作。
-- 34项相关测试通过、零跳过（首次夹具线程异常后仅复查18项托盘）；Agent及统一打包通过，真实DSX直接lease显示/释放恢复隐藏已通过。2600b39的PR CI隐私、声明测试、整库构建及分发包全部通过。夹具修复消息/清理竞态，后台异常转回测试线程，未放宽断言。证据artifacts/test-results/{focused,tray-restore-recheck}，本机夹具artifacts/tray-restore-smoke，不上传现场数据。
-- 本机已正常退出后统一更新0.2.0-local.20261108.3（干净源码2600b39），三角色来源/版本、后台/UI连接及更新前11规则/托盘/登录启动保持均核对。随后原连接规则同ID改为tray.show.restore，删本次断开规则：现10条中蓝牙仅1条，已启用；原9任务指纹保持。真实编辑页验证恢复开关开→关→开并回列表，未保存额外改动。所有者已确认单规则实际连接显示、断开恢复隐藏测试正常，验收完成。
+- 用户反馈重启后断开未隐藏；只读日志及进程创建时间证实DSX在租约应用后被手动重启，用户已确认。旧租约固定原进程，未操作新实例；不是蓝牙断开检测失败。现明确原实例退出时成功空释放，未知仍失败，不重绑新进程。
+- program.start增加hideTrayIcon，默认false兼容旧任务。启用后ifRunning=skip仍处理托盘，启动失败不隐藏；图标未确认单独报失败，保留已运行程序。事件等待至多30秒，扣除启动耗时，总预算35秒，不周期隐藏。
+- 新增可选trayExecutable：留空沿用启动路径，可明确选择启动器真正的托盘程序，不推断子进程。DSX启动器与主程序不同，部署时须为其启动任务启用隐藏并填写已核实主程序路径，其余设置保持。非空严格校验，导入仅接受已观察别名；optional FilePath空值兼容。
+- 19项相关检查通过，零跳过：启动声明/编辑/存储/组合/预算/取消及导入14、托盘恢复4、完整目录预算1。新增字段使摘要略超64KiB，仅精简最紧凑说明的重复文字，全部参数/组合/阈值与断言保留。真实DSX已运行→跳过启动→隐藏成功，原进程保持；本机证据artifacts/startup-tray-smoke，测试artifacts/test-results/{focused,startup-tray-recheck,startup-tray-budget}，不上传现场数据。
+- 尚需统一更新本机、为既有DSX启动任务开启选项和实际UI核对；未做整机重启复测。当前固定预览0.2.0-local.20261108.3（2600b39）。
 
-## 蓝牙检测与前轮实测
+## 已交付：蓝牙检测与单规则恢复
 
-- 按完整名称忽略大小写匹配已配对经典蓝牙/LE，系统选择器带IssueInquiry=False，观察AEP IsConnected；不打开HID、不读取模拟USB，无周期扫描。同名设备分组；检测失效为Unknown，须暂停再启用。
-- 1eb175b的两规则版本已确认HidHide cloak-on下DSX接管后持续已连接，断开后托盘消失。原9任务、托盘工具、登录启动指纹保持。tray.show定向TaskbarCreated后确认真实图标；DSX历史UID失配补0–16有限探测。
-- 旧全量模板测试基线计数/未填字段白名单已落后，本轮专测替换模板，不声称全量方法通过。
+- 分支codex/device-name-tray，[PR52](https://github.com/Nanpkin/Axiom/pull/52)草稿目标codex/optional-condition-restore；前置链52→51→50→48→43未合并，不整理其他对话分支。
+- 蓝牙完整名称忽略大小写，同名分组；系统已配对经典/LE选择器带IssueInquiry=False，观察AEP IsConnected，不打开HID、不读取模拟USB、无周期扫描。失效Unknown须暂停再启用。
+- tray.show.restore以OriginalActionId配对tray.show，复用Desired编译/Host-Agent租约/SerializedRestorableSettingSession/ConditionalSettingTransaction<bool>。固定一个进程及Shell身份，同进程UID/窗口替换仍按可见性判断。
+- 已知基线才显示，首次已连接也能应用。条件结束、Unknown、暂停、删除或正常停止，仅最后可见性和原进程仍一致才恢复首次状态；原隐藏才恢复隐藏，原显示保持显示。未确认写入不恢复，重建最多5秒。
+- 本机10条中蓝牙仅1条；此前所有者确认连接显示、断开恢复隐藏通过，实际恢复开关往返通过，原9任务/托盘工具/登录启动指纹保持。2600b39的34项本轮检查及PR CI源码/分发包已通过；现场证据artifacts/tray-restore-smoke。
+- tray.show以TaskbarCreated请求真实重建；历史UID失配补0–16有限探测。旧全量模板测试的基线计数/白名单落后，本轮只专测改动模板。
 
-## 保留限制与前置链
+## 保留限制
 
-- ServiceHost静默消失根因未修：11/7 18:03系统AppHangB1，WER无线程转储；下次挂起需堆栈。旧HDR/快捷键管道满载风险尚未复现。证据artifacts/host-hang-smoke仅本机。
-- PR51恢复开关7bae1c6；PR50首次硬件亮度枚举有限重发现（ADR0011）；PR48承接44–47和工作台/滚轮；PR43启动遮蔽只保护直接创建进程（ADR0012）。改目标后重验合并结果。
+- ServiceHost静默消失根因未修：11/7系统AppHangB1，WER无线程转储；下次挂起需堆栈。旧HDR/快捷键管道满载风险未复现，证据artifacts/host-hang-smoke仅本机。
+- PR51恢复开关；PR50硬件亮度首次枚举有限重发现（ADR0011）；PR48工作台/滚轮；PR43启动遮蔽仅直接创建进程（ADR0012）。改目标后重验兼容。
 - 最近公共发布v0.2.0-preview.20261028.1；本轮不合并前置链、不发公共Release。
