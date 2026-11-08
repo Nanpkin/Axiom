@@ -3,15 +3,15 @@
 历史分支恢复入口见[仓库维护说明](../development/cloud-workflow.md)。
 更新：2026-11-08。仓库公开；旧检出保留未提交工作，开发和推送仅在内层检出。收尾见[AGENTS](../../AGENTS.md)。
 
-## 当前：蓝牙设备名称检测与托盘显示，等待本机连接/断开验收
+## 已交付本机：蓝牙设备名称检测与托盘显示
 
-- 目标：按 Windows 中完整名称检测蓝牙原设备，连接时显示 DSX 托盘、全部断开时隐藏。分支 codex/device-name-tray，基于 optional-condition-restore 的5953909；前置PR51→50→48→43未合并，新PR应以51分支为目标，不整理其他对话分支。
+- 目标：按 Windows 中完整名称检测蓝牙原设备，连接时显示 DSX 托盘、全部断开时隐藏。功能提交1eb175b，分支 codex/device-name-tray，基于 optional-condition-restore 的5953909；前置PR51→50→48→43未合并，[PR52](https://github.com/Nanpkin/Axiom/pull/52)草稿以51分支为目标，不整理其他对话分支。
 - 新增 bluetooth.device-connected / device-disconnected 及两个配置模板；经典蓝牙/LE系统已配对选择器（带IssueInquiry=False）+AEP IsConnected通知，不打开HID、不读取模拟USB设备，无周期扫描。手写协议/IsPaired查询会触发额外发现、迟迟不能结束首次枚举，已用本机证据改为系统选择器。
 - 完整名称忽略大小写；同名设备作为一组，有任一连接就成立。首次、睡眠恢复和Unknown恢复只建基线，不补一次性动作；通知失败/缺失为Unknown，整体失败后须暂停再启用，不影响其他检测来源。
 - tray.show按完整程序路径定向发送TaskbarCreated并确认真实图标重新出现，不伪造图标；目标不支持、权限不足或超时返回失败。图标可能位于折叠区。已有持续隐藏工具若含同目标会覆盖显示动作，模板已说明。
-- 22项本轮相关检查通过、零跳过：蓝牙状态/Provider/编辑5、两个模板1、完整目录隐私预算1、原生蓝牙订阅1、托盘原生/协议14；WinUI及首次统一打包通过。PR52首次CI在旧共享订阅测试等待Explorer外部删除通知失败；改为显式Invalidate验证订阅生命周期，原生出现/重建测试保留，待修正提交CI。证据artifacts/test-results/{bluetooth,bluetooth-recheck,bluetooth-templates,bluetooth-native,tray-show}。
+- 22项本轮相关检查通过、零跳过：蓝牙状态/Provider/编辑5、两个模板1、完整目录隐私预算1、原生蓝牙订阅1、托盘原生/协议14；WinUI和统一打包通过。1eb175b的PR CI源码隐私、22项声明测试和整库构建通过，分发包仍在构建。旧共享订阅测试依赖Explorer未保证的外部删除通知，改为显式Invalidate验证生命周期，原生出现/重建测试保留。证据artifacts/test-results/{bluetooth,bluetooth-recheck,bluetooth-templates,bluetooth-native,tray-show-dsx}。
 - 模板旧全量方法原已落后：断言67但基线已有70个模板，本轮增加2个；其未填字段白名单也遗漏既有模板。本轮保留旧断言，专测两个新增模板，不声称全量模板方法通过。
-- 已安全更新并核对三角色/原9任务指纹/托盘设置/登录启动保持，随后配置两条DS5→DSX规则；蓝牙基线确认未连接。用户指出需先隐藏以验显示；实测发现DSX缓存UID=1但当前=2，新增对核实归属窗口的0–16有限探测，真实DSX隐藏→重建→隐藏成功。修正后需再次统一更新再测HidHide连接/断开。现场证据artifacts/bluetooth-tray-smoke，不上传设备信息/配置/日志。
+- 本机固定预览0.2.0-local.20261108.2，干净源码1eb175b；正常应用退出后统一更新，三角色来源/版本、后台/UI连接、原9任务指纹、托盘配置与登录启动保持均核对。新增并启用两条DS5→DSX规则（现11条）。DSX缓存与当前UID不一致，补核实归属窗口的0–16有限探测；先隐藏建立验收起点。所有者已确认连接后托盘显示、断开后自动隐藏；HidHide CLI只读确认cloak-on，DSX接管后AEP及Host均持续已连接，断开后均未连接且无活动DSX图标。首次已连接/断开仍不补动作。现场证据artifacts/bluetooth-tray-smoke，不上传设备信息/配置/日志；本轮临时进程/二进制已清理，保留运行预览、源码与证据。
 
 ## 尚未解决：后台静默消失
 
