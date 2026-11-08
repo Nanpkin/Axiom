@@ -170,7 +170,7 @@ public sealed class ConditionRestoreTests
     public async Task RegisteredRestoreActionsStrictImportAndPausedSaveKeepOldCommandsAndExcludeFeedback()
     {
         var modules = BuiltInAutomationPlugins.Create(); var plugin = Assert.Single(modules.OfType<ConditionRestorePlugin>());
-        Assert.Equal(5, plugin.Actions.Count()); Assert.All(plugin.Bindings, b => { Assert.True(b.Descriptor.Observe); Assert.True(b.Descriptor.DesiredState); Assert.False(b.Descriptor.Command); });
+        Assert.Equal(6, plugin.Actions.Count()); Assert.All(plugin.Bindings, b => { Assert.True(b.Descriptor.Observe); Assert.True(b.Descriptor.DesiredState); Assert.False(b.Descriptor.Command); });
         Assert.DoesNotContain(plugin.Combinations, c => c.DetectionId is HotkeyCapabilities.Pressed or SystemEventCapabilities.Event);
         Assert.DoesNotContain(new TaskCombination(PowerSchemeStateCapabilities.State, ConditionRestoreCapabilities.PowerScheme), plugin.Combinations);
         Assert.DoesNotContain(new TaskCombination(WindowStateDetectionCapabilities.StateIs, ConditionRestoreCapabilities.WindowState), plugin.Combinations);

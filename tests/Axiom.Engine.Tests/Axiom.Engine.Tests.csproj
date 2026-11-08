@@ -138,6 +138,7 @@
     <Compile Include="../../src/Axiom.SessionAgent/HotkeyRegistrationHub.cs" Link="HotkeyRegistrationHub.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsTrayEvents.cs" Link="WindowsTrayEvents.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsTrayActions.cs" Link="WindowsTrayActions.cs" />
+    <Compile Include="../../src/Axiom.Providers.Windows/WindowsTrayActions.Restoration.cs" Link="WindowsTrayActions.Restoration.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsProgramBatch.cs" Link="WindowsProgramBatch.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsWindowEvents.cs" Link="WindowsWindowEvents.cs" />
     <Compile Include="../../src/Axiom.Providers.Windows/WindowsWindowActions.cs" Link="WindowsWindowActions.cs" />

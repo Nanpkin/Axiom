@@ -20,7 +20,7 @@ internal static class SessionRestorableLeaseStream
                 catch (RestorableSettingNotAcquiredException error)
                 {
                     notAcquired = true;
-                    await Reply(request, false, "初始亮度暂不可读；本轮未写入，原生资源已清理，等待结束本轮。 " + error.Message, acquire.Token);
+                    await Reply(request, false, "初始设置或目标暂不可确认；本轮未写入，原生资源已清理，等待结束本轮。 " + error.Message, acquire.Token);
                 }
                 if (lease is not null) await Reply(request, lease.Initial.Success, lease.Initial.Reason, acquire.Token);
             }

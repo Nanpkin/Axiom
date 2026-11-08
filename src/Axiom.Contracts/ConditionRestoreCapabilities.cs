@@ -9,6 +9,15 @@ public static class ConditionRestoreCapabilities
     public const string PowerScheme = "power.scheme.restore";
     public const string ProgramPriority = "program.priority.restore";
     public const string WindowState = "window.state.restore";
+    public const string TrayVisibility = "tray.show.restore";
+    public static TaskCapability TrayVisibilityDescriptor { get; } = Describe(TrayCapabilities.ShowDescriptor, TrayVisibility, "条件期间显示托盘图标，结束恢复") with
+    {
+        Description = "条件成立时显示指定程序托盘，结束时恢复本轮最初的显示或隐藏状态。",
+        Fields = [new("executable", "目标程序", TaskFieldKind.FilePath, true, "选择一个已运行程序的完整 .exe 路径；固定本轮进程，不控制后来启动的替代实例。", null, 1024, [], BrowseLocalPath: true),
+            new("delaySeconds", "延迟执行（秒）", TaskFieldKind.Number, true, "条件持续满足后应用；首次已知成立也可应用。", "0", 8, [], 0, 86400)],
+        Behavior = "先捕获当前进程及托盘可见性，再请求显示并确认。条件结束、暂停、删除、未知或正常停止时，只有原进程及最后确认状态仍一致才恢复最初可见性；本来隐藏才恢复隐藏，本来显示则保持显示。",
+        EditWarning = "仅支持一个完整程序路径及一个当前运行实例；目标须支持托盘重建，最多等待5秒。进程退出、托盘可见性被外部改变或无法确认时让出，不修改替代实例。恢复指原状态，不是固定隐藏；若要连接显示、断开隐藏，请先让目标托盘处于隐藏状态。持续隐藏工具不要同时包含同一目标。"
+    };
     public static TaskCapability PlaybackDescriptor { get; } = Describe(AudioPlaybackCapabilities.Descriptor, Playback, "条件期间调整播放音量或静音，结束恢复");
     public static TaskCapability MicrophoneDescriptor { get; } = Describe(MicrophoneCapabilities.Descriptor, Microphone, "条件期间设置麦克风静音，结束恢复");
     public static TaskCapability PowerSchemeDescriptor { get; } = Describe(PowerSchemeCapabilities.Descriptor, PowerScheme, "条件期间切换电源方案，结束恢复") with
@@ -52,6 +61,12 @@ public static class ConditionRestoreCapabilities
                 throw new ArgumentException("请填写一个完整程序路径、窗口状态/布局和有效延迟。");
             ExecutablePaths.ValidatePath(path);
         }
+        else if (invocation.CapabilityId == TrayVisibility)
+        {
+            if (invocation.Parameters.Count != 2 || !invocation.Parameters.TryGetValue("executable", out var path) || path.Any(char.IsControl) || path.Length > 1024)
+                throw new ArgumentException("托盘恢复只能选择一个完整程序路径和有效延迟。");
+            ExecutablePaths.ValidatePath(path);
+        }
         else throw new ArgumentException("未注册此条件恢复设置。");
     }
     public static string ResourceId(TaskInvocation invocation) => invocation.CapabilityId switch
@@ -59,7 +74,7 @@ public static class ConditionRestoreCapabilities
         Playback => invocation.Parameters["operation"] == "volume" ? "default-playback-volume" : "default-playback-mute",
         Microphone => "default-communication-mute",
         PowerScheme => "active-power-scheme",
-        ProgramPriority or WindowState => ExecutablePaths.ValidatePath(invocation.Parameters["executable"]).ToLowerInvariant(),
+        ProgramPriority or WindowState or TrayVisibility => ExecutablePaths.ValidatePath(invocation.Parameters["executable"]).ToLowerInvariant(),
         _ => throw new ArgumentException("条件恢复资源无效。")
     };
 }

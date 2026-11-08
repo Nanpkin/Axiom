@@ -10,7 +10,7 @@ public sealed record WindowsTrayEntry(string ExecutablePath, string DisplayName,
 public sealed record WindowsTrayCatalog(WindowsTrayEntry[] Entries, string? Notice);
 
 [SupportedOSPlatform("windows")]
-public static class WindowsTrayActions
+public static partial class WindowsTrayActions
 {
     private static event Action<string, (nint Window, uint Id, Guid Guid)>? IconRemoved;
 

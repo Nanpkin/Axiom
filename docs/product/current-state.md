@@ -1,27 +1,24 @@
 # 当前交接
 
-历史分支恢复入口见[仓库维护说明](../development/cloud-workflow.md)。
-更新：2026-11-08。仓库公开；旧检出保留未提交工作，开发和推送仅在内层检出。收尾见[AGENTS](../../AGENTS.md)。
+更新：2026-11-08。公开仓库，开发/推送仅内层检出；历史分支入口见[仓库维护说明](../development/cloud-workflow.md)，收尾见[AGENTS](../../AGENTS.md)。
 
-## 已交付本机：蓝牙设备名称检测与托盘显示
+## 当前：托盘显示接入条件结束恢复，改为单规则
 
-- 目标：按 Windows 中完整名称检测蓝牙原设备，连接时显示 DSX 托盘、全部断开时隐藏。功能提交1eb175b，分支 codex/device-name-tray，基于 optional-condition-restore 的5953909；前置PR51→50→48→43未合并，[PR52](https://github.com/Nanpkin/Axiom/pull/52)草稿以51分支为目标，不整理其他对话分支。
-- 新增 bluetooth.device-connected / device-disconnected 及两个配置模板；经典蓝牙/LE系统已配对选择器（带IssueInquiry=False）+AEP IsConnected通知，不打开HID、不读取模拟USB设备，无周期扫描。手写协议/IsPaired查询会触发额外发现、迟迟不能结束首次枚举，已用本机证据改为系统选择器。
-- 完整名称忽略大小写；同名设备作为一组，有任一连接就成立。首次、睡眠恢复和Unknown恢复只建基线，不补一次性动作；通知失败/缺失为Unknown，整体失败后须暂停再启用，不影响其他检测来源。
-- tray.show按完整程序路径定向发送TaskbarCreated并确认真实图标重新出现，不伪造图标；目标不支持、权限不足或超时返回失败。图标可能位于折叠区。已有持续隐藏工具若含同目标会覆盖显示动作，模板已说明。
-- 22项本轮相关检查通过、零跳过：蓝牙状态/Provider/编辑5、两个模板1、完整目录隐私预算1、原生蓝牙订阅1、托盘原生/协议14；WinUI和统一打包通过。1eb175b的PR CI源码隐私、22项声明测试和整库构建通过，分发包仍在构建。旧共享订阅测试依赖Explorer未保证的外部删除通知，改为显式Invalidate验证生命周期，原生出现/重建测试保留。证据artifacts/test-results/{bluetooth,bluetooth-recheck,bluetooth-templates,bluetooth-native,tray-show-dsx}。
-- 模板旧全量方法原已落后：断言67但基线已有70个模板，本轮增加2个；其未填字段白名单也遗漏既有模板。本轮保留旧断言，专测两个新增模板，不声称全量模板方法通过。
-- 本机固定预览0.2.0-local.20261108.2，干净源码1eb175b；正常应用退出后统一更新，三角色来源/版本、后台/UI连接、原9任务指纹、托盘配置与登录启动保持均核对。新增并启用两条DS5→DSX规则（现11条）。DSX缓存与当前UID不一致，补核实归属窗口的0–16有限探测；先隐藏建立验收起点。所有者已确认连接后托盘显示、断开后自动隐藏；HidHide CLI只读确认cloak-on，DSX接管后AEP及Host均持续已连接，断开后均未连接且无活动DSX图标。首次已连接/断开仍不补动作。现场证据artifacts/bluetooth-tray-smoke，不上传设备信息/配置/日志；本轮临时进程/二进制已清理，保留运行预览、源码与证据。
+- 所有者要求复用既有恢复开关，将此前DS5连接显示/断开隐藏两条改为一条。分支codex/device-name-tray，[PR52](https://github.com/Nanpkin/Axiom/pull/52)草稿，目标codex/optional-condition-restore；前置链52→51→50→48→43仍未合并，不清理其他对话分支。
+- 新增tray.show.restore，OriginalActionId配对tray.show，复用RestorableSettingTaskAction、通用Host/Agent租约、SerializedRestorableSettingSession与ConditionalSettingTransaction<bool>。一个已运行程序路径/实例，固定进程句柄、创建时间、SID、会话、路径及Shell身份；同进程更新图标UID/窗口仍按可见性判断。
+- 已知基线才显示，首次已连接也能应用。条件结束、Unknown、暂停、删除或正常停止时，当前可见性仍等于最后确认值才恢复首次可见性；原隐藏才恢复隐藏，原显示保持显示。外部已隐藏不覆盖；进程替代、身份未知或未确认写入不恢复。重建最多5秒，不周期重写。
+- 编辑页复用“条件结束后恢复原状态”开关；恢复版只支持单程序，不接受一次性动作自定义等待，不能无损切换时保留草稿说明。两个蓝牙模板改为单个bluetooth-tray-visibility；蓝牙状态允许组合既有条件恢复动作。
+- 34项相关测试通过、零跳过（首次夹具线程异常后仅复查18项托盘）；Agent构建通过，真实DSX直接lease显示/释放恢复隐藏已通过。夹具修复消息/清理竞态，后台异常转回测试线程，未放宽断言。证据artifacts/test-results/{focused,tray-restore-recheck}，本机夹具artifacts/tray-restore-smoke，不上传现场数据。
+- 尚需统一更新本机、将本次旧两规则替换为单规则，并验证恢复开关/实际连接与断开。当前运行0.2.0-local.20261108.2（1eb175b），原9任务+本次两条共11条。
 
-## 尚未解决：后台静默消失
+## 蓝牙检测与前轮实测
 
-- 11/7 18:00:56最后活动为游戏退出并确认HDR恢复；18:03:05系统事件1002/1001确认ServiceHost AppHangB1，无正常停止/同期关机记录。WER无线程转储，不能定位根因或归因分支依赖；原固定预览已恢复运行。
-- 只读另发现旧HDR/快捷键管道满载可能耗尽监听槽，尚未复现或修复；下次挂起需线程堆栈。启动器没有后台退出自动拉起。证据artifacts/host-hang-smoke仅本机。
+- 按完整名称忽略大小写匹配已配对经典蓝牙/LE，系统选择器带IssueInquiry=False，观察AEP IsConnected；不打开HID、不读取模拟USB，无周期扫描。同名设备分组；检测失效为Unknown，须暂停再启用。
+- 1eb175b的两规则版本已确认HidHide cloak-on下DSX接管后持续已连接，断开后托盘消失。原9任务、托盘工具、登录启动指纹保持。tray.show定向TaskbarCreated后确认真实图标；DSX历史UID失配补0–16有限探测。
+- 旧全量模板测试基线计数/未填字段白名单已落后，本轮专测替换模板，不声称全量方法通过。
 
-## 前置功能与限制
+## 保留限制与前置链
 
-- PR51：条件结束恢复开关，功能7bae1c6；恢复/一次性动作OriginalActionId配对，旧规则不迁移。基于PR50 a254d98，本机预览0.2.0-local.20261107.1含该功能；17项相关检查及实际未保存音量草稿开关验证通过，原9任务/托盘/登录启动保持。
-- PR50：物理硬件亮度首次枚举0xC02625E5时，首次写前有限重新发现，重验布局/会话/主屏，失败零写入；写后不重放，恢复不重抓基线，见ADR0011。60557cd已含于本机预览；原生故障注入/冷启动未测。
-- PR48承接#44–47及工作台唤出/滚轮失败恢复，基于PR43；滚轮末笔读回至少100ms，独占全屏/QQ未测，整场游戏未完整验收。
-- PR43启动遮蔽只保护直接创建进程；Steam另起主程序、真实硬件效果与整机重启仍有限制，见ADR0012。
-- 最近公共发布v0.2.0-preview.20261028.1。本机新版本不等于公共Release；前置链本轮不合并、不发公共Release。改目标后重验合并结果与受影响边界。
+- ServiceHost静默消失根因未修：11/7 18:03系统AppHangB1，WER无线程转储；下次挂起需堆栈。旧HDR/快捷键管道满载风险尚未复现。证据artifacts/host-hang-smoke仅本机。
+- PR51恢复开关7bae1c6；PR50首次硬件亮度枚举有限重发现（ADR0011）；PR48承接44–47和工作台/滚轮；PR43启动遮蔽只保护直接创建进程（ADR0012）。改目标后重验合并结果。
+- 最近公共发布v0.2.0-preview.20261028.1；本轮不合并前置链、不发公共Release。

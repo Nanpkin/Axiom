@@ -74,6 +74,76 @@ public sealed class TrayActionTests
         var missing = await WindowsTrayActions.ShowAsync(Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".exe"), TimeSpan.FromSeconds(1), default);
         Assert.False(missing.Success); Assert.True(target.Alive);
     }
+    private static IReadOnlyDictionary<string, string> RestoreParameters() => new Dictionary<string, string>
+    { ["executable"] = Environment.ProcessPath!, ["delaySeconds"] = "0" };
+
+    [Fact(Timeout = 15000)]
+    public async Task VisibilityLeaseShowsHiddenIconAndRestoresFirstHiddenBaseline()
+    {
+        using var target = new IconWindow(true, true, true, recreateOwner: true);
+        await using var lease = await WindowsTrayActions.CreateRestorableSessionAsync(Environment.ProcessPath!, default);
+        var applied = await lease.ApplyAsync(RestoreParameters(), default);
+        Assert.True(applied.Success, applied.Reason); Assert.True(applied.Owned); Assert.True(target.Exists(false));
+        // An in-place desired value refresh must not replace the first hidden baseline.
+        var repeated = await lease.ApplyAsync(RestoreParameters(), default);
+        Assert.True(repeated.Success, repeated.Reason); Assert.Equal(1, target.RecreationRequests);
+        var restored = await lease.ReleaseAsync(default);
+        Assert.True(restored.Success, restored.Reason); Assert.False(restored.Owned); Assert.False(target.Exists(false)); Assert.True(target.Alive);
+    }
+    [Fact(Timeout = 15000)]
+    public async Task VisibilityLeasePreservesOriginallyVisibleTrayAndRestoresSameProcessNewIcon()
+    {
+        using var target = new IconWindow(false, true, true);
+        target.Add(false);
+        await using (var originalVisible = await WindowsTrayActions.CreateRestorableSessionAsync(Environment.ProcessPath!, default))
+        {
+            Assert.True((await originalVisible.ApplyAsync(RestoreParameters(), default)).Success);
+            Assert.True((await originalVisible.ReleaseAsync(default)).Success); Assert.True(target.Exists(false));
+            Assert.Equal(0, target.RecreationRequests);
+        }
+        target.Remove(false);
+        await using var changed = await WindowsTrayActions.CreateRestorableSessionAsync(Environment.ProcessPath!, default);
+        Assert.True((await changed.ApplyAsync(RestoreParameters(), default)).Success);
+        target.Remove(false); target.Add(true);
+        var released = await changed.ReleaseAsync(default);
+        Assert.True(released.Success, released.Reason);
+        Assert.False(target.Exists(true)); Assert.False(target.Exists(false));
+        await using var externallyHidden = await WindowsTrayActions.CreateRestorableSessionAsync(Environment.ProcessPath!, default);
+        Assert.True((await externallyHidden.ApplyAsync(RestoreParameters(), default)).Success);
+        target.Remove(false);
+        var preserved = await externallyHidden.ReleaseAsync(default);
+        Assert.True(preserved.Success, preserved.Reason); Assert.Contains("其他来源", preserved.Reason);
+        Assert.False(target.Exists(false));
+    }
+    [Fact(Timeout = 15000)]
+    public async Task VisibilityLeaseRejectsMissingProcessAndAcceptsNewOwnerWithinPinnedProcess()
+    {
+        await Assert.ThrowsAsync<RestorableSettingNotAcquiredException>(() => WindowsTrayActions.CreateRestorableSessionAsync(
+            Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".exe"), default));
+        var target = new IconWindow(true, true, true);
+        await using var lease = await WindowsTrayActions.CreateRestorableSessionAsync(Environment.ProcessPath!, default);
+        Assert.True((await lease.ApplyAsync(RestoreParameters(), default)).Success);
+        target.Dispose();
+        using var replacement = new IconWindow(true, true, true); replacement.Add(false);
+        var released = await lease.ReleaseAsync(default);
+        Assert.True(released.Success, released.Reason); Assert.False(replacement.Exists(false)); Assert.True(replacement.Alive);
+    }
+    [Fact(Timeout = 15000)]
+    public async Task VisibilityLeaseDoesNotRestoreUnconfirmedWritesAndCancelledCaptureDoesNotWrite()
+    {
+        using var target = new IconWindow(true, true);
+        using var cancelled = new CancellationTokenSource(); cancelled.Cancel();
+        await Assert.ThrowsAsync<RestorableSettingNotAcquiredException>(() =>
+            WindowsTrayActions.CreateRestorableSessionAsync(Environment.ProcessPath!, cancelled.Token));
+        Assert.False(target.Exists(false)); Assert.Equal(0, target.RecreationRequests);
+        await using var lease = await WindowsTrayActions.CreateRestorableSessionAsync(Environment.ProcessPath!, default);
+        var failed = await lease.ApplyAsync(RestoreParameters(), default);
+        Assert.False(failed.Success); Assert.False(failed.Owned);
+        // A late program-created icon is not an Axiom-confirmed write and must survive release.
+        target.Add(false);
+        var released = await lease.ReleaseAsync(default);
+        Assert.True(released.Success, released.Reason); Assert.True(target.Exists(false));
+    }
     [Fact(Timeout=15000)]
     public async Task CurrentCatalogIncludesDynamicWindowUidAndDropsRemovedIcons()
     {
@@ -259,31 +329,85 @@ public sealed class TrayActionTests
         private readonly Guid guid=Guid.NewGuid();
         private readonly Thread thread;
         private readonly TaskCompletionSource ready=new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly object gate = new();
+        private System.Runtime.ExceptionServices.ExceptionDispatchInfo? workerFailure;
+        private bool disposed;
         private nint window;private uint threadId;
         internal int RecreationRequests;
-        internal IconWindow(bool messageOnly, bool dynamicUid = false, bool recreate = false, uint? fixedUid = null)
+        internal IconWindow(bool messageOnly, bool dynamicUid = false, bool recreate = false, uint? fixedUid = null, bool recreateOwner = false)
         {
             if (fixedUid.HasValue) id = fixedUid.Value;
             thread=new Thread(()=>{
-                threadId=GetCurrentThreadId();
-                window=CreateWindowEx(0,"STATIC","Axiom tray test",0,0,0,0,0,messageOnly?-3:0,0,0,0);
-                if (dynamicUid) id = unchecked((uint)window.ToInt64());
-                if(window==0){ready.TrySetException(new InvalidOperationException("Fixture window failed"));return;}ready.TrySetResult();
-                var taskbarCreated = RegisterWindowMessage("TaskbarCreated");
-                while(GetMessage(out var msg,0,0,0)>0)
+                try
                 {
-                    if (msg.Id == taskbarCreated && recreate) { Interlocked.Increment(ref RecreationRequests); Add(false); }
-                    TranslateMessage(ref msg);DispatchMessage(ref msg);
+                    threadId=GetCurrentThreadId();
+                    window=CreateWindowEx(0,"STATIC","Axiom tray test",0,0,0,0,0,messageOnly?-3:0,0,0,0);
+                    if (dynamicUid) id = unchecked((uint)window.ToInt64());
+                    if(window==0) throw new InvalidOperationException("Fixture window failed");
+                    var taskbarCreated = RegisterWindowMessage("TaskbarCreated");
+                    if (taskbarCreated == 0) throw new InvalidOperationException("Fixture recreation message registration failed");
+                    ready.TrySetResult();
+                    while(GetMessage(out var msg,0,0,0)>0)
+                    {
+                        if (msg.Id == taskbarCreated && recreate)
+                        {
+                            lock (gate)
+                            {
+                                if (disposed) continue;
+                                Interlocked.Increment(ref RecreationRequests);
+                                // A queued recreation request can arrive after the icon is already
+                                // recreated. It must not issue a duplicate NIM_ADD for that identity.
+                                if (!ExistsCore(false))
+                                {
+                                    if (recreateOwner)
+                                    {
+                                        var previous = window;
+                                        var replacement = CreateWindowEx(0,"STATIC","Axiom tray recreated owner",0,0,0,0,0,messageOnly?-3:0,0,0,0);
+                                        Assert.NotEqual(nint.Zero, replacement);
+                                        RemoveCore(false); RemoveCore(true);
+                                        window = replacement;
+                                        if (dynamicUid) id = unchecked((uint)window.ToInt64());
+                                        Assert.True(DestroyWindow(previous), "Fixture previous owner could not be destroyed");
+                                    }
+                                    AddCore(false);
+                                }
+                            }
+                        }
+                        TranslateMessage(ref msg);DispatchMessage(ref msg);
+                    }
                 }
-                DestroyWindow(window);
+                catch (Exception error)
+                {
+                    lock (gate) workerFailure ??= System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error);
+                    ready.TrySetException(error);
+                }
+                finally
+                {
+                    lock (gate)
+                    {
+                        if (window != 0) { RemoveCore(false); RemoveCore(true); DestroyWindow(window); window = 0; }
+                    }
+                }
             }){IsBackground=true};thread.Start();ready.Task.GetAwaiter().GetResult();
         }
-        internal bool Alive=>IsWindow(window);
+        private void CheckWorker() => workerFailure?.Throw();
+        internal bool Alive { get { lock (gate) { CheckWorker(); return IsWindow(window); } } }
         private IconData Data(bool withGuid)=>new(){Size=(uint)Marshal.SizeOf<IconData>(),Window=window,Id=id+(withGuid?1u:0u),Flags=6u|(withGuid?32u:0u),Icon=LoadIcon(0,32512),Tip="Axiom tray test "+id,Info="",Title="",Guid=withGuid?guid:Guid.Empty};
-        internal void Add(bool withGuid){var data=Data(withGuid);Assert.True(Shell_NotifyIcon(0,ref data),"Fixture icon could not be created on desktop");}
-        internal void Remove(bool withGuid){var data=Data(withGuid);Shell_NotifyIcon(2,ref data);}
-        internal bool Exists(bool withGuid){var data=Data(withGuid);var identity=new Identifier{Size=(uint)Marshal.SizeOf<Identifier>(),Window=window,Id=data.Id,Guid=data.Guid};return Shell_NotifyIconGetRect(ref identity,out _)>=0;}
-        public void Dispose(){Remove(false);Remove(true);PostThreadMessage(threadId,0x0012,0,0);thread.Join(TimeSpan.FromSeconds(3));}
+        private void AddCore(bool withGuid){var data=Data(withGuid);Assert.True(Shell_NotifyIcon(0,ref data),"Fixture icon could not be created on desktop");}
+        private void RemoveCore(bool withGuid){var data=Data(withGuid);Shell_NotifyIcon(2,ref data);}
+        private bool ExistsCore(bool withGuid){var data=Data(withGuid);var identity=new Identifier{Size=(uint)Marshal.SizeOf<Identifier>(),Window=window,Id=data.Id,Guid=data.Guid};return Shell_NotifyIconGetRect(ref identity,out _)>=0;}
+        internal void Add(bool withGuid){lock(gate){CheckWorker();Assert.False(disposed);AddCore(withGuid);}}
+        internal void Remove(bool withGuid){lock(gate){CheckWorker();Assert.False(disposed);RemoveCore(withGuid);}}
+        internal bool Exists(bool withGuid){lock(gate){CheckWorker();return ExistsCore(withGuid);}}
+        public void Dispose()
+        {
+            lock (gate)
+            {
+                if (!disposed) { disposed = true; PostThreadMessage(threadId,0x0012,0,0); }
+            }
+            Assert.True(thread.Join(TimeSpan.FromSeconds(3)), "Fixture owner thread did not stop");
+            lock (gate) CheckWorker();
+        }
         [StructLayout(LayoutKind.Sequential,CharSet=CharSet.Unicode)] private struct IconData{
             public uint Size;public nint Window;public uint Id,Flags,Message;public nint Icon;
             [MarshalAs(UnmanagedType.ByValTStr,SizeConst=128)]public string Tip;public uint State,Mask;

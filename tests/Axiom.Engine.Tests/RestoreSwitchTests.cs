@@ -18,7 +18,7 @@ public sealed class RestoreSwitchTests
     private static TaskEditorState Editor(string actionId, string detectionId = "process.running")
     {
         var action = Defaults(Catalog.Capabilities.Single(c => c.Id == actionId));
-        if (actionId is ProgramPriorityCapabilities.Set or WindowCapabilities.State)
+        if (actionId is ProgramPriorityCapabilities.Set or WindowCapabilities.State or TrayCapabilities.Show)
             action = action with { Parameters = action.Parameters.SetItem("executable", @"C:\Synthetic\Example.exe") };
         var editor = new TaskEditorState();
         editor.Load(new("synthetic-rule", 1, "Synthetic", true,
@@ -26,10 +26,10 @@ public sealed class RestoreSwitchTests
         return editor;
     }
     [Fact]
-    public void AllEightPairsSwitchToRealDesiredActionsAndBackWithoutLosingSharedValues()
+    public void AllNinePairsSwitchToRealDesiredActionsAndBackWithoutLosingSharedValues()
     {
         var restored = Catalog.Capabilities.Where(c => c.OriginalActionId is not null).ToArray();
-        Assert.Equal(8, restored.Length);
+        Assert.Equal(9, restored.Length);
         foreach (var capability in restored)
         {
             var editor = Editor(capability.OriginalActionId!);
@@ -68,6 +68,8 @@ public sealed class RestoreSwitchTests
     [InlineData(WindowCapabilities.State, "waitSeconds", "10")]
     [InlineData(WindowCapabilities.State, "executable", "C:\\Synthetic\\One.exe\nC:\\Synthetic\\Two.exe")]
     [InlineData(ProgramPriorityCapabilities.Set, "executable", "C:\\Synthetic\\One.exe\nC:\\Synthetic\\Two.exe")]
+    [InlineData(TrayCapabilities.Show, "executable", "C:\\Synthetic\\One.exe\nC:\\Synthetic\\Two.exe")]
+    [InlineData(TrayCapabilities.Show, "waitSeconds", "60")]
     public void UnsupportedParametersNeverDisappearSilently(string action, string key, string value)
     {
         var editor = Editor(action); editor.SetParameter(TaskCapabilityKind.Action, key, value);
@@ -95,5 +97,24 @@ public sealed class RestoreSwitchTests
         var older = Catalog with { Capabilities = [.. Catalog.Capabilities.Select(c => c with { OriginalActionId = null })] };
         Assert.Null(editor.RestoreAlternative(older)); Assert.False(editor.CanSwitchRestore(older));
         Assert.DoesNotContain("OriginalActionId", JsonSerializer.Serialize(Catalog.Capabilities.Single(c => c.Id == WindowCapabilities.Close)));
+    }
+    [Fact]
+    public void BluetoothTrayShowCanEnableRestoreAndKeepTheSameRuleAndLocalParameters()
+    {
+        var editor = Editor(TrayCapabilities.Show, BluetoothDeviceCapabilities.Connected);
+        editor.SetParameter(TaskCapabilityKind.Detection, "deviceNames", "Synthetic Controller");
+        editor.SetParameter(TaskCapabilityKind.Action, "delaySeconds", "2");
+        var id = editor.Id;
+        Assert.True(editor.CanSwitchRestore(Catalog)); editor.SwitchRestore(Catalog);
+        Assert.Equal(ConditionRestoreCapabilities.TrayVisibility, editor.Action!.CapabilityId);
+        Assert.False(editor.Action.Parameters.ContainsKey("waitSeconds"));
+        Assert.Equal("2", editor.Action.Parameters["delaySeconds"]);
+        Assert.Equal(id, editor.Id);
+        Assert.Contains(new TaskCombination(BluetoothDeviceCapabilities.Connected, ConditionRestoreCapabilities.TrayVisibility), Catalog.Combinations);
+        var action = Modules.SelectMany(m => m.Actions).Single(a => a.Descriptor.Id == editor.Action.CapabilityId).Compile(editor.Action, ResourceScope.Machine);
+        Assert.Equal(RuleActionKind.Desired, action.Kind);
+        editor.SwitchRestore(Catalog);
+        Assert.Equal(TrayCapabilities.Show, editor.Action!.CapabilityId);
+        Assert.Equal("30", editor.Action.Parameters["waitSeconds"]);
     }
 }

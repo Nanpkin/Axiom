@@ -49,12 +49,13 @@ public sealed class AutomationTemplateTests
         }
     }
     [Fact]
-    public void BluetoothTrayRecipesRequireLocalNamesAndPathsAndCompileBothDirections()
+    public void BluetoothTrayRecipeUsesOneDesiredRuleWithLocalNamesAndPath()
     {
         var catalog = Catalog(); var templates = AutomationTemplates.Build(catalog);
         var compiler = new AutomationTaskCompiler();
         foreach (var module in Modules()) { foreach (var d in module.Detections) compiler.Register(d); foreach (var a in module.Actions) compiler.Register(a); }
-        foreach (var id in new[] { "bluetooth-tray-show", "bluetooth-tray-hide" })
+        Assert.DoesNotContain(templates, t => t.Id is "bluetooth-tray-show" or "bluetooth-tray-hide");
+        foreach (var id in new[] { "bluetooth-tray-visibility" })
         {
             var draft = Assert.Single(templates, t => t.Id == id).Draft;
             Assert.True(draft.Paused); Assert.Equal(0, draft.Version);
@@ -67,7 +68,8 @@ public sealed class AutomationTemplateTests
                 Action = draft.Action with { Parameters = draft.Action.Parameters.Add("executable", @"C:\Apps\SyntheticTray.exe") }
             };
             var rule = compiler.Compile(complete, "owner", ResourceScope.Session("owner", 1));
-            Assert.Equal(id.EndsWith("show") ? TrayCapabilities.Show : TrayCapabilities.Hide, rule.Action.Key.CapabilityId);
+            Assert.Equal(ConditionRestoreCapabilities.TrayVisibility, rule.Action.Key.CapabilityId);
+            Assert.Equal(RuleActionKind.Desired, rule.Action.Kind);
         }
     }
     [Fact]
