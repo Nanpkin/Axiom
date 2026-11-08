@@ -171,11 +171,25 @@ public sealed class TrayActionTests
     [Fact(Timeout=15000)]
     public async Task SharedWaitSourceSurvivesOneSubscriberAndCanBeRecreated()
     {
-        using var target=new IconWindow(false);using var one=new WindowsTrayEvents();
-        using(var two=new WindowsTrayEvents()) { target.Add(false);using var deadline=new CancellationTokenSource(TimeSpan.FromSeconds(3));Assert.True(await two.Events.Reader.ReadAsync(deadline.Token)); }
-        target.Add(true);using var limit=new CancellationTokenSource(TimeSpan.FromSeconds(3));Assert.True(await one.Events.Reader.ReadAsync(limit.Token));
+        using var one=new WindowsTrayEvents();
+        // Exercise lease delivery deterministically. Explorer need not emit a WinEvent for removal
+        // of an overflow icon, and its historical registry entry may remain unchanged.
+        using(var two=new WindowsTrayEvents()) { WindowsTrayEvents.Invalidate();using var deadline=new CancellationTokenSource(TimeSpan.FromSeconds(3));Assert.True(await two.Events.Reader.ReadAsync(deadline.Token)); }
+        Assert.True(one.Events.Reader.TryRead(out _));
+        WindowsTrayEvents.Invalidate();using var limit=new CancellationTokenSource(TimeSpan.FromSeconds(3));Assert.True(await one.Events.Reader.ReadAsync(limit.Token));
         one.Dispose();
-        using var recreated=new WindowsTrayEvents();target.Remove(false);using var end=new CancellationTokenSource(TimeSpan.FromSeconds(3));Assert.True(await recreated.Events.Reader.ReadAsync(end.Token));
+        using var recreated=new WindowsTrayEvents();WindowsTrayEvents.Invalidate();using var end=new CancellationTokenSource(TimeSpan.FromSeconds(3));Assert.True(await recreated.Events.Reader.ReadAsync(end.Token));
+    }
+    [Fact(Timeout = 15000)]
+    public async Task SmallLiveUidIsRecognizedWithoutTrustingHistoricalRegistration()
+    {
+        using var target = new IconWindow(true, recreate: true, fixedUid: 2);
+        target.Add(false);
+        Assert.True(target.Exists(false));
+        var hidden = await WindowsTrayActions.HideAsync(Environment.ProcessPath!, TimeSpan.FromSeconds(2), default);
+        Assert.True(hidden.Success, hidden.Reason); Assert.False(hidden.Skipped); Assert.False(target.Exists(false));
+        var shown = await WindowsTrayActions.ShowAsync(Environment.ProcessPath!, TimeSpan.FromSeconds(2), default);
+        Assert.True(shown.Success, shown.Reason); Assert.True(target.Exists(false)); Assert.True(target.Alive);
     }
     [Fact(Timeout = 15000)]
     public async Task ContinuousTargetNotificationsHideSameIdentityAgainAndCancelLeavesNewIconVisible()
@@ -247,8 +261,9 @@ public sealed class TrayActionTests
         private readonly TaskCompletionSource ready=new(TaskCreationOptions.RunContinuationsAsynchronously);
         private nint window;private uint threadId;
         internal int RecreationRequests;
-        internal IconWindow(bool messageOnly, bool dynamicUid = false, bool recreate = false)
+        internal IconWindow(bool messageOnly, bool dynamicUid = false, bool recreate = false, uint? fixedUid = null)
         {
+            if (fixedUid.HasValue) id = fixedUid.Value;
             thread=new Thread(()=>{
                 threadId=GetCurrentThreadId();
                 window=CreateWindowEx(0,"STATIC","Axiom tray test",0,0,0,0,0,messageOnly?-3:0,0,0,0);

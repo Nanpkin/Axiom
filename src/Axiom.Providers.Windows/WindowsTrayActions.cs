@@ -268,7 +268,14 @@ public static class WindowsTrayActions
         }
         // RTSS/MFC may use its current HWND value as uID. Probe this single bounded convention
         // for each verified owned window; GetRect must confirm the exact live identity before any delete.
-        foreach (var window in windows) candidates.Add((window,unchecked((uint)window.ToInt64()),Guid.Empty));
+        foreach (var window in windows)
+        {
+            candidates.Add((window,unchecked((uint)window.ToInt64()),Guid.Empty));
+            // NotifyIconSettings can retain an old UID when a framework recreates its NotifyIcon
+            // (observed DSX: recorded 1, live 2). Probe only a small bounded range on verified owned
+            // windows; GetRect and a second ownership check still precede every deletion.
+            for (uint id = 0; id <= 16; id++) candidates.Add((window,id,Guid.Empty));
+        }
         var active = new List<(nint Window,uint Id,Guid Guid)>();
         foreach (var candidate in candidates)
         {

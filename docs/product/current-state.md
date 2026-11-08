@@ -9,9 +9,9 @@
 - 新增 bluetooth.device-connected / device-disconnected 及两个配置模板；经典蓝牙/LE系统已配对选择器（带IssueInquiry=False）+AEP IsConnected通知，不打开HID、不读取模拟USB设备，无周期扫描。手写协议/IsPaired查询会触发额外发现、迟迟不能结束首次枚举，已用本机证据改为系统选择器。
 - 完整名称忽略大小写；同名设备作为一组，有任一连接就成立。首次、睡眠恢复和Unknown恢复只建基线，不补一次性动作；通知失败/缺失为Unknown，整体失败后须暂停再启用，不影响其他检测来源。
 - tray.show按完整程序路径定向发送TaskbarCreated并确认真实图标重新出现，不伪造图标；目标不支持、权限不足或超时返回失败。图标可能位于折叠区。已有持续隐藏工具若含同目标会覆盖显示动作，模板已说明。
-- 21项本轮相关检查通过、零跳过：蓝牙状态/Provider/编辑5、两个模板1、完整目录隐私预算1、原生蓝牙订阅1、托盘原生/协议13；WinUI构建通过。证据artifacts/test-results/{bluetooth,bluetooth-recheck,bluetooth-templates,bluetooth-native,tray-show}。
+- 22项本轮相关检查通过、零跳过：蓝牙状态/Provider/编辑5、两个模板1、完整目录隐私预算1、原生蓝牙订阅1、托盘原生/协议14；WinUI及首次统一打包通过。PR52首次CI在旧共享订阅测试等待Explorer外部删除通知失败；改为显式Invalidate验证订阅生命周期，原生出现/重建测试保留，待修正提交CI。证据artifacts/test-results/{bluetooth,bluetooth-recheck,bluetooth-templates,bluetooth-native,tray-show}。
 - 模板旧全量方法原已落后：断言67但基线已有70个模板，本轮增加2个；其未填字段白名单也遗漏既有模板。本轮保留旧断言，专测两个新增模板，不声称全量模板方法通过。
-- 本机更新/配置与DSX接管、HidHide连接及断开实测仍待完成；所有者已同意配合，功能准备好后提醒操作。只读已确认本机可枚举手柄实际名称和断开状态，持续隐藏名单不含DSX。现场证据artifacts/bluetooth-tray-smoke，不上传设备信息/配置/日志。
+- 已安全更新并核对三角色/原9任务指纹/托盘设置/登录启动保持，随后配置两条DS5→DSX规则；蓝牙基线确认未连接。用户指出需先隐藏以验显示；实测发现DSX缓存UID=1但当前=2，新增对核实归属窗口的0–16有限探测，真实DSX隐藏→重建→隐藏成功。修正后需再次统一更新再测HidHide连接/断开。现场证据artifacts/bluetooth-tray-smoke，不上传设备信息/配置/日志。
 
 ## 尚未解决：后台静默消失
 
