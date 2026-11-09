@@ -83,13 +83,15 @@ public static partial class WindowsTrayActions
 
         private (nint Window, uint Id, Guid Guid)[] Read(CancellationToken token)
         {
-            token.ThrowIfCancellationRequested(); Verify();
-            var active = FindActive(path, ReadRegistrations(), [process], token);
-            Verify(); token.ThrowIfCancellationRequested(); return active;
+            return [.. ReadRegistered(token).Where(i => i.Visibility == IconVisibility.Visible).Select(i => i.Identity)];
         }
 
-        private static bool Same((nint Window, uint Id, Guid Guid)[] first, (nint Window, uint Id, Guid Guid)[] second) =>
-            first.Length == second.Length && first.ToHashSet().SetEquals(second);
+        private RegisteredIcon[] ReadRegistered(CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested(); Verify();
+            var registered = FindRegistered(path, ReadRegistrations(), [process], token);
+            Verify(); token.ThrowIfCancellationRequested(); return registered;
+        }
 
         protected override RestorableSettingResult ApplyCore(IReadOnlyDictionary<string, string> parameters, CancellationToken token)
         {
@@ -125,6 +127,13 @@ public static partial class WindowsTrayActions
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(currentToken); deadline.CancelAfter(TimeSpan.FromSeconds(5));
             if (visible)
             {
+                var registered = ReadRegistered(deadline.Token);
+                if (registered.Length > 0)
+                {
+                    var shown = SetVisibilityAsync(path, [.. registered.Select(i => i.Identity)], [process], true, trayEvents, deadline.Token, Verify).GetAwaiter().GetResult();
+                    if (!shown.Success) throw new IOException(shown.Reason);
+                    return;
+                }
                 var message = RegisterWindowMessage("TaskbarCreated");
                 if (message == 0) throw new Win32Exception(Marshal.GetLastWin32Error());
                 // Visibility belongs to the pinned process. DSX may replace its tray owner/UID
@@ -135,28 +144,24 @@ public static partial class WindowsTrayActions
                     if (GetWindowThreadProcessId(window, out var pid) == 0 || pid != process.Id) throw new IOException("目标窗口身份变化。");
                     if (!PostMessage(window, message, 0, 0)) throw new Win32Exception(Marshal.GetLastWin32Error());
                 }
-                while (Read(deadline.Token).Length == 0)
+                while (true)
+                {
+                    registered = ReadRegistered(deadline.Token);
+                    if (registered.Length > 0)
+                    {
+                        var recreated = SetVisibilityAsync(path, [.. registered.Select(i => i.Identity)], [process], true, trayEvents, deadline.Token, Verify).GetAwaiter().GetResult();
+                        if (!recreated.Success) throw new IOException(recreated.Reason);
+                        return;
+                    }
                     trayEvents.Events.Reader.ReadAsync(deadline.Token).AsTask().GetAwaiter().GetResult();
-                return;
+                }
             }
-            var current = Read(deadline.Token); var restoring = current;
-            foreach (var candidate in restoring)
-            {
-                Verify(); deadline.Token.ThrowIfCancellationRequested();
-                // Enumerate once and compare before each delete. Concurrent replacements cause failure,
-                // never a loop chasing newly-created icons or a switch to a later process instance.
-                if (!Same(Read(deadline.Token), current)) throw new IOException("恢复过程中图标被其他来源改变。");
-                if (candidate.Guid == Guid.Empty && (GetWindowThreadProcessId(candidate.Window, out var pid) == 0 || pid != process.Id))
-                    throw new IOException("待恢复的图标窗口身份变化。");
-                var identity = new IconIdentifier { Size = (uint)Marshal.SizeOf<IconIdentifier>(), Window = candidate.Window, Id = candidate.Id, Guid = candidate.Guid };
-                if (Shell_NotifyIconGetRect(ref identity, out _) < 0) throw new IOException("待恢复的图标已变化。");
-                var data = new IconData { Size = (uint)Marshal.SizeOf<IconData>(), Window = candidate.Window, Id = candidate.Id, Guid = candidate.Guid,
-                    Flags = candidate.Guid == Guid.Empty ? 0u : 32u, Tip = "", Info = "", Title = "" };
-                if (!Shell_NotifyIcon(2, ref data) || Shell_NotifyIconGetRect(ref identity, out _) >= 0) throw new IOException("原托盘隐藏状态恢复未确认。");
-                current = [.. current.Where(c => c != candidate)];
-                IconRemoved?.Invoke(path, candidate); WindowsTrayEvents.Invalidate();
-            }
-            if (Read(deadline.Token).Length != 0) throw new IOException("恢复后又发现图标，未重复隐藏。");
+            // Hide the current visible set of this fixed process once. A replacement during
+            // confirmation fails rather than deleting registration or chasing the new identity.
+            var current = Read(deadline.Token);
+            var hidden = SetVisibilityAsync(path, current, [process], false, trayEvents, deadline.Token, Verify).GetAwaiter().GetResult();
+            if (!hidden.Success) throw new IOException(hidden.Reason);
+            if (Read(deadline.Token).Length != 0) throw new IOException("恢复后又发现可见图标，未重复隐藏。");
         }
         protected override void RelinquishCore() => visibility.Relinquish();
         protected override void DisposeCore() { trayEvents.Dispose(); shellProcess.Dispose(); process.Dispose(); }

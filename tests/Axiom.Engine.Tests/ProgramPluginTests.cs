@@ -169,6 +169,10 @@ public sealed class ProgramPluginTests
         var noIcon = await WindowsProgramStart.ExecuteAsync(true, _ => Task.FromResult(new ProgramControlResult(true, "已启动程序。")),
             (_, _) => Task.FromResult(new ProgramControlResult(true, "未发现图标，无需处理。") { Skipped = true }), default);
         Assert.False(noIcon.Success); Assert.Contains("已启动程序", noIcon.Reason); Assert.Contains("隐藏未确认", noIcon.Reason);
+        var alreadyHidden = await WindowsProgramStart.ExecuteAsync(true, _ => Task.FromResult(skipped),
+            (_, _) => Task.FromResult(new ProgramControlResult(true, "已确认保持隐藏。") { Skipped = true, TrayHiddenConfirmed = true }), default);
+        Assert.True(alreadyHidden.Success, alreadyHidden.Reason); Assert.True(alreadyHidden.TrayHiddenConfirmed);
+        Assert.Contains("已确认保持隐藏", alreadyHidden.Reason);
         var denied = await WindowsProgramStart.ExecuteAsync(true, _ => Task.FromResult(skipped),
             (_, _) => throw new UnauthorizedAccessException("合成权限拒绝"), default);
         Assert.False(denied.Success); Assert.Contains("合成权限拒绝", denied.Reason); Assert.Contains("程序仍保留", denied.Reason);

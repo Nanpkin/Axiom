@@ -27,10 +27,10 @@ public static class WindowsProgramStart
         {
             var hidden = await hideTray(wait, token);
             token.ThrowIfCancellationRequested();
-            // HideAsync's no-icon outcome is a truthful no-op for a standalone hide action,
-            // but does not confirm the explicitly requested startup-and-hide operation.
-            return hidden.Success && !hidden.Skipped
-                ? new(true, started.Reason + " 启动后托盘处理：" + hidden.Reason)
+            // A missing icon remains unconfirmed; an existing registration read back hidden
+            // confirms the requested startup state even when no additional write was needed.
+            return hidden.Success && (!hidden.Skipped || hidden.TrayHiddenConfirmed)
+                ? new(true, started.Reason + " 启动后托盘处理：" + hidden.Reason) { TrayHiddenConfirmed = true }
                 : new(false, started.Reason + " 启动后托盘隐藏未确认：" + hidden.Reason + " 已运行的程序仍保留。");
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or Win32Exception or InvalidOperationException)

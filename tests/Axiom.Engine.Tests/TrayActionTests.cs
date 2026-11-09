@@ -11,6 +11,43 @@ namespace Axiom.Engine.Tests;
 [System.Runtime.Versioning.SupportedOSPlatform("windows")]
 public sealed class TrayActionTests
 {
+    public TrayActionTests() => IconWindow.CleanupHistoricalRegistrations();
+
+    [Fact(Timeout = 15000)]
+    public async Task HiddenRegistrationSurvivesOrdinaryUpdatesAndShowsWithoutOwnerRecreation()
+    {
+        using var target = new IconWindow(false, true);
+        target.Add(false);
+        var hidden = await WindowsTrayActions.HideAsync(Environment.ProcessPath!, TimeSpan.FromSeconds(2), default);
+        Assert.True(hidden.Success, hidden.Reason); Assert.True(hidden.TrayHiddenConfirmed); Assert.False(target.Exists(false));
+        Assert.True(target.ProbeRegistration());
+        Assert.True(target.ModifyTooltip());
+        Assert.False(target.Exists(false)); Assert.True(target.ProbeRegistration());
+        // This fixture does not implement TaskbarCreated: only clearing the retained
+        // NIS_HIDDEN bit can restore its real icon and callback registration.
+        var shown = await WindowsTrayActions.ShowAsync(Environment.ProcessPath!, TimeSpan.FromSeconds(2), default);
+        Assert.True(shown.Success, shown.Reason); Assert.True(target.Exists(false)); Assert.Equal(0, target.RecreationRequests);
+        target.Remove(false);
+        Assert.False(target.ProbeRegistration());
+    }
+    [Fact(Timeout = 15000)]
+    public async Task HiddenStartupRegistrationWaitsForLaterVisibleIconBeforeCompleting()
+    {
+        using var target = new IconWindow(false, true);
+        using var notifications = new WindowsTrayEvents();
+        target.AddHidden();
+        using var baseline = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+        while (!target.RegisteredHidden()) await notifications.Events.Reader.ReadAsync(baseline.Token);
+        var pending = WindowsTrayActions.HideAsync(Environment.ProcessPath!, TimeSpan.FromSeconds(3), default);
+        await Task.Delay(150); Assert.False(pending.IsCompleted);
+        // Cold-start frameworks can retain the initial hidden registration and create a
+        // different visible UID later. Only the later visible icon completes this command.
+        target.Add(true);
+        var result = await pending.WaitAsync(TimeSpan.FromSeconds(4));
+        Assert.True(result.Success, result.Reason); Assert.False(result.Skipped); Assert.True(result.TrayHiddenConfirmed);
+        Assert.False(target.Exists(false)); Assert.False(target.Exists(true));
+        Assert.True(target.ProbeRegistration()); Assert.True(target.ProbeRegistration(true));
+    }
     [Fact]
     public void TrayModuleUsesStartupComposerAndBatchPathsWithDelayAndStrictValidation()
     {
@@ -51,7 +88,7 @@ public sealed class TrayActionTests
         Assert.Throws<ArgumentException>(() => compiler.Compile(config with { Parameters = config.Parameters.SetItem("executable", "TraySample.exe") }, scope));
     }
     [Fact(Timeout = 15000)]
-    public async Task ShowRequestsOwnerRecreationAfterHideAndConfirmsRealIcon()
+    public async Task ShowClearsHiddenRegistrationAndOnlyRecreatesMissingIcon()
     {
         using var target = new IconWindow(true, true, true);
         target.Add(false);
@@ -59,9 +96,12 @@ public sealed class TrayActionTests
         Assert.False(target.Exists(false));
         var shown = await WindowsTrayActions.ShowAsync(Environment.ProcessPath!, TimeSpan.FromSeconds(3), default);
         Assert.True(shown.Success, shown.Reason); Assert.False(shown.Skipped);
-        Assert.True(target.Exists(false)); Assert.True(target.Alive); Assert.Equal(1, target.RecreationRequests);
+        Assert.True(target.Exists(false)); Assert.True(target.Alive); Assert.Equal(0, target.RecreationRequests);
         var already = await WindowsTrayActions.ShowAsync(Environment.ProcessPath!, TimeSpan.FromSeconds(1), default);
-        Assert.True(already.Success); Assert.True(already.Skipped); Assert.Equal(1, target.RecreationRequests);
+        Assert.True(already.Success); Assert.True(already.Skipped); Assert.Equal(0, target.RecreationRequests);
+        target.Remove(false);
+        var recreated = await WindowsTrayActions.ShowAsync(Environment.ProcessPath!, TimeSpan.FromSeconds(3), default);
+        Assert.True(recreated.Success, recreated.Reason); Assert.True(target.Exists(false)); Assert.Equal(1, target.RecreationRequests);
     }
     [Fact(Timeout = 15000)]
     public async Task ShowCannotClaimSuccessForUnsupportedProgramAndCancellationPreventsRequests()
@@ -89,6 +129,11 @@ public sealed class TrayActionTests
         Assert.True(repeated.Success, repeated.Reason); Assert.Equal(1, target.RecreationRequests);
         var restored = await lease.ReleaseAsync(default);
         Assert.True(restored.Success, restored.Reason); Assert.False(restored.Owned); Assert.False(target.Exists(false)); Assert.True(target.Alive);
+        Assert.True(target.ProbeRegistration()); Assert.True(target.ModifyTooltip()); Assert.False(target.Exists(false));
+        await using var retained = await WindowsTrayActions.CreateRestorableSessionAsync(Environment.ProcessPath!, default);
+        Assert.True((await retained.ApplyAsync(RestoreParameters(), default)).Success); Assert.True(target.Exists(false));
+        Assert.Equal(1, target.RecreationRequests);
+        Assert.True((await retained.ReleaseAsync(default)).Success); Assert.False(target.Exists(false)); Assert.True(target.ProbeRegistration());
     }
     [Fact(Timeout = 15000)]
     public async Task VisibilityLeasePreservesOriginallyVisibleTrayAndRestoresSameProcessNewIcon()
@@ -110,10 +155,10 @@ public sealed class TrayActionTests
         Assert.False(target.Exists(true)); Assert.False(target.Exists(false));
         await using var externallyHidden = await WindowsTrayActions.CreateRestorableSessionAsync(Environment.ProcessPath!, default);
         Assert.True((await externallyHidden.ApplyAsync(RestoreParameters(), default)).Success);
-        target.Remove(false);
+        target.Remove(true);
         var preserved = await externallyHidden.ReleaseAsync(default);
         Assert.True(preserved.Success, preserved.Reason); Assert.Contains("其他来源", preserved.Reason);
-        Assert.False(target.Exists(false));
+        Assert.False(target.Exists(false)); Assert.False(target.Exists(true));
     }
     [Fact(Timeout = 15000)]
     public async Task VisibilityLeaseRejectsMissingProcessAndAcceptsNewOwnerWithinPinnedProcess()
@@ -157,7 +202,7 @@ public sealed class TrayActionTests
         Assert.True(result.Success, result.Reason);
         Assert.False(target.Exists(false)); Assert.True(target.Alive);
         Assert.DoesNotContain(WindowsTrayActions.ReadCatalog(default).Entries, e => e.ExecutablePath.Equals(Environment.ProcessPath, StringComparison.OrdinalIgnoreCase));
-        target.Add(false); Assert.True(target.Exists(false));
+        target.Remove(false); target.Add(false); Assert.True(target.Exists(false));
     }
     [Fact]
     public async Task CatalogRequestsAreReadOnlyAndBoundedAndSelectionCancelIsIndependent()
@@ -184,16 +229,17 @@ public sealed class TrayActionTests
         Assert.Equal(2, draft.Names.Count); Assert.Single(original.Names);
     }
     [Fact(Timeout=15000)]
-    public async Task RemovesIdAndGuidIconsIncludingMessageOnlyWindowWithoutStoppingProcess()
+    public async Task HidesIdAndGuidIconsIncludingMessageOnlyWindowWithoutRemovingRegistration()
     {
-        using var first=new IconWindow(false);using var second=new IconWindow(true);
+        using var first=new IconWindow(false, true);using var second=new IconWindow(true, true);
         first.Add(false);first.Add(true);second.Add(false);
         Assert.True(first.Exists(false));Assert.True(first.Exists(true));Assert.True(second.Exists(false));
         var result=await WindowsTrayActions.HideAsync(Environment.ProcessPath!,TimeSpan.FromSeconds(3),default);
         Assert.True(result.Success,result.Reason);Assert.Contains("3 个",result.Reason);
         Assert.False(first.Exists(false));Assert.False(first.Exists(true));Assert.False(second.Exists(false));
+        Assert.True(first.ProbeRegistration()); Assert.True(first.ProbeRegistration(true)); Assert.True(second.ProbeRegistration());
         Assert.True(first.Alive);Assert.True(second.Alive);
-        first.Add(false);Assert.True(first.Exists(false)); // A later re-add is deliberately not suppressed.
+        first.Remove(false);first.Add(false);Assert.True(first.Exists(false)); // Explicit deletion/recreation is not continuously suppressed.
     }
     [Fact(Timeout=15000)]
     public async Task WaitsForIconOnExistingWindowUsingNotificationsAndCancellationPreventsLaterDeletion()
@@ -205,22 +251,23 @@ public sealed class TrayActionTests
         using var cancel=new CancellationTokenSource();
         var cancelled=WindowsTrayActions.HideAsync(Environment.ProcessPath!,TimeSpan.FromSeconds(4),cancel.Token);
         cancel.Cancel();await Assert.ThrowsAnyAsync<OperationCanceledException>(()=>cancelled);
-        target.Add(false);Assert.True(target.Exists(false));
+        target.Remove(false);target.Add(false);Assert.True(target.Exists(false));
     }
     [Fact(Timeout=15000)]
     public async Task NoIconIsNoOpAndMissingPathDoesNotAffectOtherIcons()
     {
-        using var target=new IconWindow(false);
+        using var target=new IconWindow(false, true);
         var noIcon=await WindowsTrayActions.HideAsync(Environment.ProcessPath!,TimeSpan.FromSeconds(1),default);
         Assert.True(noIcon.Success);Assert.True(noIcon.Skipped);Assert.Contains("无需处理",noIcon.Reason);
+        Assert.False(noIcon.TrayHiddenConfirmed);
         Assert.DoesNotContain("已隐藏成功",noIcon.Reason);
         target.Add(false);
         var missing=await WindowsTrayActions.HideAsync(Path.Combine(Path.GetTempPath(),Guid.NewGuid()+".exe"),TimeSpan.FromSeconds(1),default);
         Assert.False(missing.Success);Assert.True(target.Exists(false));
         var hidden = await WindowsTrayActions.HideAsync(Environment.ProcessPath!, TimeSpan.FromSeconds(1), default);
-        Assert.True(hidden.Success); Assert.False(hidden.Skipped);
+        Assert.True(hidden.Success); Assert.False(hidden.Skipped); Assert.True(hidden.TrayHiddenConfirmed);
         var repeated = await WindowsTrayActions.HideAsync(Environment.ProcessPath!, TimeSpan.FromSeconds(1), default);
-        Assert.True(repeated.Success); Assert.True(repeated.Skipped); Assert.True(target.Alive);
+        Assert.True(repeated.Success); Assert.True(repeated.Skipped); Assert.True(repeated.TrayHiddenConfirmed); Assert.True(target.Alive);
     }
     [Fact(Timeout = 15000)]
     public async Task ShortStartupWaitMissesLateWindowButLongWaitHidesItWithoutManualRetry()
@@ -236,7 +283,7 @@ public sealed class TrayActionTests
         using var cancel = new CancellationTokenSource();
         var cancelled = WindowsTrayActions.HideAsync(Environment.ProcessPath!, TimeSpan.FromSeconds(120), cancel.Token);
         cancel.Cancel(); await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelled);
-        target.Add(false); Assert.True(target.Exists(false));
+        target.Remove(false); target.Add(false); Assert.True(target.Exists(false));
     }
     [Fact(Timeout=15000)]
     public async Task SharedWaitSourceSurvivesOneSubscriberAndCanBeRecreated()
@@ -288,7 +335,7 @@ public sealed class TrayActionTests
             target.Add(false);
             var first = await completions.Reader.ReadAsync(lifetime.Token); Assert.True(first.Success, first.Reason); Assert.False(target.Exists(false));
             // NIM_ADD reuses the same HWND/UID, including when removal and creation notifications merge.
-            target.Add(false);
+            target.Remove(false); target.Add(false);
             var second = await completions.Reader.ReadAsync(lifetime.Token); Assert.True(second.Success, second.Reason); Assert.False(target.Exists(false));
         }
         finally
@@ -297,7 +344,7 @@ public sealed class TrayActionTests
             try { await watcher; } catch (OperationCanceledException) { }
             try { await worker; } catch (OperationCanceledException) { }
         }
-        target.Add(false); Assert.True(target.Exists(false)); Assert.True(target.Alive);
+        target.Remove(false); target.Add(false); Assert.True(target.Exists(false)); Assert.True(target.Alive);
     }
     [Fact]
     public async Task BatchSummariesSeparateAbsentTargetsFromFailuresAndCollapseRepeatedReasons()
@@ -330,10 +377,13 @@ public sealed class TrayActionTests
         private readonly Thread thread;
         private readonly TaskCompletionSource ready=new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly object gate = new();
+        private readonly HashSet<uint> issuedIds = [];
+        private bool issuedGuid;
         private System.Runtime.ExceptionServices.ExceptionDispatchInfo? workerFailure;
         private bool disposed;
         private nint window;private uint threadId;
         internal int RecreationRequests;
+        internal string Diagnostic => $"Window={window},Id={id},Guid={guid}";
         internal IconWindow(bool messageOnly, bool dynamicUid = false, bool recreate = false, uint? fixedUid = null, bool recreateOwner = false)
         {
             if (fixedUid.HasValue) id = fixedUid.Value;
@@ -393,12 +443,40 @@ public sealed class TrayActionTests
         private void CheckWorker() => workerFailure?.Throw();
         internal bool Alive { get { lock (gate) { CheckWorker(); return IsWindow(window); } } }
         private IconData Data(bool withGuid)=>new(){Size=(uint)Marshal.SizeOf<IconData>(),Window=window,Id=id+(withGuid?1u:0u),Flags=6u|(withGuid?32u:0u),Icon=LoadIcon(0,32512),Tip="Axiom tray test "+id,Info="",Title="",Guid=withGuid?guid:Guid.Empty};
-        private void AddCore(bool withGuid){var data=Data(withGuid);Assert.True(Shell_NotifyIcon(0,ref data),"Fixture icon could not be created on desktop");}
+        private void AddCore(bool withGuid, bool hidden = false)
+        {
+            var data=Data(withGuid);
+            issuedIds.Add(data.Id);
+            issuedGuid |= withGuid;
+            if(hidden) { data.Flags |= 8u; data.State = 1; data.Mask = 1; }
+            Assert.True(Shell_NotifyIcon(0,ref data),"Fixture icon could not be created on desktop");
+        }
         private void RemoveCore(bool withGuid){var data=Data(withGuid);Shell_NotifyIcon(2,ref data);}
-        private bool ExistsCore(bool withGuid){var data=Data(withGuid);var identity=new Identifier{Size=(uint)Marshal.SizeOf<Identifier>(),Window=window,Id=data.Id,Guid=data.Guid};return Shell_NotifyIconGetRect(ref identity,out _)>=0;}
+        private bool ExistsCore(bool withGuid){var data=Data(withGuid);var identity=new Identifier{Size=(uint)Marshal.SizeOf<Identifier>(),Window=window,Id=data.Id,Guid=data.Guid};return Shell_NotifyIconGetRect(ref identity,out var rect)==0 && rect.Right>rect.Left && rect.Bottom>rect.Top;}
         internal void Add(bool withGuid){lock(gate){CheckWorker();Assert.False(disposed);AddCore(withGuid);}}
         internal void Remove(bool withGuid){lock(gate){CheckWorker();Assert.False(disposed);RemoveCore(withGuid);}}
         internal bool Exists(bool withGuid){lock(gate){CheckWorker();return ExistsCore(withGuid);}}
+        internal void AddHidden(bool withGuid = false)
+        {
+            lock (gate) { CheckWorker(); Assert.False(disposed); AddCore(withGuid, true); }
+        }
+        internal bool RegisteredHidden()
+        {
+            lock(gate)
+            {
+                CheckWorker(); var data=Data(false);
+                var identity=new Identifier{Size=(uint)Marshal.SizeOf<Identifier>(),Window=window,Id=data.Id,Guid=data.Guid};
+                return Shell_NotifyIconGetRect(ref identity,out var rect)==1 && rect.Left==0 && rect.Top==0 && rect.Right==0 && rect.Bottom==0;
+            }
+        }
+        internal bool ModifyTooltip()
+        {
+            lock (gate) { CheckWorker(); var data = Data(false); data.Flags = 4; data.Tip = "Axiom updated fixture icon"; return Shell_NotifyIcon(1, ref data); }
+        }
+        internal bool ProbeRegistration(bool withGuid = false)
+        {
+            lock (gate) { CheckWorker(); var data = Data(withGuid); data.Flags = withGuid ? 32u : 0u; return Shell_NotifyIcon(1, ref data); }
+        }
         public void Dispose()
         {
             lock (gate)
@@ -406,7 +484,44 @@ public sealed class TrayActionTests
                 if (!disposed) { disposed = true; PostThreadMessage(threadId,0x0012,0,0); }
             }
             Assert.True(thread.Join(TimeSpan.FromSeconds(3)), "Fixture owner thread did not stop");
+            if (issuedGuid)
+            {
+                // A GUID remains globally addressable after its fixture HWND is destroyed.
+                // Remove only this instance's generated identity, independently of the old
+                // owner window, and prove it is no longer registered before the next test.
+                var data=Data(true); data.Window=0; data.Id=0; data.Flags=32;
+                Shell_NotifyIcon(2,ref data);
+                Assert.False(Shell_NotifyIcon(1,ref data), "Fixture GUID registration survived final cleanup");
+            }
+            CleanupRegistrations(issuedIds, guid);
             lock (gate) CheckWorker();
+        }
+        internal static void CleanupHistoricalRegistrations() => CleanupRegistrations(null, null);
+        private static void CleanupRegistrations(HashSet<uint>? ownedIds, Guid? ownedGuid)
+        {
+            using var root = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Control Panel\NotifyIconSettings", writable: true);
+            if (root is null) return;
+            foreach (var name in root.GetSubKeyNames())
+            {
+                bool remove;
+                using (var key = root.OpenSubKey(name))
+                {
+                    if (key is null || key.GetValue("ExecutablePath") is not string path ||
+                        !path.Equals(Environment.ProcessPath, StringComparison.OrdinalIgnoreCase)) continue;
+                    var tip = key.GetValue("InitialTooltip") as string;
+                    var fixtureTip = tip?.StartsWith("Axiom tray test ", StringComparison.Ordinal) == true || tip == "Axiom updated fixture icon";
+                    var uid = key.GetValue("UID") is int number ? unchecked((uint)number) : (uint?)null;
+                    var rawGuid = key.GetValue("IconGuid");
+                    var iconGuid = rawGuid is byte[] { Length: 16 } bytes ? new Guid(bytes) :
+                        rawGuid is string text && Guid.TryParse(text, out var parsed) ? parsed : Guid.Empty;
+                    // Historical cleanup requires this fixture's explicit tooltip marker. Empty
+                    // tooltips are never assumed ours; only this instance's generated GUID can
+                    // establish ownership of its otherwise unlabelled GUID registration.
+                    remove = ownedIds is null ? fixtureTip :
+                        fixtureTip && uid.HasValue && ownedIds.Contains(uid.Value) || ownedGuid.HasValue && iconGuid == ownedGuid.Value;
+                }
+                if (remove) root.DeleteSubKeyTree(name, throwOnMissingSubKey: false);
+            }
         }
         [StructLayout(LayoutKind.Sequential,CharSet=CharSet.Unicode)] private struct IconData{
             public uint Size;public nint Window;public uint Id,Flags,Message;public nint Icon;

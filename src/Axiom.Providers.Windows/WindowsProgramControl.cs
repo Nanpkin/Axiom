@@ -10,6 +10,7 @@ namespace Axiom.Providers.Windows;
 public sealed record ProgramControlResult(bool Success, string Reason)
 {
     public bool Skipped { get; init; }
+    public bool TrayHiddenConfirmed { get; init; }
 }
 
 [SupportedOSPlatform("windows")]
