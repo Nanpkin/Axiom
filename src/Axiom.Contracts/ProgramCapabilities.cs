@@ -7,6 +7,9 @@ namespace Axiom.Contracts;
 // Shared declaration and validation. OS effects belong to the session Provider.
 public static class ProgramCapabilities
 {
+    public const int StartupTrayWaitSeconds = 60;
+    public const int StartCommandTimeoutSeconds = 90;
+
     public static TaskCapability Describe(bool start) => new(start ? "program.start" : "program.close", 1,
         TaskCapabilityKind.Action, "程序", start ? "启动程序" : "关闭程序",
         start ? "条件成立时启动指定程序一次。" : "条件成立时关闭当前用户会话中指定的程序。",
@@ -19,7 +22,7 @@ public static class ProgramCapabilities
             new("ifRunning", "程序已运行时", TaskFieldKind.Choice, true, "按完整路径识别当前用户的程序实例。", "skip", 16,
                 [new("skip", "跳过启动"), new("new", "再开一个实例")], Group: "更多选项"),
             new("hideTrayIcon", "启动后隐藏托盘图标", TaskFieldKind.Boolean, false,
-                "程序已运行且跳过启动时也隐藏。最多等待 30 秒，启动保护耗时会缩短等待；未确认隐藏会报告失败，已启动的程序仍保留。只隐藏本次可识别图标，不持续压制。", "false", 5, [], Group: "更多选项"),
+                "启动后最多等待 60 秒出现托盘图标，跳过启动时也会隐藏。未确认隐藏会报告失败，已启动程序仍保留。只处理本次可识别图标。", "false", 5, [], Group: "更多选项"),
             new("trayExecutable", "托盘所属程序（可选）", TaskFieldKind.FilePath, false,
                 "留空使用所启动程序；启动器与托盘程序不同时，明确选择实际托盘程序的完整 .exe 路径，不自动推断。仅开启启动后隐藏托盘时执行。", "", 1024, [], Group: "更多选项", BrowseLocalPath: true)]
         : [new("executable", "目标程序", TaskFieldKind.ExecutableSelection, true,

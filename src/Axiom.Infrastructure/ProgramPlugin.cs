@@ -15,7 +15,8 @@ public sealed class ProgramPlugin : IAutomationPlugin
     public IEnumerable<CapabilityBinding> Bindings => [Binding("process.running", true), Binding("program.start", false), Binding("program.close", false)];
     private static CapabilityBinding Binding(string id, bool observe) => new(new(id,
         observe ? new("axiom.bool", 1) : TaskInvocationCommands.Schema, new("axiom.bool", 1), ScopeKind.Session, observe, !observe, false,
-        ExecutionLocation.SessionAgent, "same-user-session", true, "available", false, TimeSpan.FromSeconds(40), true,
+        ExecutionLocation.SessionAgent, "same-user-session", true, "available", false,
+        TimeSpan.FromSeconds(id == "program.start" ? ProgramCapabilities.StartCommandTimeoutSeconds : 40), true,
         ConcurrencyScope.Resource, RetryCategory.Never, observe ? ConfirmationSource.Observation : ConfirmationSource.ReceiptOnly,
         EventFidelity.EdgeSensitive, TimeSpan.Zero, TimeSpan.Zero, CostClass.Low, true, "active rules", "same user", []),
         observe ? ScalarKind.Boolean : ScalarKind.Text, ScalarKind.Boolean);

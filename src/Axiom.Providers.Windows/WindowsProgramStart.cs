@@ -2,14 +2,12 @@ using System.ComponentModel;
 
 namespace Axiom.Providers.Windows;
 
-// Coordinates the existing launch and event-driven tray action under the program command's
-// 40-second budget. Slow startup consumes tray wait time rather than extending the command.
 public static class WindowsProgramStart
 {
     public static async Task<ProgramControlResult> ExecuteAsync(bool hideTrayIcon,
         Func<CancellationToken, Task<ProgramControlResult>> start,
         Func<TimeSpan, CancellationToken, Task<ProgramControlResult>> hideTray,
-        CancellationToken token, TimeProvider? timeProvider = null)
+        TimeSpan maximumWait, TimeSpan commandTimeout, CancellationToken token, TimeProvider? timeProvider = null)
     {
         var time = timeProvider ?? TimeProvider.System;
         var began = time.GetTimestamp();
@@ -19,10 +17,11 @@ public static class WindowsProgramStart
         if (!started.Success || !hideTrayIcon) return started;
         // ifRunning=skip only skips launch; an explicitly requested tray action still applies
         // to the matching running program, including when it started through Windows login.
-        var remaining = TimeSpan.FromSeconds(35) - time.GetElapsedTime(began);
+        // Reserve time for the tray write and confirmation after the appearance wait.
+        var remaining = commandTimeout - TimeSpan.FromSeconds(5) - time.GetElapsedTime(began);
         if (remaining < TimeSpan.FromSeconds(1))
             return new(false, started.Reason + " 启动已占满本次等待预算，尚未隐藏托盘图标。不会关闭已运行的程序。");
-        var wait = remaining < TimeSpan.FromSeconds(30) ? remaining : TimeSpan.FromSeconds(30);
+        var wait = remaining < maximumWait ? remaining : maximumWait;
         try
         {
             var hidden = await hideTray(wait, token);

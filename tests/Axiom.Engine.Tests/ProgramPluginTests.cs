@@ -148,6 +148,13 @@ public sealed class ProgramPluginTests
         Assert.Throws<ArgumentException>(() => Import(action with
             { Parameters = action.Parameters.SetItem("trayExecutable", @"C:\Apps\Unobserved.exe") }));
     }
+    private static Task<ProgramControlResult> ExecuteStartup(bool hideTrayIcon,
+        Func<CancellationToken, Task<ProgramControlResult>> start,
+        Func<TimeSpan, CancellationToken, Task<ProgramControlResult>> hideTray,
+        CancellationToken token, TimeProvider? timeProvider = null) =>
+        WindowsProgramStart.ExecuteAsync(hideTrayIcon, start, hideTray,
+            TimeSpan.FromSeconds(ProgramCapabilities.StartupTrayWaitSeconds),
+            TimeSpan.FromSeconds(ProgramCapabilities.StartCommandTimeoutSeconds), token, timeProvider);
     [Fact]
     public async Task StartupTrayOptionHidesEvenSkippedLaunchAndSeparatesNoIconFromSuccess()
     {
@@ -155,36 +162,37 @@ public sealed class ProgramPluginTests
         var hideCalls = 0;
         Task<ProgramControlResult> Hide(TimeSpan wait, CancellationToken token)
         {
-            hideCalls++; Assert.Equal(TimeSpan.FromSeconds(30), wait);
+            hideCalls++; Assert.Equal(TimeSpan.FromSeconds(60), wait);
             return Task.FromResult(new ProgramControlResult(true, "已隐藏 1 个图标。"));
         }
-        var unchanged = await WindowsProgramStart.ExecuteAsync(false, _ => Task.FromResult(skipped), Hide, default);
+        var unchanged = await ExecuteStartup(false, _ => Task.FromResult(skipped), Hide, default);
         Assert.Same(skipped, unchanged); Assert.Equal(0, hideCalls);
-        var hidden = await WindowsProgramStart.ExecuteAsync(true, _ => Task.FromResult(skipped), Hide, default);
+        var hidden = await ExecuteStartup(true, _ => Task.FromResult(skipped), Hide, default);
         Assert.True(hidden.Success, hidden.Reason); Assert.False(hidden.Skipped); Assert.Equal(1, hideCalls);
         Assert.Contains("跳过启动", hidden.Reason); Assert.Contains("已隐藏", hidden.Reason);
         var startFailed = new ProgramControlResult(false, "程序启动失败。");
-        Assert.Same(startFailed, await WindowsProgramStart.ExecuteAsync(true, _ => Task.FromResult(startFailed), Hide, default));
+        Assert.Same(startFailed, await ExecuteStartup(true, _ => Task.FromResult(startFailed), Hide, default));
         Assert.Equal(1, hideCalls);
-        var noIcon = await WindowsProgramStart.ExecuteAsync(true, _ => Task.FromResult(new ProgramControlResult(true, "已启动程序。")),
+        var noIcon = await ExecuteStartup(true, _ => Task.FromResult(new ProgramControlResult(true, "已启动程序。")),
             (_, _) => Task.FromResult(new ProgramControlResult(true, "未发现图标，无需处理。") { Skipped = true }), default);
         Assert.False(noIcon.Success); Assert.Contains("已启动程序", noIcon.Reason); Assert.Contains("隐藏未确认", noIcon.Reason);
-        var alreadyHidden = await WindowsProgramStart.ExecuteAsync(true, _ => Task.FromResult(skipped),
+        var alreadyHidden = await ExecuteStartup(true, _ => Task.FromResult(skipped),
             (_, _) => Task.FromResult(new ProgramControlResult(true, "已确认保持隐藏。") { Skipped = true, TrayHiddenConfirmed = true }), default);
         Assert.True(alreadyHidden.Success, alreadyHidden.Reason); Assert.True(alreadyHidden.TrayHiddenConfirmed);
         Assert.Contains("已确认保持隐藏", alreadyHidden.Reason);
-        var denied = await WindowsProgramStart.ExecuteAsync(true, _ => Task.FromResult(skipped),
+        var denied = await ExecuteStartup(true, _ => Task.FromResult(skipped),
             (_, _) => throw new UnauthorizedAccessException("合成权限拒绝"), default);
         Assert.False(denied.Success); Assert.Contains("合成权限拒绝", denied.Reason); Assert.Contains("程序仍保留", denied.Reason);
     }
     [Theory]
-    [InlineData(0, 30)]
-    [InlineData(20, 15)]
-    [InlineData(35, 0)]
+    [InlineData(0, 60)]
+    [InlineData(25, 60)]
+    [InlineData(45, 40)]
+    [InlineData(85, 0)]
     public async Task StartupTrayWaitUsesRemainingProgramDeadline(int startupSeconds, int expectedWait)
     {
         var time = new ManualTimeProvider(); var hideCalls = 0;
-        var result = await WindowsProgramStart.ExecuteAsync(true, _ =>
+        var result = await ExecuteStartup(true, _ =>
         {
             time.Advance(TimeSpan.FromSeconds(startupSeconds));
             return Task.FromResult(new ProgramControlResult(true, "已完成启动。"));
@@ -196,10 +204,28 @@ public sealed class ProgramPluginTests
         Assert.Equal(expectedWait > 0, result.Success); Assert.Equal(expectedWait > 0 ? 1 : 0, hideCalls);
     }
     [Fact]
+    public void StartDeadlineFitsProviderProtocolWithoutExtendingClose()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var bindings = new ProgramPlugin().Bindings.ToArray();
+        var start = bindings.Single(b => b.Descriptor.Id == "program.start").Descriptor;
+        var close = bindings.Single(b => b.Descriptor.Id == "program.close").Descriptor;
+        var invocation = Configure().Item2.Action;
+        var request = new ProviderMessage(1, "invoke", "program-deadline", now + start.Timeout,
+            Invocation: invocation, CommandId: Guid.NewGuid());
+        ProviderProtocol.Validate(request, now);
+        Assert.Equal(TimeSpan.FromSeconds(40), close.Timeout);
+        Assert.Throws<InvalidDataException>(() => ProviderProtocol.Validate(request with
+        {
+            Invocation = invocation with { CapabilityId = "program.close" }
+        }, now));
+        Assert.Throws<InvalidDataException>(() => ProviderProtocol.Validate(request with { DeadlineUtc = now.AddSeconds(96) }, now));
+    }
+    [Fact]
     public async Task CancellationAfterLaunchDoesNotBeginTrayWriteOrRelaunch()
     {
         using var stop = new CancellationTokenSource(); var starts = 0; var hides = 0;
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => WindowsProgramStart.ExecuteAsync(true, _ =>
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => ExecuteStartup(true, _ =>
         {
             starts++; stop.Cancel(); return Task.FromResult(new ProgramControlResult(true, "已启动程序。"));
         }, (_, _) => { hides++; throw new InvalidOperationException("不得隐藏"); }, stop.Token));

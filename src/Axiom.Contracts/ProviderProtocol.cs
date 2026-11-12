@@ -24,6 +24,11 @@ public static class ProviderProtocol
     public static void Validate(ProviderMessage message, DateTimeOffset now)
     {
         var maximumDeadlineSeconds = 45;
+        if (message.Type == "invoke" && message.Invocation is { CapabilityId: "program.start" } start)
+        {
+            _ = ProgramCapabilities.ValidateTargets(start);
+            maximumDeadlineSeconds = ProgramCapabilities.StartCommandTimeoutSeconds + 5;
+        }
         if (message.Type == "invoke" && message.Invocation?.CapabilityId is TrayCapabilities.Hide or TrayCapabilities.Show)
         {
             // Only a validated, bounded tray wait may outlive the ordinary provider request window.

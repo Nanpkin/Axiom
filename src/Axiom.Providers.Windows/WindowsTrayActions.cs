@@ -147,7 +147,9 @@ public static partial class WindowsTrayActions
             try
             {
                 var registered = matches.Count == 0 ? [] : FindRegistered(path, ReadRegistrations(), matches, token);
-                if (registered.Any(i => i.Visibility == IconVisibility.Visible)) return new(false, "等待期限结束时图标仍可见，未确认隐藏。");
+                // A late icon can be present even when Explorer delivered no usable event.
+                var visible = registered.Where(i => i.Visibility == IconVisibility.Visible).Select(i => i.Identity).ToArray();
+                if (visible.Length > 0) return await SetVisibilityAsync(path, visible, matches, false, notifications, token);
                 return new(true, registered.Length > 0 ? "已确认目标托盘图标仍处于隐藏状态，无需修改。" : "未发现可识别图标，无需处理。")
                 { Skipped = true, TrayHiddenConfirmed = registered.Length > 0 };
             }
