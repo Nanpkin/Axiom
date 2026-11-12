@@ -1,23 +1,11 @@
 # 云端工作边界
 
-Axiom 源码仓库公开。云端与本机通过Git共享已提交源码。默认阅读与成本控制遵守AGENTS，不把环境搭建、历史路线或候选池重复塞进任务上下文。
+默认开发和隐私约束见 [AGENTS](../../AGENTS.md)。云端与本机通过 Git 共享源码，本机运行与验收需在对应环境完成。
 
-## 环境与验证
+- 用 `bash tools/cloud-setup.sh` 设置环境，SDK 由 `global.json` 固定。
+- Linux 定向测试用 `bash tools/test-core.sh <清单>`，只选该环境支持的测试。WinUI、Windows 管道和原生 API 用 Windows 环境或 CI。
+- Check source 运行声明的测试和 Windows 构建，PR 校验分发包。纯文档由工作流排除。检查按准确 SHA 复用，发布见[分发说明](distribution.md)。
 
-- 配置环境使用bash tools/cloud-setup.sh，SDK版本由global.json固定；复用缓存，不复制开发运行库。
-- 相关验证使用bash tools/test-core.sh，可用第一个参数指定本轮测试清单；Windows使用pwsh -File tools/test-core.ps1 -SuiteFile <清单路径>。
-- 清单必须按本轮diff重新确定。Linux只选可执行的纯逻辑/存储项；WinUI、Windows管道和原生API交Windows环境/CI，不将未支持、未执行或全跳过记为通过。
-- Check source执行声明相关项及Windows构建；PR另做实际分发包校验。纯文档被现有工作流排除，不手动补触发功能CI。
-- 发布复用准确SHA的成功main检查，再实际构建/校验包；不重复功能回归。具体流程见 [分发说明](distribution.md)。
+## 历史分支
 
-## 共享与交接
-
-- 开工核对工作区/远端；使用codex/分支、通用作者身份，相关验证后及时commit/push。不能覆盖其他任务改动或强推共享历史。
-- 默认一个实现代理，传简短目标及文件，不复制整段历史。候选和待确认决策只在 [功能清单](../product/functional-roadmap.md) 维护；没有本轮指令不自动开启下一功能。
-- 不提交个人数据、配置、日志、截图、设备标识、机器路径或凭据；测试用合成数据。
-- 云端可以交付源码和经授权发布的公开预览 Release，不能声称已更新所有者本机，也不能覆盖其运行现场。后续本机接续按AGENTS安全更新固定预览。
-- 自动检查状态以精确head SHA为准；已有作业等待其结果，不重复提交/触发，不把旧提交产物当新版本。
-
-## 2026-11-04 的分支归档
-
-29 条历史分支的原始提交保存在非发布标签 `archive/branches-20261104`。用 `git show archive/branches-20261104:branches.tsv` 按旧分支名查完整提交号；需要调查时可直接查看该提交。恢复开发时从该提交建立新的任务分支，并与当前基线核对。
+`git show archive/branches-20261104:branches.tsv` 可按旧分支名查原始提交。恢复开发时从对应提交建任务分支并核对基线。
