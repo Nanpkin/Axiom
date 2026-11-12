@@ -9,13 +9,14 @@ public sealed class ConditionRestorePlugin : IAutomationPlugin
 {
     public string Id => "axiom.condition-restore";
     private static TaskCapability[] Descriptors => [ConditionRestoreCapabilities.PlaybackDescriptor, ConditionRestoreCapabilities.MicrophoneDescriptor, ConditionRestoreCapabilities.PowerSchemeDescriptor,
-        ConditionRestoreCapabilities.ProgramPriorityDescriptor, ConditionRestoreCapabilities.WindowStateDescriptor];
+        ConditionRestoreCapabilities.ProgramPriorityDescriptor, ConditionRestoreCapabilities.WindowStateDescriptor, ConditionRestoreCapabilities.TrayVisibilityDescriptor];
     public IEnumerable<ITaskDetectionCompiler> Detections => [];
     public IEnumerable<ITaskActionCompiler> Actions => Descriptors.Select(d => new RestorableSettingTaskAction(d, ConditionRestoreCapabilities.Validate, ConditionRestoreCapabilities.ResourceId));
     public static string[] StateDetections => ["process.running", "process.exited", ForegroundCapabilities.Active, WindowPresenceCapabilities.Visible, WindowPresenceCapabilities.Absent,
         WindowStateDetectionCapabilities.StateIs, DisplayCountCapabilities.Count, PowerStateCapabilities.State, MediaPlaybackCapabilities.State,
         NetworkCategoryCapabilities.State, InternetConnectivityCapabilities.State, WifiProfileCapabilities.Connected, WifiProfileCapabilities.Disconnected,
-        SessionDisplayCapabilities.State, PowerSchemeStateCapabilities.State, PowerSaverStateCapabilities.State, EndpointMuteCapabilities.State];
+        SessionDisplayCapabilities.State, PowerSchemeStateCapabilities.State, PowerSaverStateCapabilities.State, EndpointMuteCapabilities.State,
+        BluetoothDeviceCapabilities.Connected, BluetoothDeviceCapabilities.Disconnected];
     public ImmutableArray<TaskCombination> Combinations => [.. Descriptors.SelectMany(a => StateDetections
         .Where(d => a.Id != ConditionRestoreCapabilities.PowerScheme || d != PowerSchemeStateCapabilities.State)
         .Where(d => a.Id != ConditionRestoreCapabilities.WindowState || d is not (WindowStateDetectionCapabilities.StateIs or ForegroundCapabilities.Active))

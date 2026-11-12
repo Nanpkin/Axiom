@@ -1,7 +1,9 @@
 using System.Collections.Immutable;
+using System.Text.Json;
 using Axiom.Contracts;
 using Axiom.Domain;
 using Axiom.Infrastructure;
+using Axiom.Providers.Windows;
 using Axiom.WinUI;
 
 namespace Axiom.Engine.Tests;
@@ -78,6 +80,156 @@ public sealed class ProgramPluginTests
         // Existing hidden launches keep their original mode and do not silently opt into injection.
         Assert.Equal("hidden", ProgramCapabilities.Value(task.Action with
             { Parameters = task.Action.Parameters.SetItem("window", "hidden") }, "window"));
+    }
+    [Fact]
+    public void StartupTrayOptionDefaultsOffForExistingTasksAndValidatesBooleanWithoutChangingClose()
+    {
+        var (compiler, task) = Configure();
+        var old = task with { Action = task.Action with { Parameters = task.Action.Parameters.Remove("hideTrayIcon") } };
+        Assert.Equal("false", ProgramCapabilities.Value(old.Action, "hideTrayIcon"));
+        compiler.Compile(old, "owner", Scope);
+        var enabled = old with { Action = old.Action with { Parameters = old.Action.Parameters.Add("hideTrayIcon", "true") } };
+        compiler.Compile(enabled, "owner", Scope);
+        var editor = new TaskEditorState(); editor.Load(enabled);
+        Assert.Equal("true", editor.Build().Action.Parameters["hideTrayIcon"]);
+        var field = Assert.Single(ProgramCapabilities.Describe(true).Fields, f => f.Id == "hideTrayIcon");
+        Assert.Equal(TaskFieldKind.Boolean, field.Kind); Assert.Equal("false", field.DefaultValue);
+        foreach (var invalid in new[] { "", "True", "1", "yes" })
+            Assert.Throws<ArgumentException>(() => ProgramCapabilities.Validate(enabled.Action with
+                { Parameters = enabled.Action.Parameters.SetItem("hideTrayIcon", invalid) }));
+        var (_, close) = Configure(false);
+        Assert.DoesNotContain(ProgramCapabilities.Describe(false).Fields, f => f.Id == "hideTrayIcon");
+        Assert.Throws<ArgumentException>(() => ProgramCapabilities.ValidateTargets(close.Action with
+            { Parameters = close.Action.Parameters.Add("hideTrayIcon", "true") }));
+    }
+    [Fact]
+    public void StartupTrayTargetDefaultsToLaunchPathAndExplicitLauncherTargetRoundTripsStrictly()
+    {
+        var (compiler, task) = Configure();
+        var old = task.Action with { Parameters = task.Action.Parameters.Remove("hideTrayIcon").Remove("trayExecutable") };
+        Assert.Equal("", ProgramCapabilities.Value(old, "trayExecutable"));
+        Assert.Equal(@"C:\Apps\target.exe", ProgramCapabilities.TrayTarget(old));
+        compiler.Compile(task with { Action = old }, "owner", Scope);
+        var explicitTarget = old with { Parameters = old.Parameters.Add("hideTrayIcon", "true").Add("trayExecutable", @"C:\Apps\Main\TrayOwner.exe") };
+        Assert.Equal(@"C:\Apps\target.exe", ProgramCapabilities.Validate(explicitTarget));
+        Assert.Equal(@"C:\Apps\Main\TrayOwner.exe", ProgramCapabilities.TrayTarget(explicitTarget));
+        compiler.Compile(task with { Action = explicitTarget }, "owner", Scope);
+        var editor = new TaskEditorState(); editor.Load(task with { Action = explicitTarget });
+        Assert.Equal(@"C:\Apps\Main\TrayOwner.exe", editor.Build().Action.Parameters["trayExecutable"]);
+        var field = Assert.Single(ProgramCapabilities.Describe(true).Fields, f => f.Id == "trayExecutable");
+        Assert.Equal(TaskFieldKind.FilePath, field.Kind); Assert.True(field.BrowseLocalPath); Assert.False(field.Required);
+        foreach (var enabled in new[] { "true", "false" })
+            foreach (var invalid in new[] { "relative.exe", @"\\server\Tray.exe", @"C:\Apps\script.ps1", @"C:\Windows\cmd.exe", " ", "C:\\Apps\\A.exe\nC:\\Apps\\B.exe" })
+                Assert.Throws<ArgumentException>(() => ProgramCapabilities.ValidateTargets(explicitTarget with
+                { Parameters = explicitTarget.Parameters.SetItem("hideTrayIcon", enabled).SetItem("trayExecutable", invalid) }));
+        var (_, close) = Configure(false);
+        Assert.DoesNotContain(ProgramCapabilities.Describe(false).Fields, f => f.Id == "trayExecutable");
+        Assert.Throws<ArgumentException>(() => ProgramCapabilities.ValidateTargets(close.Action with
+            { Parameters = close.Action.Parameters.Add("trayExecutable", @"C:\Apps\TrayOwner.exe") }));
+    }
+    [Fact]
+    public void StartupTrayTargetImportKeepsEmptyDefaultAndOnlyResolvesObservedAliases()
+    {
+        var (compiler, task) = Configure();
+        var recorder = new UsageRecorder(new(5, true, true, []), DateTimeOffset.UnixEpoch);
+        recorder.Add(new(DateTimeOffset.UnixEpoch, "process-start", @"C:\Apps\target.exe"));
+        var alias = Assert.Single(recorder.Session.Objects).Id;
+        var plugin = new ProgramPlugin();
+        var catalog = new AutomationSnapshot([], compiler.Catalog, plugin.Combinations, true, "synthetic", "synthetic", DateTimeOffset.UnixEpoch, []);
+        var detection = task.Detection with { Parameters = task.Detection.Parameters.SetItem("processNames", alias) };
+        var action = task.Action with { Parameters = task.Action.Parameters.SetItem("executable", alias).SetItem("trayExecutable", "") };
+        UsageImport Proposal(TaskInvocation invocation) => new(1, recorder.Session.Id, "existing", "synthetic", "synthetic", detection, invocation);
+        AutomationTask Import(TaskInvocation invocation) => UsageAnalysis.Import(JsonSerializer.Serialize(Proposal(invocation)), recorder.Session, catalog).Draft!;
+        var empty = Import(action);
+        Assert.Equal("", empty.Action.Parameters["trayExecutable"]);
+        Assert.Equal(@"C:\Apps\target.exe", ProgramCapabilities.TrayTarget(empty.Action));
+        var observed = Import(action with { Parameters = action.Parameters.SetItem("trayExecutable", alias) });
+        Assert.Equal(@"C:\Apps\target.exe", observed.Action.Parameters["trayExecutable"]);
+        Assert.Throws<ArgumentException>(() => Import(action with
+            { Parameters = action.Parameters.SetItem("trayExecutable", @"C:\Apps\Unobserved.exe") }));
+    }
+    private static Task<ProgramControlResult> ExecuteStartup(bool hideTrayIcon,
+        Func<CancellationToken, Task<ProgramControlResult>> start,
+        Func<TimeSpan, CancellationToken, Task<ProgramControlResult>> hideTray,
+        CancellationToken token, TimeProvider? timeProvider = null) =>
+        WindowsProgramStart.ExecuteAsync(hideTrayIcon, start, hideTray,
+            TimeSpan.FromSeconds(ProgramCapabilities.StartupTrayWaitSeconds),
+            TimeSpan.FromSeconds(ProgramCapabilities.StartCommandTimeoutSeconds), token, timeProvider);
+    [Fact]
+    public async Task StartupTrayOptionHidesEvenSkippedLaunchAndSeparatesNoIconFromSuccess()
+    {
+        var skipped = new ProgramControlResult(true, "程序已运行，按配置跳过启动。") { Skipped = true };
+        var hideCalls = 0;
+        Task<ProgramControlResult> Hide(TimeSpan wait, CancellationToken token)
+        {
+            hideCalls++; Assert.Equal(TimeSpan.FromSeconds(60), wait);
+            return Task.FromResult(new ProgramControlResult(true, "已隐藏 1 个图标。"));
+        }
+        var unchanged = await ExecuteStartup(false, _ => Task.FromResult(skipped), Hide, default);
+        Assert.Same(skipped, unchanged); Assert.Equal(0, hideCalls);
+        var hidden = await ExecuteStartup(true, _ => Task.FromResult(skipped), Hide, default);
+        Assert.True(hidden.Success, hidden.Reason); Assert.False(hidden.Skipped); Assert.Equal(1, hideCalls);
+        Assert.Contains("跳过启动", hidden.Reason); Assert.Contains("已隐藏", hidden.Reason);
+        var startFailed = new ProgramControlResult(false, "程序启动失败。");
+        Assert.Same(startFailed, await ExecuteStartup(true, _ => Task.FromResult(startFailed), Hide, default));
+        Assert.Equal(1, hideCalls);
+        var noIcon = await ExecuteStartup(true, _ => Task.FromResult(new ProgramControlResult(true, "已启动程序。")),
+            (_, _) => Task.FromResult(new ProgramControlResult(true, "未发现图标，无需处理。") { Skipped = true }), default);
+        Assert.False(noIcon.Success); Assert.Contains("已启动程序", noIcon.Reason); Assert.Contains("隐藏未确认", noIcon.Reason);
+        var alreadyHidden = await ExecuteStartup(true, _ => Task.FromResult(skipped),
+            (_, _) => Task.FromResult(new ProgramControlResult(true, "已确认保持隐藏。") { Skipped = true, TrayHiddenConfirmed = true }), default);
+        Assert.True(alreadyHidden.Success, alreadyHidden.Reason); Assert.True(alreadyHidden.TrayHiddenConfirmed);
+        Assert.Contains("已确认保持隐藏", alreadyHidden.Reason);
+        var denied = await ExecuteStartup(true, _ => Task.FromResult(skipped),
+            (_, _) => throw new UnauthorizedAccessException("合成权限拒绝"), default);
+        Assert.False(denied.Success); Assert.Contains("合成权限拒绝", denied.Reason); Assert.Contains("程序仍保留", denied.Reason);
+    }
+    [Theory]
+    [InlineData(0, 60)]
+    [InlineData(25, 60)]
+    [InlineData(45, 40)]
+    [InlineData(85, 0)]
+    public async Task StartupTrayWaitUsesRemainingProgramDeadline(int startupSeconds, int expectedWait)
+    {
+        var time = new ManualTimeProvider(); var hideCalls = 0;
+        var result = await ExecuteStartup(true, _ =>
+        {
+            time.Advance(TimeSpan.FromSeconds(startupSeconds));
+            return Task.FromResult(new ProgramControlResult(true, "已完成启动。"));
+        }, (wait, _) =>
+        {
+            hideCalls++; Assert.Equal(TimeSpan.FromSeconds(expectedWait), wait);
+            return Task.FromResult(new ProgramControlResult(true, "已隐藏。"));
+        }, default, time);
+        Assert.Equal(expectedWait > 0, result.Success); Assert.Equal(expectedWait > 0 ? 1 : 0, hideCalls);
+    }
+    [Fact]
+    public void StartDeadlineFitsProviderProtocolWithoutExtendingClose()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var bindings = new ProgramPlugin().Bindings.ToArray();
+        var start = bindings.Single(b => b.Descriptor.Id == "program.start").Descriptor;
+        var close = bindings.Single(b => b.Descriptor.Id == "program.close").Descriptor;
+        var invocation = Configure().Item2.Action;
+        var request = new ProviderMessage(1, "invoke", "program-deadline", now + start.Timeout,
+            Invocation: invocation, CommandId: Guid.NewGuid());
+        ProviderProtocol.Validate(request, now);
+        Assert.Equal(TimeSpan.FromSeconds(40), close.Timeout);
+        Assert.Throws<InvalidDataException>(() => ProviderProtocol.Validate(request with
+        {
+            Invocation = invocation with { CapabilityId = "program.close" }
+        }, now));
+        Assert.Throws<InvalidDataException>(() => ProviderProtocol.Validate(request with { DeadlineUtc = now.AddSeconds(96) }, now));
+    }
+    [Fact]
+    public async Task CancellationAfterLaunchDoesNotBeginTrayWriteOrRelaunch()
+    {
+        using var stop = new CancellationTokenSource(); var starts = 0; var hides = 0;
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => ExecuteStartup(true, _ =>
+        {
+            starts++; stop.Cancel(); return Task.FromResult(new ProgramControlResult(true, "已启动程序。"));
+        }, (_, _) => { hides++; throw new InvalidOperationException("不得隐藏"); }, stop.Token));
+        Assert.Equal(1, starts); Assert.Equal(0, hides);
     }
     [Fact]
     public async Task GenericStorageSurvivesReopenPreservesParametersAndRejectsStaleEdits()

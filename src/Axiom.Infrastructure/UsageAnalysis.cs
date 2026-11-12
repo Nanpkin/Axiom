@@ -331,12 +331,12 @@ public static class UsageAnalysis
             var compact = JsonNode.Parse(result)!.AsObject();
             compact.Remove("combinations");
             compact["combinationIndex"] = JsonSerializer.SerializeToNode(index, CompactCatalogJson);
-            compact["omissions"] = "无本机身份/完整原始事件；最多6模式/3证据/12已处理。缺省说明/提示空、默认值/上下限/分组null、标记默认false；其余参数约束不变。combinationIndex:DetectionIds/ActionIds为完整ID，Rows每行首项为检测索引、余项为动作索引，均从零起；全部组合保留。";
+            compact["omissions"] = "无本机身份/完整事件；至多6模式/3证据/12已处理。缺省说明/提示空，默认值/上下限/分组null，标记默认false。combinationIndex含完整ID表；Rows零基索引：首项检测、余项动作；全部组合保留。";
             // All observed objects are applications; keep every ID while stating
             // that repeated default once, only in the existing tightest tier.
             foreach (var item in compact["objects"]!.AsArray()) item!.AsObject().Remove("kind");
             compact["omissions"] = compact["omissions"]!.GetValue<string>() + "objects仅列id，类型均application。";
-            compact["omissions"] = compact["omissions"]!.GetValue<string>() + "SupportsRunConditions缺省true。预算不足时按原优先级减少尾部候选，至少保留1项；全部能力、参数、组合和已处理标记保持。";
+            compact["omissions"] = compact["omissions"]!.GetValue<string>() + "SupportsRunConditions缺省true；按原优先级删尾部候选至至少1项；能力/参数/组合/已处理不删。";
             result = compact.ToJsonString(CompactCatalogJson);
             var patterns = compact["patterns"]!.AsArray();
             while (Encoding.UTF8.GetByteCount(result) > budget && patterns.Count > 1)
@@ -410,6 +410,7 @@ public static class UsageAnalysis
                 if (entry.Value is null) throw new ArgumentException("空参数。");
                 if (field.Kind is TaskFieldKind.ExecutableSelection or TaskFieldKind.TraySelection or TaskFieldKind.ProcessSelection or TaskFieldKind.FilePath)
                 {
+                    if (field.Kind == TaskFieldKind.FilePath && !field.Required && entry.Value.Length == 0) continue;
                     var aliases = entry.Value.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
                     if (aliases.Length is < 1 or > 32) throw new ArgumentException("对象数量无效。");
                     var paths = aliases.Select(a => session.Objects.SingleOrDefault(o => o.Id == a)?.Executable ?? throw new ArgumentException("对象不在本次观察中。")).Select(ExecutablePaths.ValidatePath);
@@ -432,7 +433,7 @@ public static class UsageAnalysis
                 OpenTargetBatchCapabilities.Validate(missing.Contains("targets") ? resolved with { Parameters = resolved.Parameters.SetItem("targets", "网页 | https://example.invalid/review") } : resolved);
             if (missing.Count > 0) return resolved;
             // Provider-specific constraints are also checked before offering the draft.
-            if (resolved.CapabilityId is ConditionRestoreCapabilities.Playback or ConditionRestoreCapabilities.Microphone or ConditionRestoreCapabilities.PowerScheme or ConditionRestoreCapabilities.ProgramPriority or ConditionRestoreCapabilities.WindowState) ConditionRestoreCapabilities.Validate(resolved);
+            if (resolved.CapabilityId is ConditionRestoreCapabilities.Playback or ConditionRestoreCapabilities.Microphone or ConditionRestoreCapabilities.PowerScheme or ConditionRestoreCapabilities.ProgramPriority or ConditionRestoreCapabilities.WindowState or ConditionRestoreCapabilities.TrayVisibility) ConditionRestoreCapabilities.Validate(resolved);
             if (resolved.CapabilityId == NetworkCategoryCapabilities.State) NetworkCategoryCapabilities.Validate(resolved);
             if (resolved.CapabilityId == InternetConnectivityCapabilities.State) InternetConnectivityCapabilities.Validate(resolved);
             if (resolved.CapabilityId == FileArrivalCapabilities.Arrived) FileArrivalCapabilities.Validate(resolved);
@@ -457,6 +458,7 @@ public static class UsageAnalysis
             if (resolved.CapabilityId == SessionLockStateCapabilities.State) SessionLockStateCapabilities.Validate(resolved);
             if (resolved.CapabilityId == SessionLockCapabilities.Lock) SessionLockCapabilities.Validate(resolved);
             if (resolved.CapabilityId == CurrentMediaCapabilities.Control) CurrentMediaCapabilities.Validate(resolved);
+            if (resolved.CapabilityId is BluetoothDeviceCapabilities.Connected or BluetoothDeviceCapabilities.Disconnected) BluetoothDeviceCapabilities.Validate(resolved);
             if (resolved.CapabilityId is UsbDeviceCapabilities.Present or UsbDeviceCapabilities.Absent) UsbDeviceCapabilities.Validate(resolved);
             if (resolved.CapabilityId == ForegroundWindowMonitorCapabilities.Move) ForegroundWindowMonitorCapabilities.Validate(resolved);
             if (resolved.CapabilityId == ForegroundWindowLayoutCapabilities.Layout) ForegroundWindowLayoutCapabilities.Validate(resolved);

@@ -116,7 +116,7 @@ internal sealed class WindowsTrayEvents : IDisposable
         }
         private void OnEvent(nint eventHook, uint kind, nint window, int objectId, int childId, uint thread, uint time)
         {
-            if (window == 0 || kind is not (0x8000 or 0x8001 or 0x8002 or 0x8004 or 0x800c)) return;
+            if (window == 0 || kind is not (0x8000 or 0x8001 or 0x8002 or 0x8003 or 0x8004 or 0x800c)) return;
             var root = GetAncestor(window, 2);
             var overflow = FindWindow("NotifyIconOverflowWindow", null);
             if (shell != 0 && (window == shell || root == shell) || overflow != 0 && (window == overflow || root == overflow)) Publish();
