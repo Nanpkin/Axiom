@@ -253,7 +253,8 @@ internal sealed class ProgramCapabilityProvider : ISessionCapabilityProvider
                 cancellation => Task.Run(() => WindowsProgramControl.Start(paths.Single(), ProgramCapabilities.Value(config, "arguments"), ProgramCapabilities.Value(config, "workingDirectory"),
                     ProgramCapabilities.Value(config, "window"), ProgramCapabilities.Value(config, "ifRunning") == "skip", cancellation,
                     (int)ProgramCapabilities.Number(config, "startupProtectionSeconds")), cancellation),
-                (wait, cancellation) => WindowsTrayActions.HideAsync(ProgramCapabilities.TrayTarget(config), wait, cancellation),
+                (wait, cancellation) => WindowsTrayActions.HideAsync(ProgramCapabilities.TrayTarget(config), wait, cancellation,
+                    registrationQuietPeriod: TimeSpan.FromSeconds(5)),
                 TimeSpan.FromSeconds(ProgramCapabilities.StartupTrayWaitSeconds),
                 TimeSpan.FromSeconds(ProgramCapabilities.StartCommandTimeoutSeconds), token)
             : await WindowsProgramBatch.ExecuteAsync(paths, (path, cancellation) => WindowsProgramControl.CloseAsync(path, ProgramCapabilities.Value(config, "mode") == "force",

@@ -48,6 +48,27 @@ public sealed class TrayActionTests
         Assert.False(target.Exists(false)); Assert.False(target.Exists(true));
         Assert.True(target.ProbeRegistration()); Assert.True(target.ProbeRegistration(true));
     }
+    [Fact(Timeout = 15000)]
+    public async Task StartupHideWaitsForReplacementRegistrationToSettle()
+    {
+        using var initial = new IconWindow(false, true);
+        using var replacement = new IconWindow(false, true);
+        initial.Add(false);
+        Assert.True(initial.Exists(false));
+
+        var pending = WindowsTrayActions.HideAsync(Environment.ProcessPath!, TimeSpan.FromSeconds(6), default,
+            registrationQuietPeriod: TimeSpan.FromSeconds(1));
+        Assert.False(pending.IsCompleted);
+        Assert.True(initial.Exists(false));
+        initial.Remove(false);
+        replacement.Add(false);
+
+        var result = await pending.WaitAsync(TimeSpan.FromSeconds(7));
+        Assert.True(result.Success, result.Reason);
+        Assert.True(result.TrayHiddenConfirmed);
+        Assert.True(replacement.ProbeRegistration());
+        Assert.False(replacement.Exists(false));
+    }
     [Fact]
     public void TrayModuleUsesStartupComposerAndBatchPathsWithDelayAndStrictValidation()
     {

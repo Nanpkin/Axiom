@@ -117,13 +117,16 @@ public static partial class WindowsTrayActions
         return new([.. entries.OrderBy(e => e.DisplayName, StringComparer.CurrentCultureIgnoreCase)],
             skipped > 0 ? $"{skipped} 个程序无法核对权限或图标归属，未列入可选名单。" : null);
     }
-    public static async Task<ProgramControlResult> HideAsync(string path, TimeSpan wait, CancellationToken token)
+    public static async Task<ProgramControlResult> HideAsync(string path, TimeSpan wait, CancellationToken token,
+        TimeSpan registrationQuietPeriod = default)
     {
         if (wait < TimeSpan.FromSeconds(1) || wait > TimeSpan.FromSeconds(120)) throw new ArgumentOutOfRangeException(nameof(wait));
         if (!File.Exists(path)) return new(false, "目标程序不存在，请重新选择路径。");
         token.ThrowIfCancellationRequested();
         using var notifications = new WindowsTrayEvents();
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token); deadline.CancelAfter(wait);
+        HashSet<(nint Window, uint Id, Guid Guid)>? observed = null;
+        long observedAt = 0;
         try
         {
             while (true)
@@ -131,13 +134,44 @@ public static partial class WindowsTrayActions
                 deadline.Token.ThrowIfCancellationRequested();
                 // The appearance deadline must not turn a partially executed native operation into a no-op.
                 var matches = WindowsProgramControl.Matching(path);
+                var remainingQuiet = TimeSpan.Zero;
                 try
                 {
                     var visible = matches.Count == 0 ? [] : FindActive(path, ReadRegistrations(), matches, token);
-                    if (visible.Length > 0) return await SetVisibilityAsync(path, visible, matches, false, notifications, token);
+                    if (visible.Length == 0)
+                    {
+                        observed = null;
+                    }
+                    else
+                    {
+                        if (registrationQuietPeriod > TimeSpan.Zero)
+                        {
+                            // A launcher can register a temporary icon and replace its HWND/UID
+                            // while starting. Give the current set a quiet interval before hiding.
+                            if (observed is null || !observed.SetEquals(visible))
+                            {
+                                observed = visible.ToHashSet();
+                                observedAt = Stopwatch.GetTimestamp();
+                            }
+                            remainingQuiet = registrationQuietPeriod - Stopwatch.GetElapsedTime(observedAt);
+                        }
+                        if (remainingQuiet <= TimeSpan.Zero)
+                            return await SetVisibilityAsync(path, visible, matches, false, notifications, token);
+                    }
                 }
                 finally { foreach (var process in matches) process.Dispose(); }
-                await notifications.Events.Reader.ReadAsync(deadline.Token);
+                if (remainingQuiet <= TimeSpan.Zero)
+                {
+                    await notifications.Events.Reader.ReadAsync(deadline.Token);
+                    continue;
+                }
+                using var quietDeadline = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token);
+                quietDeadline.CancelAfter(remainingQuiet);
+                try { await notifications.Events.Reader.ReadAsync(quietDeadline.Token); }
+                catch (OperationCanceledException) when (quietDeadline.IsCancellationRequested && !deadline.IsCancellationRequested)
+                {
+                    // Re-read once at the quiet deadline even if Explorer sent no event.
+                }
             }
         }
         catch (OperationCanceledException) when (deadline.IsCancellationRequested && !token.IsCancellationRequested)
