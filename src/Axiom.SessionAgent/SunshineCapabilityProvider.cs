@@ -61,7 +61,7 @@ internal sealed class SunshineCapabilityProvider : ISessionCapabilityProvider
                 error is HttpRequestException or IOException or OperationCanceledException or JsonException or CryptographicException)
             {
                 lastStatus = null;
-                publish(Update(resources, null, false, "本机 Sunshine 推送不可用，或其证书无法确认。"));
+                publish(Update(resources, null, false, "本机 Sunshine 推送不可用，或其证书无法确认。请检查服务及服务器证书的读取权限或 Windows 信任设置。"));
                 if (++retries > 3) break;
                 await Task.Delay(TimeSpan.FromSeconds(1 << retries), token);
             }
@@ -127,11 +127,13 @@ internal sealed class SunshineCapabilityProvider : ISessionCapabilityProvider
         var certificatePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
             "Sunshine", "config", "credentials", "cacert.pem");
         string? fingerprint = null;
-        if (File.Exists(certificatePath))
+        try
         {
             using var certificate = X509Certificate2.CreateFromPem(File.ReadAllText(certificatePath));
             fingerprint = certificate.GetCertHashString(HashAlgorithmName.SHA256);
         }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
         var authorization = ReadAuthorization();
         var handler = new HttpClientHandler { AllowAutoRedirect = false, UseProxy = false };
         if (fingerprint is not null)
