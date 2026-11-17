@@ -83,7 +83,9 @@ public sealed class HostsToolTests
             var directServer = Task.Run(async () =>
             {
                 using var client = await directListener.AcceptTcpClientAsync(limit.Token); await using var stream = client.GetStream();
-                var first = new byte[1]; await stream.ReadExactlyAsync(first, limit.Token); return first[0];
+                var first = new byte[1]; await stream.ReadExactlyAsync(first, limit.Token);
+                directListener.Stop();
+                return first[0];
             }, limit.Token);
             action = action with { Parameters = action.Parameters.SetItem("useSystemProxy", "false").SetItem("doh", $"https://127.0.0.1:{directEndpoint.Port}/dns-query") };
             await Assert.ThrowsAsync<IOException>(() => new HostsDnsResolver().ResolveAsync(HostsCapabilities.Validate(action), limit.Token));
@@ -232,19 +234,23 @@ public sealed class HostsToolTests
         }, limit.Token);
         await Assert.ThrowsAsync<IOException>(() => new HostsDnsResolver().ResolveAsync(HostsCapabilities.Validate(Invocation(server: endpoint.ToString())), limit.Token)); await server;
     }
-    [Fact(Timeout = 15000)]
-    public async Task DohResolvesItsEndpointWithBootstrapAndPreservesTlsCertificateValidation()
+    [Theory(Timeout = 15000)]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DohResolvesItsEndpointWithBootstrapAndPreservesTlsCertificateValidation(bool dropFirstConnection)
     {
         using var limit = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         using var udp = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0)); var bootstrap = (IPEndPoint)udp.Client.LocalEndPoint!;
         using var listener = new TcpListener(IPAddress.Loopback, 0); listener.Start(); var endpoint = (IPEndPoint)listener.LocalEndpoint;
         using var rsa = RSA.Create(2048); var request = new CertificateRequest("CN=doh.test", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
         var san = new SubjectAlternativeNameBuilder(); san.AddDnsName("doh.test"); request.CertificateExtensions.Add(san.Build());
-        using var certificate = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-1), DateTimeOffset.UtcNow.AddMinutes(5));
+        using var generated = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-1), DateTimeOffset.UtcNow.AddMinutes(5));
+        // Schannel needs access to the server's private key through the Windows key store.
+        using var certificate = X509CertificateLoader.LoadPkcs12(generated.Export(X509ContentType.Pkcs12), null);
         var bootstrapQueries = 0; var tlsConnections = 0;
         var dnsServer = Task.Run(async () =>
         {
-            for (var i = 0; i < 2; i++)
+            for (var i = 0; i < (dropFirstConnection ? 4 : 2); i++)
             {
                 var packet = await udp.ReceiveAsync(limit.Token); var ipv4 = packet.Buffer[^3] == 1;
                 var answer = Answer(packet.Buffer, ipv4 ? "127.0.0.1" : "::1");
@@ -254,6 +260,13 @@ public sealed class HostsToolTests
         }, limit.Token);
         var tlsServer = Task.Run(async () =>
         {
+            if (dropFirstConnection)
+            {
+                using var dropped = await listener.AcceptTcpClientAsync(limit.Token);
+                tlsConnections++;
+                await dropped.GetStream().ReadExactlyAsync(new byte[1], limit.Token);
+                dropped.Client.LingerState = new LingerOption(true, 0);
+            }
             using var client = await listener.AcceptTcpClientAsync(limit.Token); tlsConnections++;
             using var stream = new SslStream(client.GetStream());
             try { await stream.AuthenticateAsServerAsync(new SslServerAuthenticationOptions { ServerCertificate = certificate }, limit.Token); }
@@ -262,8 +275,11 @@ public sealed class HostsToolTests
         }, limit.Token);
         var invocation = Invocation(transport: "doh") with { Parameters = Invocation(transport: "doh").Parameters
             .SetItem("doh", $"https://doh.test:{endpoint.Port}/dns-query").SetItem("bootstrap", bootstrap.ToString()) };
-        await Assert.ThrowsAsync<IOException>(() => new HostsDnsResolver().ResolveAsync(HostsCapabilities.Validate(invocation), limit.Token));
-        await Task.WhenAll(dnsServer, tlsServer); Assert.Equal(2, bootstrapQueries); Assert.Equal(1, tlsConnections);
+        var failure = await Assert.ThrowsAsync<IOException>(() => new HostsDnsResolver().ResolveAsync(HostsCapabilities.Validate(invocation), limit.Token));
+        Assert.True(failure.Message.Contains("TLS 证书", StringComparison.Ordinal), failure.ToString());
+        await Task.WhenAll(dnsServer, tlsServer);
+        Assert.Equal(dropFirstConnection ? 4 : 2, bootstrapQueries);
+        Assert.Equal(dropFirstConnection ? 2 : 1, tlsConnections);
     }
     [Fact(Timeout = 15000)]
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]

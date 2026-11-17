@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Sockets;
+using System.Security.Authentication;
 using System.Security.Cryptography;
 using System.Text;
 using Axiom.Contracts;
@@ -35,11 +36,8 @@ public sealed class HostsDnsResolver
         {
             if (settings.Transport == "dns") return await QueryDnsAsync(HostsCapabilities.Endpoint(settings.Server), name, type, ct);
             var query = CreateQuery(name, type);
-            using var request = new HttpRequestMessage(HttpMethod.Post, settings.DohEndpoint) { Content = new ByteArrayContent(query) };
-            request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/dns-message");
-            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/dns-message"));
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct); timeout.CancelAfter(TimeSpan.FromSeconds(8));
-            using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
+            using var response = await SendDohAsync(http, settings.DohEndpoint, query, timeout.Token);
             response.EnsureSuccessStatusCode();
             if (response.Content.Headers.ContentType?.MediaType != "application/dns-message" || response.Content.Headers.ContentLength > 65535)
                 throw new InvalidDataException("DoH响应格式或大小无效。");
@@ -58,10 +56,35 @@ public sealed class HostsDnsResolver
             await workers.WaitAsync(token);
             try { return new KeyValuePair<string, IPAddress[]>(domain, await ResolveDomainAsync(domain, settings.Family, Query, token)); }
             catch (Exception error) when (error is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
-            { throw new IOException($"{domain} 解析失败，hosts保持原样：{error.Message}", error); }
+            { throw new IOException($"{domain} 解析失败：{error.Message}", error); }
             finally { workers.Release(); }
         }));
         return resolved.ToDictionary(p => p.Key, p => p.Value);
+    }
+
+    private static async Task<HttpResponseMessage> SendDohAsync(HttpClient http, Uri? endpoint, byte[] query, CancellationToken token)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, endpoint) { Content = new ByteArrayContent(query) };
+            request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/dns-message");
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/dns-message"));
+            try { return await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token); }
+            catch (HttpRequestException error) when (attempt == 0 && (
+                error.HttpRequestError is HttpRequestError.ConnectionError or HttpRequestError.ResponseEnded ||
+                error.HttpRequestError == HttpRequestError.SecureConnectionError && error.InnerException is IOException))
+            {
+                // DNS queries are read-only. Retry a dropped connection within the original deadline.
+                await Task.Delay(TimeSpan.FromMilliseconds(200), token);
+            }
+            catch (HttpRequestException error) when (error.HttpRequestError == HttpRequestError.SecureConnectionError)
+            {
+                var reason = error.InnerException is AuthenticationException
+                    ? "请检查 DoH 服务器或代理的 TLS 证书及系统时间。"
+                    : "请检查到 DoH 服务器的网络连接及系统代理。";
+                throw new IOException($"DoH TLS 握手失败。{reason}", error);
+            }
+        }
     }
 
     private static async Task<IPAddress[]> ResolveDomainAsync(string domain, string family, Func<string, ushort, CancellationToken, Task<byte[]>> query, CancellationToken token)
