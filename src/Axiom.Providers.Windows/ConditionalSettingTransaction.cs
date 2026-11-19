@@ -204,7 +204,7 @@ internal sealed class ConditionalSettingTransaction<T>(T baseline, Func<T> read,
         else if (!equality.Equals(actual, confirmed) || !Owned) { Relinquish(); return false; }
         return true;
     }
-    public RestorableSettingResult Release(CancellationToken token)
+    public RestorableSettingResult Release(CancellationToken token, T? releaseTarget = null, string? confirmedReason = null)
     {
         if (released) return new(true, name + "租约已释放。", false);
         if (!Owned) { released = true; return new(true, name + "本次已让出，保留当前设置；没有恢复写入。", false); }
@@ -215,11 +215,12 @@ internal sealed class ConditionalSettingTransaction<T>(T baseline, Func<T> read,
             if (!equality.Equals(read(), confirmed))
             { Relinquish(); released = true; return new(true, name + "已被其他来源改变，保留当前设置，不恢复旧值。", false); }
             token.ThrowIfCancellationRequested();
-            if (!equality.Equals(confirmed, original)) write(original);
+            var target = releaseTarget ?? original;
+            if (!equality.Equals(confirmed, target)) write(target);
             token.ThrowIfCancellationRequested();
-            var restored = equality.Equals(read(), original);
+            var restored = equality.Equals(read(), target);
             released = true; Relinquish();
-            return new(restored, restored ? name + "已读回确认恢复本轮最初设置。" : name + "恢复结果未确认；可能已修改，不重试。", false);
+            return new(restored, restored ? confirmedReason ?? name + "已读回确认恢复本轮最初设置。" : name + "恢复结果未确认；可能已修改，不重试。", false);
         }
         catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
         { released = true; Relinquish(); return new(false, name + "原目标不可核验或恢复未确认；保留当前设置，不改替代目标。", false); }

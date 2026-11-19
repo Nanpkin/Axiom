@@ -14,9 +14,10 @@ public static class ConditionRestoreCapabilities
     {
         Description = "条件成立时显示指定程序托盘，结束时恢复本轮最初的显示或隐藏状态。",
         Fields = [new("executable", "目标程序", TaskFieldKind.FilePath, true, "选择一个已运行程序的完整 .exe 路径；固定本轮进程，不控制后来启动的替代实例。", null, 1024, [], BrowseLocalPath: true),
-            new("delaySeconds", "延迟执行（秒）", TaskFieldKind.Number, true, "条件持续满足后应用；首次已知成立也可应用。", "0", 8, [], 0, 86400)],
-        Behavior = "先捕获当前进程及托盘可见性，再请求显示并确认。条件结束、暂停、删除、未知或正常停止时，只有原进程及最后确认状态仍一致才恢复最初可见性；本来隐藏才恢复隐藏，本来显示则保持显示。",
-        EditWarning = "仅支持一个完整程序路径及一个当前运行实例；目标须支持托盘重建，最多等待5秒。进程退出、托盘可见性被外部改变或无法确认时让出，不修改替代实例。恢复指原状态，不是固定隐藏；若要连接显示、断开隐藏，请先让目标托盘处于隐藏状态。持续隐藏工具不要同时包含同一目标。"
+            new("delaySeconds", "延迟执行（秒）", TaskFieldKind.Number, true, "条件持续满足后应用；首次已知成立也可应用。", "0", 8, [], 0, 86400),
+            new("hideOnRelease", "控制结束时隐藏托盘", TaskFieldKind.Boolean, false, "开启后，断开、暂停或其他租约结束时尝试隐藏。普通隐藏未生效时可移除原图标注册，下次显示由程序重建。关闭则恢复连接前的可见性。", "false", 5, [])],
+        Behavior = "先捕获当前进程及托盘可见性，再请求显示并确认。租约结束时，只有原进程及最后确认状态仍一致才操作；默认恢复最初可见性，可选择结束时隐藏。",
+        EditWarning = "仅支持一个完整程序路径及一个当前运行实例；目标须支持托盘重建，最多等待5秒。进程退出、托盘可见性被外部改变或无法确认时让出，不修改替代实例。持续隐藏工具不要同时包含同一目标。"
     };
     public static TaskCapability PlaybackDescriptor { get; } = Describe(AudioPlaybackCapabilities.Descriptor, Playback, "条件期间调整播放音量或静音，结束恢复");
     public static TaskCapability MicrophoneDescriptor { get; } = Describe(MicrophoneCapabilities.Descriptor, Microphone, "条件期间设置麦克风静音，结束恢复");
@@ -63,8 +64,10 @@ public static class ConditionRestoreCapabilities
         }
         else if (invocation.CapabilityId == TrayVisibility)
         {
-            if (invocation.Parameters.Count != 2 || !invocation.Parameters.TryGetValue("executable", out var path) || path.Any(char.IsControl) || path.Length > 1024)
-                throw new ArgumentException("托盘恢复只能选择一个完整程序路径和有效延迟。");
+            if (!invocation.Parameters.TryGetValue("executable", out var path) || path.Any(char.IsControl) || path.Length > 1024 ||
+                invocation.Parameters.Count != (invocation.Parameters.ContainsKey("hideOnRelease") ? 3 : 2) ||
+                invocation.Parameters.TryGetValue("hideOnRelease", out var hide) && hide is not ("true" or "false"))
+                throw new ArgumentException("请填写一个完整程序路径、有效延迟和有效的结束隐藏设置。");
             ExecutablePaths.ValidatePath(path);
         }
         else throw new ArgumentException("未注册此条件恢复设置。");

@@ -164,7 +164,9 @@ public sealed class TrayActionTests
         await using (var originalVisible = await WindowsTrayActions.CreateRestorableSessionAsync(Environment.ProcessPath!, default))
         {
             Assert.True((await originalVisible.ApplyAsync(RestoreParameters(), default)).Success);
-            Assert.True((await originalVisible.ReleaseAsync(default)).Success); Assert.True(target.Exists(false));
+            var releasedVisible = await originalVisible.ReleaseAsync(default);
+            Assert.True(releasedVisible.Success, releasedVisible.Reason); Assert.True(target.Exists(false));
+            Assert.Contains("原为显示", releasedVisible.Reason);
             Assert.Equal(0, target.RecreationRequests);
         }
         target.Remove(false);
@@ -180,6 +182,30 @@ public sealed class TrayActionTests
         var preserved = await externallyHidden.ReleaseAsync(default);
         Assert.True(preserved.Success, preserved.Reason); Assert.Contains("其他来源", preserved.Reason);
         Assert.False(target.Exists(false)); Assert.False(target.Exists(true));
+    }
+
+    [Fact(Timeout = 15000)]
+    public async Task VisibilityLeaseCanHideAtReleaseEvenWhenTheOriginalIconWasVisible()
+    {
+        using var target = new IconWindow(false, true, true);
+        target.Add(false);
+        await using var lease = await WindowsTrayActions.CreateRestorableSessionAsync(Environment.ProcessPath!, default);
+        var parameters = new Dictionary<string, string>(RestoreParameters()) { ["hideOnRelease"] = "true" };
+        var applied = await lease.ApplyAsync(parameters, default);
+        Assert.True(applied.Success, applied.Reason);
+        Assert.Contains("原状态为显示", applied.Reason);
+        Assert.True(target.Exists(false));
+        var released = await lease.ReleaseAsync(default);
+        Assert.True(released.Success, released.Reason);
+        Assert.Contains("已隐藏", released.Reason);
+        Assert.False(target.Exists(false));
+        Assert.Equal(!released.Reason.Contains("移除"), target.ProbeRegistration());
+        await using var next = await WindowsTrayActions.CreateRestorableSessionAsync(Environment.ProcessPath!, default);
+        var reshown = await next.ApplyAsync(parameters, default);
+        Assert.True(reshown.Success, reshown.Reason);
+        Assert.True(target.Exists(false));
+        Assert.True((await next.ReleaseAsync(default)).Success);
+        Assert.False(target.Exists(false));
     }
     [Fact(Timeout = 15000)]
     public async Task VisibilityLeaseRejectsMissingProcessAndAcceptsNewOwnerWithinPinnedProcess()

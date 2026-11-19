@@ -297,11 +297,14 @@ public static partial class WindowsTrayActions
     }
 
     private static async Task<ProgramControlResult> SetVisibilityAsync(string path, (nint Window, uint Id, Guid Guid)[] candidates,
-        List<Process> matches, bool visible, WindowsTrayEvents notifications, CancellationToken token, Action? verify = null)
+        List<Process> matches, bool visible, WindowsTrayEvents notifications, CancellationToken token, Action? verify = null,
+        bool removeOnUnconfirmedHide = false)
     {
         using var confirmation = CancellationTokenSource.CreateLinkedTokenSource(token); confirmation.CancelAfter(TimeSpan.FromSeconds(3));
         var desired = visible ? IconVisibility.Visible : IconVisibility.Hidden;
         var written = 0;
+        List<(nint Window, uint Id, Guid Guid)>? removed = null;
+        var phase = "核对原图标";
         void VerifyOwner((nint Window, uint Id, Guid Guid) candidate)
         {
             verify?.Invoke();
@@ -313,6 +316,7 @@ public static partial class WindowsTrayActions
         {
             foreach (var candidate in candidates)
             {
+                phase = "核对原图标";
                 confirmation.Token.ThrowIfCancellationRequested(); VerifyOwner(candidate);
                 var current = ReadVisibility(candidate);
                 VerifyOwner(candidate);
@@ -321,6 +325,7 @@ public static partial class WindowsTrayActions
                 var data = new IconData { Size = (uint)Marshal.SizeOf<IconData>(), Window = candidate.Window, Id = candidate.Id, Guid = candidate.Guid,
                     Flags = 8u | (candidate.Guid == Guid.Empty ? 0u : 32u), State = visible ? 0u : 1u, Mask = 1u, Tip = "", Info = "", Title = "" };
                 VerifyOwner(candidate); confirmation.Token.ThrowIfCancellationRequested();
+                phase = "提交可见性设置";
                 if (!Shell_NotifyIcon(1, ref data)) throw new IOException("Windows未接受图标可见性设置。");
                 written++;
             }
@@ -329,6 +334,7 @@ public static partial class WindowsTrayActions
             // real events and a final deadline read; never start a periodic scan.
             Task? settle = written > 0 ? Task.Delay(TimeSpan.FromMilliseconds(100), confirmation.Token) : null;
             Task<bool>? notification = null;
+            phase = "读回可见性";
             while (true)
             {
                 var complete = true;
@@ -343,7 +349,38 @@ public static partial class WindowsTrayActions
                     complete &= state == desired;
                 }
                 if (complete) break;
-                if (confirmation.IsCancellationRequested) throw new IOException("托盘可见性在确认期限结束时仍不匹配。");
+                if (confirmation.IsCancellationRequested)
+                {
+                    if (visible || !removeOnUnconfirmedHide || written == 0)
+                        throw new IOException("托盘可见性在确认期限结束时仍不匹配。");
+                    // Explorer accepted the hidden state, but still shows the original icon.
+                    // Only the opt-in lease may remove that registration and rebuild it next time.
+                    phase = "移除仍可见的原图标注册";
+                    removed = [];
+                    foreach (var candidate in candidates)
+                    {
+                        token.ThrowIfCancellationRequested(); VerifyOwner(candidate);
+                        var state = ReadVisibility(candidate);
+                        VerifyOwner(candidate);
+                        if (state == IconVisibility.Hidden) continue;
+                        if (state != IconVisibility.Visible || candidate.Guid != Guid.Empty)
+                            throw new IOException("原图标无法按窗口和编号确认，未移除注册。");
+                        var identity = new IconData { Size = (uint)Marshal.SizeOf<IconData>(), Window = candidate.Window,
+                            Id = candidate.Id, Tip = "", Info = "", Title = "" };
+                        token.ThrowIfCancellationRequested();
+                        if (!Shell_NotifyIcon(2, ref identity)) throw new IOException("Windows未接受移除原图标注册。");
+                        removed.Add(candidate);
+                    }
+                    if (removed.Count > 0) await Task.Delay(TimeSpan.FromMilliseconds(100), token);
+                    foreach (var candidate in removed)
+                    {
+                        token.ThrowIfCancellationRequested();
+                        VerifyOwner(candidate);
+                        if (ReadVisibility(candidate) != IconVisibility.Missing) throw new IOException("原图标注册仍在，未确认移除。");
+                        VerifyOwner(candidate);
+                    }
+                    break;
+                }
                 notification ??= notifications.Events.Reader.ReadAsync(confirmation.Token).AsTask();
                 try
                 {
@@ -365,12 +402,12 @@ public static partial class WindowsTrayActions
                 foreach (var candidate in candidates) IconRemoved?.Invoke(path, candidate);
                 WindowsTrayEvents.Invalidate();
             }
-            return new(true, $"{Path.GetFileName(path)}：" + (written > 0
+            return new(true, $"{Path.GetFileName(path)}：" + (removed is { Count: > 0 } ? $"已核验移除 {removed.Count} 个仍可见的原图标注册，下次显示时请求程序重建。" : written > 0
                 ? $"已确认{(visible ? "显示" : "隐藏")} {candidates.Length} 个图标。"
                 : $"图标已处于{(visible ? "显示" : "隐藏")}状态，无需写入。")) { Skipped = written == 0, TrayHiddenConfirmed = !visible };
         }
         catch (Exception error) when (!token.IsCancellationRequested && error is not (OutOfMemoryException or StackOverflowException))
-        { return new(false, "托盘可见性设置或读回未确认；图标可能已改变，本次不自动重试或处理后来出现的图标。"); }
+        { return new(false, $"托盘{phase}未确认；图标可能已改变，本次不自动重试或处理后来出现的图标。"); }
         finally { confirmation.Cancel(); }
     }
     private static (nint Window,uint Id,Guid Guid)[] FindActive(string path, Registration[] registrations, List<Process> matches, CancellationToken token) =>

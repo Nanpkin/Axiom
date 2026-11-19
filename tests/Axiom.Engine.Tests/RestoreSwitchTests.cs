@@ -113,6 +113,11 @@ public sealed class RestoreSwitchTests
         Assert.Contains(new TaskCombination(BluetoothDeviceCapabilities.Connected, ConditionRestoreCapabilities.TrayVisibility), Catalog.Combinations);
         var action = Modules.SelectMany(m => m.Actions).Single(a => a.Descriptor.Id == editor.Action.CapabilityId).Compile(editor.Action, ResourceScope.Machine);
         Assert.Equal(RuleActionKind.Desired, action.Kind);
+        Assert.Equal("false", editor.Action.Parameters["hideOnRelease"]);
+        editor.SetParameter(TaskCapabilityKind.Action, "hideOnRelease", "true");
+        ConditionRestoreCapabilities.Validate(editor.Action);
+        Assert.Throws<ArgumentException>(() => editor.SwitchRestore(Catalog));
+        editor.SetParameter(TaskCapabilityKind.Action, "hideOnRelease", "false");
         editor.SwitchRestore(Catalog);
         Assert.Equal(TrayCapabilities.Show, editor.Action!.CapabilityId);
         Assert.Equal("30", editor.Action.Parameters["waitSeconds"]);

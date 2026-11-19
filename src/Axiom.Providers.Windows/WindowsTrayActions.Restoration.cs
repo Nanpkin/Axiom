@@ -49,6 +49,9 @@ public static partial class WindowsTrayActions
         private readonly nint shell;
         private readonly WindowsTrayEvents trayEvents;
         private readonly ConditionalSettingTransaction<bool> visibility;
+        private readonly bool originallyVisible;
+        private bool hideOnRelease;
+        private string? hideDetail;
         private CancellationToken currentToken;
 
         internal TrayVisibilitySession(string path, Process process) : base(RestoreCommands)
@@ -66,7 +69,8 @@ public static partial class WindowsTrayActions
                 _ = shellProcess.SafeHandle; shellCreated = shellProcess.StartTime.ToUniversalTime();
                 var windows = FindOwnedWindows([process], CancellationToken.None).ToDictionary(w => w, w => GetWindowThreadProcessId(w, out _));
                 if (windows.Count == 0 || windows.Values.Any(t => t == 0)) throw new IOException("目标程序没有可核验的当前托盘窗口。");
-                visibility = new(Read(CancellationToken.None).Length > 0, () => Read(currentToken).Length > 0, Write, "本轮固定程序托盘可见性");
+                originallyVisible = Read(CancellationToken.None).Length > 0;
+                visibility = new(originallyVisible, () => Read(currentToken).Length > 0, Write, "本轮固定程序托盘可见性");
             }
             catch { tray?.Dispose(); explorer?.Dispose(); throw; }
         }
@@ -98,7 +102,12 @@ public static partial class WindowsTrayActions
             if (!Path.GetFullPath(parameters["executable"].Trim()).Equals(path, StringComparison.OrdinalIgnoreCase))
             { RelinquishCore(); return new(false, "托盘目标路径变化，未操作替代程序。", false); }
             currentToken = token;
-            return visibility.Apply(true, token);
+            var result = visibility.Apply(true, token);
+            if (!result.Success) return result;
+            hideOnRelease = parameters.GetValueOrDefault("hideOnRelease") == "true";
+            var original = originallyVisible ? "显示" : "隐藏";
+            var ending = hideOnRelease ? "隐藏托盘图标" : $"恢复为本轮最初的{original}状态";
+            return result with { Reason = $"已确认托盘图标显示，原状态为{original}。租约结束且仍持有控制时将{ending}。" };
         }
         protected override RestorableSettingResult ReleaseCore(CancellationToken token)
         {
@@ -119,7 +128,11 @@ public static partial class WindowsTrayActions
                 visibility.Relinquish();
                 return new(false, "无法确认本轮原程序实例是否已退出，未恢复托盘，也未操作同路径的新实例。", false);
             }
-            return visibility.Release(token);
+            var ending = hideOnRelease ? "已读回确认托盘图标已隐藏。" :
+                originallyVisible ? "本轮托盘原为显示，已确认保持显示。" : "已读回确认托盘图标恢复隐藏。";
+            hideDetail = null;
+            var result = visibility.Release(token, hideOnRelease ? false : null, ending);
+            return hideDetail is null ? result : result with { Reason = result.Reason + " " + hideDetail };
         }
 
         private void Write(bool visible)
@@ -159,9 +172,15 @@ public static partial class WindowsTrayActions
             // Hide the current visible set of this fixed process once. A replacement during
             // confirmation fails rather than deleting registration or chasing the new identity.
             var current = Read(deadline.Token);
-            var hidden = SetVisibilityAsync(path, current, [process], false, trayEvents, deadline.Token, Verify).GetAwaiter().GetResult();
-            if (!hidden.Success) throw new IOException(hidden.Reason);
+            var hidden = SetVisibilityAsync(path, current, [process], false, trayEvents, deadline.Token, Verify,
+                removeOnUnconfirmedHide: hideOnRelease).GetAwaiter().GetResult();
+            if (!hidden.Success)
+            {
+                hideDetail = hidden.Reason;
+                throw new IOException(hidden.Reason);
+            }
             if (Read(deadline.Token).Length != 0) throw new IOException("恢复后又发现可见图标，未重复隐藏。");
+            if (hideOnRelease) hideDetail = hidden.Reason;
         }
         protected override void RelinquishCore() => visibility.Relinquish();
         protected override void DisposeCore() { trayEvents.Dispose(); shellProcess.Dispose(); process.Dispose(); }
