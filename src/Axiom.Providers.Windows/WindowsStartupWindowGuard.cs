@@ -56,7 +56,8 @@ internal static class WindowsStartupWindowGuard
             8 => "确认保护结果", _ => "启动保护" };
         var code = report.LastFailure != 0 ? report.LastFailure : error;
         var detail = new Win32Exception((int)code).Message.TrimEnd('。', '.');
-        var state = report.Resumed == 0 ? pid == 0 ? "未创建目标进程。" : "目标主线程尚未运行，本次创建的进程已结束。"
+        var state = report.Resumed == 0 ? pid == 0 ? "未创建目标进程。" : report.Alive != 0
+            ? "目标主线程尚未运行，本次创建的进程退出未确认。" : "目标主线程尚未运行，本次创建的进程已结束。"
             : report.Alive != 0 ? "目标进程仍在运行，但尚未确认正常就绪。" : "目标进程已退出。";
         return $"{Path.GetFileName(path)}{(pid == 0 ? "" : $"（PID {pid}）")}：{stage}未完成：{detail}（{code}）。{state}";
     }

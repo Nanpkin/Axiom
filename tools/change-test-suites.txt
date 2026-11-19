@@ -1,2 +1,1 @@
-Axiom.Engine.Tests.HardwareBrightnessTests
-Axiom.Engine.Tests.BuiltInBrightnessTests
+Axiom.Engine.Tests.ProgramPluginTests

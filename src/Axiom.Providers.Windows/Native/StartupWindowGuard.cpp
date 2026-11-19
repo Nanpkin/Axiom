@@ -304,6 +304,17 @@ static DWORD DesktopUserLaunchContext(HANDLE* parent, LPVOID* environment, PSECU
     return result;
 }
 
+static DWORD WaitForStartupThread(HANDLE thread, HANDLE process, HANDLE cancellation, DWORD timeout) {
+    HANDLE waits[] = { cancellation, process, thread };
+    switch (WaitForMultipleObjects(ARRAYSIZE(waits), waits, FALSE, timeout)) {
+    case WAIT_OBJECT_0: return ERROR_CANCELLED;
+    case WAIT_OBJECT_0 + 1: return ERROR_PROCESS_ABORTED;
+    case WAIT_OBJECT_0 + 2: return ERROR_SUCCESS;
+    case WAIT_TIMEOUT: return ERROR_TIMEOUT;
+    default: return GetLastError();
+    }
+}
+
 // Host-side entry. Failure before ResumeThread only terminates the process just created
 // by this call; after resume, cleanup releases protection and leaves the application running.
 extern "C" __declspec(dllexport) DWORD WINAPI StartGuarded(const wchar_t* path, const wchar_t* arguments,
@@ -323,8 +334,15 @@ extern "C" __declspec(dllexport) DWORD WINAPI StartGuarded(const wchar_t* path, 
     DWORD result = ERROR_GEN_FAILURE;
     DWORD stage = Prepare;
     auto cleanup = [&]() {
-        if (process.hProcess && !resumed) { TerminateProcess(process.hProcess, ERROR_PROCESS_ABORTED); WaitForSingleObject(process.hProcess, 3000); }
-        if (remote && process.hProcess) VirtualFreeEx(process.hProcess, remote, 0, MEM_RELEASE);
+        if (process.hProcess) {
+            if (!resumed && WaitForSingleObject(process.hProcess, 0) != WAIT_OBJECT_0) {
+                TerminateProcess(process.hProcess, ERROR_PROCESS_ABORTED);
+                WaitForSingleObject(process.hProcess, 3000);
+            }
+            if (report) report->alive = WaitForSingleObject(process.hProcess, 0) != WAIT_OBJECT_0;
+            // A startup thread may still be using this memory if termination was not confirmed.
+            if (remote && resumed) VirtualFreeEx(process.hProcess, remote, 0, MEM_RELEASE);
+        }
         for (auto handle : { loader, init, process.hThread, process.hProcess, release, finished, shared }) if (handle) CloseHandle(handle);
         if (view) UnmapViewOfFile(view);
         if (environment) DestroyEnvironmentBlock(environment);
@@ -378,13 +396,18 @@ extern "C" __declspec(dllexport) DWORD WINAPI StartGuarded(const wchar_t* path, 
         view->stage = stage = InitializeLoader;
         auto bootstrap = CreateRemoteThread(process.hProcess, nullptr, 0, reinterpret_cast<LPTHREAD_START_ROUTINE>(bootstrapAddress), nullptr, 0, nullptr);
         if (!bootstrap) { result = GetLastError(); break; }
-        auto bootstrapped = WaitForSingleObject(bootstrap, 5000) == WAIT_OBJECT_0; CloseHandle(bootstrap);
-        if (!bootstrapped) { result = ERROR_TIMEOUT; break; }
+        // Process startup can serialize this thread behind DLL initialization.
+        // Allow for cold starts while honoring cancellation and early process exit.
+        result = WaitForStartupThread(bootstrap, process.hProcess, cancellation, 10000);
+        CloseHandle(bootstrap);
+        if (result != ERROR_SUCCESS) break;
         if (!ReadProcessMemory(process.hProcess, reinterpret_cast<void*>(loadAddress), remoteCode, sizeof(remoteCode), &read) ||
             read != sizeof(remoteCode) || memcmp(remoteCode, reinterpret_cast<void*>(loadAddress), sizeof(remoteCode))) { result = ERROR_INVALID_ADDRESS; break; }
         view->stage = stage = LoadComponent;
         loader = CreateRemoteThread(process.hProcess, nullptr, 0, reinterpret_cast<LPTHREAD_START_ROUTINE>(loadAddress), remote, 0, nullptr);
-        if (!loader || WaitForSingleObject(loader, 3000) != WAIT_OBJECT_0) { result = ERROR_TIMEOUT; break; }
+        if (!loader) { result = GetLastError(); break; }
+        result = WaitForStartupThread(loader, process.hProcess, cancellation, 3000);
+        if (result != ERROR_SUCCESS) break;
         auto snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, process.dwProcessId);
         MODULEENTRY32W entry{}; entry.dwSize = sizeof(entry); HMODULE loaded = nullptr;
         if (snapshot != INVALID_HANDLE_VALUE) {
@@ -400,7 +423,10 @@ extern "C" __declspec(dllexport) DWORD WINAPI StartGuarded(const wchar_t* path, 
         auto offset = reinterpret_cast<BYTE*>(GetProcAddress(self, "InitializeGuard")) - reinterpret_cast<BYTE*>(self);
         view->stage = stage = InitializeComponent;
         init = CreateRemoteThread(process.hProcess, nullptr, 0, reinterpret_cast<LPTHREAD_START_ROUTINE>(reinterpret_cast<BYTE*>(loaded) + offset), remote, 0, nullptr);
-        if (!init || WaitForSingleObject(init, 3000) != WAIT_OBJECT_0 || !view->ready || !view->patched) { result = ERROR_DLL_INIT_FAILED; break; }
+        if (!init) { result = GetLastError(); break; }
+        result = WaitForStartupThread(init, process.hProcess, cancellation, 3000);
+        if (result != ERROR_SUCCESS) break;
+        if (!view->ready || !view->patched) { result = ERROR_DLL_INIT_FAILED; break; }
         if (WaitForSingleObject(cancellation, 0) == WAIT_OBJECT_0) { result = ERROR_CANCELLED; break; }
         view->stage = stage = ProtectWindows;
         if (ResumeThread(process.hThread) == static_cast<DWORD>(-1)) { result = GetLastError(); break; }
@@ -421,7 +447,6 @@ extern "C" __declspec(dllexport) DWORD WINAPI StartGuarded(const wchar_t* path, 
     if (report) {
         if (view) *report = *view;
         else { ZeroMemory(report, sizeof(GuardStatus)); report->size = sizeof(GuardStatus); report->stage = stage; }
-        report->alive = resumed && WaitForSingleObject(process.hProcess, 0) == WAIT_TIMEOUT;
     }
     cleanup(); return result;
 }

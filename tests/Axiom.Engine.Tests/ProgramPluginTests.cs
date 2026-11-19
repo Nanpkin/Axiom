@@ -24,6 +24,9 @@ public sealed class ProgramPluginTests
             new() { Stage = 3 });
         Assert.Contains("初始化进程加载器未完成", reason);
         Assert.EndsWith("目标主线程尚未运行，本次创建的进程已结束。", reason);
+        reason = Axiom.Providers.Windows.WindowsStartupWindowGuard.FailureReason(@"C:\Apps\target.exe", 123, 1460,
+            new() { Stage = 3, Alive = 1 });
+        Assert.EndsWith("目标主线程尚未运行，本次创建的进程退出未确认。", reason);
     }
     private static readonly ResourceScope Scope = ResourceScope.Session("owner", 1);
     private static (AutomationTaskCompiler Compiler, AutomationTask Task) Configure(bool start = true, bool exited = false)
