@@ -124,7 +124,7 @@ internal static class HardwareBrightnessOperation
         try
         {
             var authorized = api.IsAuthorized(); token.ThrowIfCancellationRequested();
-            if (!authorized) return (false, "当前用户或活动会话与授权不一致，本次未修改屏幕亮度。");
+            if (!authorized) return (false, "当前用户或活动会话与授权不一致，本次未修改屏幕亮度。" + api.Diagnostics);
             logical = api.ReadLogicalMonitors(); token.ThrowIfCancellationRequested();
         }
         catch (Exception error) when (error is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
@@ -157,9 +157,10 @@ internal static class HardwareBrightnessOperation
                     {
                         var lease = api.Acquire(monitor.Handle, 64 - ownedCount); leases.Add(lease);
                         token.ThrowIfCancellationRequested();
+                        if (lease.Handles.Count == 0) { missingPhysical = true; break; }
                         ownedCount += lease.Handles.Count;
                         if (ownedCount > 64) return (false, "物理屏幕总数超出64块，本次未修改；已取得的句柄将释放。");
-                        if (lease.Handles.Count is < 1 or > 8 || lease.Handles.Any(h => h == 0) || lease.Handles.Distinct().Count() != lease.Handles.Count)
+                        if (lease.Handles.Count > 8 || lease.Handles.Any(h => h == 0) || lease.Handles.Distinct().Count() != lease.Handles.Count)
                         { unknown++; continue; }
                         if (lease.Handles.Any(handles.Contains)) return (false, "物理屏幕句柄存在重复，目标无法确认，本次未修改。");
                         handles.AddRange(lease.Handles);

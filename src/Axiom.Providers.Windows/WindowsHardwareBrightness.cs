@@ -124,7 +124,13 @@ public static partial class WindowsHardwareBrightness
             using var current = Process.GetCurrentProcess();
             if (current.SessionId <= 0) return false;
             var accepted = WTSQuerySessionInformation(0, current.SessionId, 8, out var allocation, out var size); // WTSConnectState; no account or display names
-            try { return accepted && allocation != 0 && size == sizeof(int) && Marshal.ReadInt32(allocation) == 0; } // WTSActive; locked is allowed
+            var error = accepted ? (int?)null : Marshal.GetLastPInvokeError();
+            try
+            {
+                if (accepted && allocation != 0 && size == sizeof(int) && Marshal.ReadInt32(allocation) == 0) return true; // WTSActive; locked is allowed
+                Failure("WTSQuerySessionInformation未确认活动会话", error);
+                return false;
+            }
             finally { if (allocation != 0) WTSFreeMemory(allocation); }
         }
         public IReadOnlyList<HardwareLogicalMonitor> ReadLogicalMonitors()
@@ -148,8 +154,12 @@ public static partial class WindowsHardwareBrightness
             }
             token.ThrowIfCancellationRequested();
             if (count > 8 || count > remainingCapacity) throw new HardwareBrightnessLimitException(); // reject before allocating or opening handles
+            if (count == 0)
+            {
+                Failure("GetNumberOfPhysicalMonitorsFromHMONITOR返回0块", null);
+                return new Lease([]);
+            }
             var monitors = new PhysicalMonitor[count];
-            if (count == 0) return new Lease(monitors);
             // Transfer every returned nonzero handle to a lease before checking cancellation, even on partial native failure.
             var accepted = GetPhysicalMonitorsFromHMONITOR(logicalMonitor, count, monitors);
             var lease = new Lease(monitors);

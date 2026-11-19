@@ -11,23 +11,52 @@ namespace Axiom.Engine.Tests;
 [Collection("Brightness native ownership")]
 public sealed class HardwareBrightnessTests
 {
-    [Fact]
-    public void MissingPhysicalAssociationDiscardsOldHandlesAndRediscoversBeforeAnyWrite()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void MissingPhysicalAssociationDiscardsOldHandlesAndRediscoversBeforeAnyWrite(bool emptyPhysicalGroup)
     {
-        var api = new Api { FailAcquireMonitor = 2, AcquireFailureCode = HardwareBrightnessOperation.NoPhysicalMonitors, AcquireFailuresRemaining = 1 };
+        var api = new Api { FailAcquireMonitor = 2, AcquireFailureCode = HardwareBrightnessOperation.NoPhysicalMonitors, AcquireFailuresRemaining = emptyPhysicalGroup ? 0 : 1 };
+        var empty = new Lease([]);
+        if (emptyPhysicalGroup) api.Groups[2] = empty;
         api.BeforeDiscovery = () =>
         {
             if (api.Discoveries != 2) return;
             Assert.Equal(1, api.Groups[1].Closes); Assert.Empty(api.Writes); Assert.Equal(0, api.NativeReads);
+            Assert.Equal(emptyPhysicalGroup ? 1 : 0, empty.Closes);
             api.Logical = [new(3, true), new(4, false)]; api.Groups[3] = new([31]); api.Groups[4] = new([41]);
         };
         var waits = new List<TimeSpan>();
         var result = HardwareBrightnessOperation.Apply(api, "all", 100, default, wait: (delay, _) => waits.Add(delay));
         Assert.True(result.Success); Assert.Contains("重新发现1次", result.Reason);
         Assert.Equal(new[] { TimeSpan.FromMilliseconds(250) }, waits); Assert.Equal(2, api.Discoveries);
-        Assert.Equal(new nint[] { 1, 3, 4 }, api.Acquired); Assert.Equal(new nint[] { 31, 41 }, api.Writes.Keys);
+        Assert.Equal(emptyPhysicalGroup ? new nint[] { 1, 2, 3, 4 } : [1, 3, 4], api.Acquired);
+        Assert.Equal(new nint[] { 31, 41 }, api.Writes.Keys);
         Assert.All(api.SetCounts.Values, count => Assert.Equal(1, count));
         Assert.Equal(1, api.Groups[1].Closes); Assert.Equal(1, api.Groups[3].Closes); Assert.Equal(1, api.Groups[4].Closes);
+    }
+
+    [Fact]
+    public void PersistentlyEmptyPhysicalAssociationDoesNotWrite()
+    {
+        var api = new Api();
+        var leases = new List<Lease>();
+        api.BeforeDiscovery = () =>
+        {
+            var lease = new Lease([]);
+            leases.Add(lease);
+            api.Groups[1] = lease;
+        };
+        var waits = new List<double>();
+        var result = HardwareBrightnessOperation.Apply(api, "primary", 100, default,
+            wait: (delay, _) => waits.Add(delay.TotalMilliseconds));
+
+        Assert.False(result.Success);
+        Assert.Equal(new double[] { 250, 750, 1500 }, waits);
+        Assert.Equal(4, leases.Count);
+        Assert.All(leases, lease => Assert.Equal(1, lease.Closes));
+        Assert.Equal(0, api.NativeReads);
+        Assert.Empty(api.Writes);
     }
 
     [Fact]

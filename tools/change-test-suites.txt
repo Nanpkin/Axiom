@@ -1,1 +1,2 @@
-Axiom.Engine.Tests.HostsToolTests
+Axiom.Engine.Tests.HardwareBrightnessTests
+Axiom.Engine.Tests.BuiltInBrightnessTests
