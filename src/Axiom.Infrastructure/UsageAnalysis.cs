@@ -339,6 +339,17 @@ public static class UsageAnalysis
             compact["omissions"] = compact["omissions"]!.GetValue<string>() + "SupportsRunConditions缺省true；按原优先级删尾部候选至至少1项；能力/参数/组合/已处理不删。";
             result = compact.ToJsonString(CompactCatalogJson);
             var patterns = compact["patterns"]!.AsArray();
+            if (Encoding.UTF8.GetByteCount(result) > budget)
+            {
+                // IDs already appear in capabilities. Index that table once before discarding evidence.
+                var capabilityOrder = body.capabilities.Select((c, i) => (c.Id, i)).ToDictionary(c => c.Id, c => c.i);
+                compact["combinationIndex"] = JsonSerializer.SerializeToNode(new {
+                    DetectionCatalogIndices = detections.Select(id => capabilityOrder[id]),
+                    ActionCatalogIndices = actions.Select(id => capabilityOrder[id]), index.Rows
+                }, CompactCatalogJson);
+                compact["omissions"] = compact["omissions"]!.GetValue<string>() + "两张CatalogIndices表按零基下标引用capabilities中的ID。";
+                result = compact.ToJsonString(CompactCatalogJson);
+            }
             while (Encoding.UTF8.GetByteCount(result) > budget && patterns.Count > 1)
             {
                 patterns.RemoveAt(patterns.Count - 1);

@@ -338,8 +338,12 @@ public sealed class UsageObservationTests
     {
         if (summary.TryGetProperty("combinationIndex", out var index))
         {
-            var detections = index.GetProperty("DetectionIds").EnumerateArray().Select(d => d.GetString()!).ToArray();
-            var actions = index.GetProperty("ActionIds").EnumerateArray().Select(a => a.GetString()!).ToArray();
+            string[] ReadIds(string kind) => index.TryGetProperty(kind + "Ids", out var ids)
+                ? ids.EnumerateArray().Select(id => id.GetString()!).ToArray()
+                : index.GetProperty(kind + "CatalogIndices").EnumerateArray()
+                    .Select(i => summary.GetProperty("capabilities")[i.GetInt32()].GetProperty("Id").GetString()!).ToArray();
+            var detections = ReadIds("Detection");
+            var actions = ReadIds("Action");
             if (index.TryGetProperty("Rows", out var rows))
                 return [.. rows.EnumerateArray().SelectMany(row => row.EnumerateArray().Skip(1)
                     .Select(action => new TaskCombination(detections[row[0].GetInt32()], actions[action.GetInt32()])))];

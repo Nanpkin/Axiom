@@ -5,7 +5,10 @@ using System.Threading.Channels;
 
 namespace Axiom.Providers.Windows;
 
-public sealed record ProcessStartHint(int ProcessId, long EventTime);
+public sealed record ProcessStartHint(int ProcessId, long EventTime)
+{
+    public string ExecutableName { get; init; } = "";
+}
 
 /// <summary>One native, non-polling WMI subscription per Agent, leased only while needed.</summary>
 [SupportedOSPlatform("windows")]
@@ -73,7 +76,7 @@ public sealed class WindowsProcessStartEvents : IDisposable
                     if (Volatile.Read(ref client.failure) is null && (client.observeAll || client.names.Contains(name)))
                     {
                         Interlocked.Increment(ref routedHints);
-                        if (!client.queue.Writer.TryWrite(new(pid, time)))
+                        if (!client.queue.Writer.TryWrite(new(pid, time) { ExecutableName = name }))
                             client.FailClient(new IOException("Windows 进程通知队列已溢出，检测状态未知。"));
                     }
             }

@@ -38,6 +38,7 @@ public sealed partial class WorkbenchWindow
                 case "托盘管理": BuildTrayTool(); break;
                 case "滚轮调节亮度": BuildBrightnessWheelTool(); break;
                 case "定时 Hosts": BuildHostsTool(); break;
+                case Axiom.Contracts.MinecraftTool.Name: BuildMinecraftTool(); break;
             }
             return;
         }
@@ -48,6 +49,7 @@ public sealed partial class WorkbenchWindow
             ("Steam 游戏整理", "\uE7FC", "自动整理本机 Steam 游戏进程组"),
             ("托盘管理", "\uE73F", "选择需要隐藏的程序托盘图标"),
             ("滚轮调节亮度", "\uE706", "用快捷键和滚轮调整亮度"),
+            (Axiom.Contracts.MinecraftTool.Name, "\uE7FC", "PCL 启动时检查 Java 的 NVIDIA 呈现方法"),
             ("定时 Hosts", "\uE774", "按检测条件更新域名解析记录")
         ];
         foreach (var entry in entries)
