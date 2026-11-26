@@ -14,6 +14,36 @@ public sealed class TrayActionTests
     public TrayActionTests() => IconWindow.CleanupHistoricalRegistrations();
 
     [Fact(Timeout = 15000)]
+    public async Task OrdinaryHideSkipsExitedOriginalButNotLiveOrUncertainOwners()
+    {
+        var path = Path.Combine(Environment.SystemDirectory, "sort.exe");
+        var start = new System.Diagnostics.ProcessStartInfo(path)
+        {
+            UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true
+        };
+        using var original = System.Diagnostics.Process.Start(start)!;
+        using var replacement = System.Diagnostics.Process.Start(start)!;
+        try
+        {
+            _ = original.SafeHandle;
+            original.StandardInput.Close();
+            await original.WaitForExitAsync();
+            using var notifications = new WindowsTrayEvents();
+            // The registration disappeared between discovery and the write. A new
+            // instance at the same path must not become the target of this operation.
+            (nint, uint, Guid)[] missing = [(0, 0, Guid.NewGuid())];
+            var exited = await WindowsTrayActions.SetVisibilityAsync(path, missing, [original], false, notifications, default);
+            Assert.True(exited.Success); Assert.True(exited.Skipped); Assert.False(exited.TrayHiddenConfirmed);
+            Assert.Contains("已退出", exited.Reason);
+            var uncertain = await WindowsTrayActions.SetVisibilityAsync(path, missing, [original, replacement], false, notifications, default);
+            Assert.False(uncertain.Success); Assert.False(uncertain.Skipped);
+            var show = await WindowsTrayActions.SetVisibilityAsync(path, missing, [original], true, notifications, default);
+            Assert.False(show.Success);
+        }
+        finally { replacement.StandardInput.Close(); await replacement.WaitForExitAsync(); }
+    }
+
+    [Fact(Timeout = 15000)]
     public async Task HiddenRegistrationSurvivesOrdinaryUpdatesAndShowsWithoutOwnerRecreation()
     {
         using var target = new IconWindow(false, true);

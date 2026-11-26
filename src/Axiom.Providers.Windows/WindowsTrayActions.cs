@@ -296,7 +296,7 @@ public static partial class WindowsTrayActions
         throw new IOException("系统未返回可确认的托盘图标可见性，未当作隐藏或不存在。");
     }
 
-    private static async Task<ProgramControlResult> SetVisibilityAsync(string path, (nint Window, uint Id, Guid Guid)[] candidates,
+    internal static async Task<ProgramControlResult> SetVisibilityAsync(string path, (nint Window, uint Id, Guid Guid)[] candidates,
         List<Process> matches, bool visible, WindowsTrayEvents notifications, CancellationToken token, Action? verify = null,
         bool removeOnUnconfirmedHide = false)
     {
@@ -305,6 +305,22 @@ public static partial class WindowsTrayActions
         var written = 0;
         List<(nint Window, uint Id, Guid Guid)>? removed = null;
         var phase = "核对原图标";
+        // HWND registrations identify their owning instance. A GUID-only registration
+        // or a vanished window can only be attributed to the original set of pinned handles.
+        var hideOwners = new HashSet<Process>();
+        if (!visible && verify is null)
+        {
+            foreach (var candidate in candidates)
+            {
+                if (candidate.Window == 0 || GetWindowThreadProcessId(candidate.Window, out var pid) == 0 ||
+                    matches.Find(p => p.Id == pid) is not { } owner)
+                {
+                    hideOwners.UnionWith(matches);
+                    break;
+                }
+                hideOwners.Add(owner);
+            }
+        }
         void VerifyOwner((nint Window, uint Id, Guid Guid) candidate)
         {
             verify?.Invoke();
@@ -406,6 +422,9 @@ public static partial class WindowsTrayActions
                 ? $"已确认{(visible ? "显示" : "隐藏")} {candidates.Length} 个图标。"
                 : $"图标已处于{(visible ? "显示" : "隐藏")}状态，无需写入。")) { Skipped = written == 0, TrayHiddenConfirmed = !visible };
         }
+        catch (Exception error) when (!token.IsCancellationRequested && error is not (OutOfMemoryException or StackOverflowException)
+            && hideOwners.Count > 0 && hideOwners.All(p => p.HasExited))
+        { return new(true, "原托盘图标所属进程已退出，无需隐藏。") { Skipped = true }; }
         catch (Exception error) when (!token.IsCancellationRequested && error is not (OutOfMemoryException or StackOverflowException))
         { return new(false, $"托盘{phase}未确认；图标可能已改变，本次不自动重试或处理后来出现的图标。"); }
         finally { confirmation.Cancel(); }
