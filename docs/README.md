@@ -1,6 +1,6 @@
 # 按需文档索引
 
-默认只读AGENTS与 [当前交接](product/current-state.md)，其余只检索本轮相关部分。
+开发从 [AGENTS.md](../AGENTS.md) 进入。本目录按任务主题检索。
 
 | 需要什么 | 入口 |
 |---|---|

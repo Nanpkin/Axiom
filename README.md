@@ -25,7 +25,7 @@
 ## 开发从哪里开始
 
 - [AGENTS.md](AGENTS.md)：后续 AI 的工作规则。
-- [当前状态与交接](docs/product/current-state.md)：新对话先读的现状、验证边界与未解决事项。
+- [当前状态与交接](docs/product/current-state.md)：接续已有工作时查阅预览版本、实机验证与未解决事项。
 - [代码定位表](docs/development/code-map.md)：按功能进入相关实现，避免全库重复摸排。
 - [产品范围](docs/product/v1-scope.md)：用户价值、任务模型和交付顺序。
 - [UI 架构](docs/product/workbench-ui.md)：页面、流程、文案与实现职责。

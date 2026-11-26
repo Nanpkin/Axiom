@@ -1,6 +1,6 @@
 # 源码入口
 
-新对话先读 [当前状态与交接](../docs/product/current-state.md)，再按 [代码定位表](../docs/development/code-map.md) 找本轮功能。这里不重复维护进度或历史计划，不要求通读全部源码。
+按文件、界面文字或能力名检索源码；入口不明时查[代码定位表](../docs/development/code-map.md)对应行。
 
 - Domain / Engine：纯状态、规则、仲裁、时间和执行协调；不依赖 UI、Win32、SQLite 或具体 Provider。
 - ServiceHost：当前普通用户后台宿主，拥有 Engine、SQLite 和受权 IPC；尚非正式 Windows Service。
