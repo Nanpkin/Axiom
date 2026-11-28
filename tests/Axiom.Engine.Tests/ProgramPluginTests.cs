@@ -90,11 +90,16 @@ public sealed class ProgramPluginTests
         var (compiler, task) = Configure();
         var old = task with { Action = task.Action with { Parameters = task.Action.Parameters.Remove("hideTrayIcon") } };
         Assert.Equal("false", ProgramCapabilities.Value(old.Action, "hideTrayIcon"));
+        Assert.Equal("false", ProgramCapabilities.Value(old.Action with { Parameters = old.Action.Parameters.Remove("removeUnhiddenTray") }, "removeUnhiddenTray"));
         compiler.Compile(old, "owner", Scope);
         var enabled = old with { Action = old.Action with { Parameters = old.Action.Parameters.Add("hideTrayIcon", "true") } };
         compiler.Compile(enabled, "owner", Scope);
         var editor = new TaskEditorState(); editor.Load(enabled);
         Assert.Equal("true", editor.Build().Action.Parameters["hideTrayIcon"]);
+        var fallback = enabled with { Action = enabled.Action with { Parameters = enabled.Action.Parameters.SetItem("removeUnhiddenTray", "true") } };
+        compiler.Compile(fallback, "owner", Scope);
+        editor.Load(fallback);
+        Assert.Equal("true", editor.Build().Action.Parameters["removeUnhiddenTray"]);
         var field = Assert.Single(ProgramCapabilities.Describe(true).Fields, f => f.Id == "hideTrayIcon");
         Assert.Equal(TaskFieldKind.Boolean, field.Kind); Assert.Equal("false", field.DefaultValue);
         foreach (var invalid in new[] { "", "True", "1", "yes" })

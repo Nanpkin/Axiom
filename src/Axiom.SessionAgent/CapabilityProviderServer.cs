@@ -254,7 +254,7 @@ internal sealed class ProgramCapabilityProvider : ISessionCapabilityProvider
                     ProgramCapabilities.Value(config, "window"), ProgramCapabilities.Value(config, "ifRunning") == "skip", cancellation,
                     (int)ProgramCapabilities.Number(config, "startupProtectionSeconds")), cancellation),
                 (wait, cancellation) => WindowsTrayActions.HideAsync(ProgramCapabilities.TrayTarget(config), wait, cancellation,
-                    registrationQuietPeriod: TimeSpan.FromSeconds(5)),
+                    registrationQuietPeriod: TimeSpan.FromSeconds(5), removeOnUnconfirmedHide: ProgramCapabilities.Value(config, "removeUnhiddenTray") == "true"),
                 TimeSpan.FromSeconds(ProgramCapabilities.StartupTrayWaitSeconds),
                 TimeSpan.FromSeconds(ProgramCapabilities.StartCommandTimeoutSeconds), token)
             : await WindowsProgramBatch.ExecuteAsync(paths, (path, cancellation) => WindowsProgramControl.CloseAsync(path, ProgramCapabilities.Value(config, "mode") == "force",

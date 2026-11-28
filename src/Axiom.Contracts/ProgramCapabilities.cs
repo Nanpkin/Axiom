@@ -23,6 +23,8 @@ public static class ProgramCapabilities
                 [new("skip", "跳过启动"), new("new", "再开一个实例")], Group: "更多选项"),
             new("hideTrayIcon", "启动后隐藏托盘图标", TaskFieldKind.Boolean, false,
                 "启动后最多等待 60 秒出现托盘图标，跳过启动时也会隐藏。未确认隐藏会报告失败，已启动程序仍保留。只处理本次可识别图标。", "false", 5, [], Group: "更多选项"),
+            new("removeUnhiddenTray", "隐藏未生效时移除原图标注册", TaskFieldKind.Boolean, false,
+                "仅用于启动后隐藏。Windows 接受隐藏但仍显示原图标时，移除该注册；再次显示需要程序响应托盘重建通知。", "false", 5, [], Group: "更多选项"),
             new("trayExecutable", "托盘所属程序（可选）", TaskFieldKind.FilePath, false,
                 "留空使用所启动程序；启动器与托盘程序不同时，明确选择实际托盘程序的完整 .exe 路径，不自动推断。仅开启启动后隐藏托盘时执行。", "", 1024, [], Group: "更多选项", BrowseLocalPath: true)]
         : [new("executable", "目标程序", TaskFieldKind.ExecutableSelection, true,

@@ -118,7 +118,7 @@ public static partial class WindowsTrayActions
             skipped > 0 ? $"{skipped} 个程序无法核对权限或图标归属，未列入可选名单。" : null);
     }
     public static async Task<ProgramControlResult> HideAsync(string path, TimeSpan wait, CancellationToken token,
-        TimeSpan registrationQuietPeriod = default)
+        TimeSpan registrationQuietPeriod = default, bool removeOnUnconfirmedHide = false)
     {
         if (wait < TimeSpan.FromSeconds(1) || wait > TimeSpan.FromSeconds(120)) throw new ArgumentOutOfRangeException(nameof(wait));
         if (!File.Exists(path)) return new(false, "目标程序不存在，请重新选择路径。");
@@ -156,7 +156,7 @@ public static partial class WindowsTrayActions
                             remainingQuiet = registrationQuietPeriod - Stopwatch.GetElapsedTime(observedAt);
                         }
                         if (remainingQuiet <= TimeSpan.Zero)
-                            return await SetVisibilityAsync(path, visible, matches, false, notifications, token);
+                            return await SetVisibilityAsync(path, visible, matches, false, notifications, token, removeOnUnconfirmedHide: removeOnUnconfirmedHide);
                     }
                 }
                 finally { foreach (var process in matches) process.Dispose(); }
@@ -183,7 +183,7 @@ public static partial class WindowsTrayActions
                 var registered = matches.Count == 0 ? [] : FindRegistered(path, ReadRegistrations(), matches, token);
                 // A late icon can be present even when Explorer delivered no usable event.
                 var visible = registered.Where(i => i.Visibility == IconVisibility.Visible).Select(i => i.Identity).ToArray();
-                if (visible.Length > 0) return await SetVisibilityAsync(path, visible, matches, false, notifications, token);
+                if (visible.Length > 0) return await SetVisibilityAsync(path, visible, matches, false, notifications, token, removeOnUnconfirmedHide: removeOnUnconfirmedHide);
                 return new(true, registered.Length > 0 ? "已确认目标托盘图标仍处于隐藏状态，无需修改。" : "未发现可识别图标，无需处理。")
                 { Skipped = true, TrayHiddenConfirmed = registered.Length > 0 };
             }
@@ -370,7 +370,7 @@ public static partial class WindowsTrayActions
                     if (visible || !removeOnUnconfirmedHide || written == 0)
                         throw new IOException("托盘可见性在确认期限结束时仍不匹配。");
                     // Explorer accepted the hidden state, but still shows the original icon.
-                    // Only the opt-in lease may remove that registration and rebuild it next time.
+                    // Removal requires the caller's explicit fallback and the original identity.
                     phase = "移除仍可见的原图标注册";
                     removed = [];
                     foreach (var candidate in candidates)
@@ -379,10 +379,16 @@ public static partial class WindowsTrayActions
                         var state = ReadVisibility(candidate);
                         VerifyOwner(candidate);
                         if (state == IconVisibility.Hidden) continue;
-                        if (state != IconVisibility.Visible || candidate.Guid != Guid.Empty)
-                            throw new IOException("原图标无法按窗口和编号确认，未移除注册。");
+                        if (state != IconVisibility.Visible)
+                            throw new IOException("原图标可见性未确认，未移除注册。");
+                        if (candidate.Guid != Guid.Empty)
+                        {
+                            var owners = ReadRegistrations().Where(r => r.Guid == candidate.Guid).ToArray();
+                            if (matches.Count != 1 || owners.Length == 0 || owners.Any(r => !r.Path.Equals(path, StringComparison.OrdinalIgnoreCase)))
+                                throw new IOException("原 GUID 图标的程序归属未确认，未移除注册。");
+                        }
                         var identity = new IconData { Size = (uint)Marshal.SizeOf<IconData>(), Window = candidate.Window,
-                            Id = candidate.Id, Tip = "", Info = "", Title = "" };
+                            Id = candidate.Id, Guid = candidate.Guid, Flags = candidate.Guid == Guid.Empty ? 0u : 32u, Tip = "", Info = "", Title = "" };
                         token.ThrowIfCancellationRequested();
                         if (!Shell_NotifyIcon(2, ref identity)) throw new IOException("Windows未接受移除原图标注册。");
                         removed.Add(candidate);
